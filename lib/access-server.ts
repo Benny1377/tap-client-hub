@@ -79,8 +79,17 @@ export async function resolveAccessIdentity(): Promise<AccessIdentity | null> {
   const demoFallback = !profile ? demoFallbacks[demoEmail] : undefined;
   if (!profile && !demoFallback) return null;
 
-  const role = demoFallback ? normalizeRole(demoFallback.role) : normalizeRole(profile?.role);
-  const modules = effectiveModules(role, demoFallback?.modules || profile?.modules);
+  // Auth/profile migrations can leave an otherwise valid legacy demo account
+  // with the database defaults (`staff` + no modules). Preserve the explicit
+  // trusted-account access contract in that case, while keeping non-empty
+  // profile permissions authoritative for every other account.
+  const profileModules = effectiveModules(profile?.role, profile?.modules);
+  const useDemoAccess = Boolean(
+    demoFallback &&
+    (!profile || (!profile?.role && profileModules.length === 0) || profileModules.length === 0),
+  );
+  const role = useDemoAccess ? normalizeRole(demoFallback!.role) : normalizeRole(profile?.role);
+  const modules = effectiveModules(role, useDemoAccess ? demoFallback!.modules : profile?.modules);
   const userManager = canManageUsers(role, profile?.can_manage_users);
   return {
     id: profile?.id || id || `demo-${role}`,
