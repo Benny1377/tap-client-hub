@@ -1,3 +1,4 @@
+import { cookies } from "next/headers";
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -102,5 +103,15 @@ export async function DELETE() {
   response.cookies.delete("tap_demo_email");
   response.cookies.delete("tap_demo_role");
   response.cookies.delete("tap_modules");
+
+  // Supabase SSR stores sessions in HttpOnly cookies and may split large
+  // sessions across sb-<project>-auth-token.0, .1, etc. Browser JavaScript
+  // cannot clear those cookies, so remove every matching chunk server-side.
+  const cookieStore = await cookies();
+  for (const cookie of cookieStore.getAll()) {
+    if (cookie.name.startsWith("sb-") || cookie.name.startsWith("supabase")) {
+      response.cookies.set(cookie.name, "", { httpOnly: true, expires: new Date(0), path: "/" });
+    }
+  }
   return response;
 }
