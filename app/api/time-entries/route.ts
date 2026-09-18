@@ -25,9 +25,9 @@ export async function GET() {
   if (access instanceof NextResponse) return access;
   const supabase = createAdminClient();
 
-  // Supabase/PostgREST responses are paged. The old fixed 500-row cap silently
-  // dropped older timesheet entries, which also made CSV exports incomplete.
-  // Read all pages so the UI and export represent the complete history.
+  // Supabase/PostgREST responses are paged. A fixed 500-row cap silently
+  // drops older timesheet entries and makes date-filtered CSV exports incomplete.
+  // Read every page so the UI and export represent the complete history.
   const pageSize = 1000;
   const data: any[] = [];
   let offset = 0;
