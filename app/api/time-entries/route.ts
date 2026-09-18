@@ -25,14 +25,26 @@ export async function GET() {
   if (access instanceof NextResponse) return access;
   const supabase = createAdminClient();
 
-  const { data, error } = await supabase
-    .from("time_entries")
-    .select(`*`)
-    .order("started_at", { ascending: false })
-    .limit(500);
+  // Supabase/PostgREST responses are paged. A fixed 500-row cap silently
+  // drops older timesheet entries and makes date-filtered CSV exports incomplete.
+  // Read every page so the UI and export represent the complete history.
+  const pageSize = 1000;
+  const data: any[] = [];
+  let offset = 0;
+  while (true) {
+    const { data: page, error } = await supabase
+      .from("time_entries")
+      .select(`*`)
+      .order("started_at", { ascending: false })
+      .range(offset, offset + pageSize - 1);
 
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+
+    data.push(...(page || []));
+    if (!page || page.length < pageSize) break;
+    offset += pageSize;
   }
 
   // Batch fetch profiles and clients for name resolution
