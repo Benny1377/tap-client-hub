@@ -13,12 +13,11 @@ assert.match(api, /resolveAccessIdentity\(\)/, "inbox requires a resolved TAP Hu
 assert.match(api, /\["owner", "admin"\]\.includes\(identity\.role\)/, "inbox API limits cross-app data to owner/admin");
 assert.match(api, /\.from\("support_apps"\)/, "inbox reads the registered app list");
 assert.match(api, /\.from\("support_tickets"\)/, "inbox queries shared tickets");
-assert.match(api, /\.eq\("source_app_key", app\)/, "inbox filters tickets by source app");
+assert.match(api, /\.eq\("source_app_key", "tap-hub"\)/, "inbox is server-scoped to TAP Hub tickets");
 assert.match(api, /VALID_STATUSES\.has\(status\)/, "inbox validates status instead of accepting arbitrary filters");
 assert.doesNotMatch(api, /reporter_profile_id|assigned_to|metadata/, "inbox payload does not expose profile or arbitrary metadata");
-assert.match(page, /All applications/, "dashboard exposes an all-apps filter");
-assert.match(page, /setApp\(event\.target\.value\)/, "dashboard updates the application filter");
-assert.match(page, /appNames\.get\(ticket\.appKey\)/, "dashboard renders the app name for every ticket");
+assert.doesNotMatch(page, /All applications/, "dashboard does not expose an all-apps filter");
+assert.doesNotMatch(page, /setApp\(/, "dashboard does not allow switching away from TAP Hub");
 assert.match(page, /Urgent unresolved/, "dashboard surfaces the unresolved urgent count");
 assert.match(layout, /href: "\/support\/inbox"/, "dashboard is reachable from TAP Hub navigation");
 assert.match(layout, /role: "admin"/, "dashboard navigation is restricted to admins/owners");
