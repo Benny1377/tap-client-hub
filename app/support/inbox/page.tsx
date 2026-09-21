@@ -34,7 +34,6 @@ function displayDate(value: string | null) {
 export default function SupportInboxPage() {
   const [apps, setApps] = useState<AppOption[]>([]);
   const [tickets, setTickets] = useState<Ticket[]>([]);
-  const [app, setApp] = useState("");
   const [status, setStatus] = useState("");
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(true);
@@ -45,7 +44,6 @@ export default function SupportInboxPage() {
     setError("");
     try {
       const search = new URLSearchParams();
-      if (app) search.set("app", app);
       if (status) search.set("status", status);
       const response = await fetch(`/api/support/inbox${search.size ? `?${search}` : ""}`, { credentials: "include", cache: "no-store" });
       const payload = await response.json().catch(() => null) as InboxPayload | null;
@@ -58,7 +56,7 @@ export default function SupportInboxPage() {
     } finally {
       setLoading(false);
     }
-  }, [app, status]);
+  }, [status]);
 
   useEffect(() => {
     // Schedule the first fetch after paint so the effect only owns a timer,
@@ -87,7 +85,7 @@ export default function SupportInboxPage() {
       <div style={{ display: "flex", justifyContent: "space-between", gap: 16, alignItems: "flex-start", marginBottom: 18, flexWrap: "wrap" }}>
         <div>
           <h2 style={{ margin: 0, fontFamily: '"Fraunces", Georgia, serif', fontSize: 22, color: "var(--ink)" }}>AI FusionIQ Labs support inbox</h2>
-          <p style={{ margin: "5px 0 0", color: "var(--muted)", fontSize: 13.5 }}>A shared, app-filterable queue for TAP Hub, Carry Ops, Transact Ops, and future products.</p>
+          <p style={{ margin: "5px 0 0", color: "var(--muted)", fontSize: 13.5 }}>TAP Hub support tickets for the TAP Hub team.</p>
         </div>
         <button type="button" onClick={() => void load()} disabled={loading} style={buttonStyle}>{loading ? "Refreshing..." : "Refresh"}</button>
       </div>
@@ -101,7 +99,6 @@ export default function SupportInboxPage() {
 
       <section style={panelStyle}>
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "end", marginBottom: 16 }}>
-          <Field label="Application"><select value={app} onChange={(event) => setApp(event.target.value)} style={inputStyle}><option value="">All applications</option>{apps.map((entry) => <option key={entry.key} value={entry.key}>{entry.displayName}{entry.active ? "" : " (inactive)"}</option>)}</select></Field>
           <Field label="Status"><select value={status} onChange={(event) => setStatus(event.target.value)} style={inputStyle}><option value="">All statuses</option>{Object.entries(STATUS_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></Field>
           <Field label="Search"><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Ticket, reporter, subject..." style={{ ...inputStyle, minWidth: 245 }} /></Field>
         </div>
