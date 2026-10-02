@@ -9,6 +9,15 @@ const deleteRoute = read("app/api/profiles/[id]/route.ts");
 const accessServer = read("lib/access-server.ts");
 const usersPage = read("app/users/page.tsx");
 
+// ── Directory read must respect authorization and bypass RLS safely ──
+const getHandler = profilesRoute.slice(
+  profilesRoute.indexOf("export async function GET"),
+  profilesRoute.indexOf("export async function POST"),
+);
+assert.ok(getHandler.indexOf("requireUserDirectoryAccess()") < getHandler.indexOf("createAdminClient()"), "directory access must be authorized before using the service-role client");
+assert.match(getHandler, /if \(!process\.env\.SUPABASE_SERVICE_ROLE_KEY\)/, "missing service-role configuration must fail visibly instead of returning an empty directory");
+assert.match(getHandler, /await adminSupabase\s*\.from\("profiles"\)/, "directory profile query must use the authorized admin client to bypass RLS");
+
 // ── Endpoint wiring ──
 // Ordinary managers can only reach PATCH. POST and DELETE stay behind the
 // explicit user-management capability.
