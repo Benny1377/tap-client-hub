@@ -218,6 +218,14 @@ tbody tr:hover { background: #fcfaf4; }
 }
 
 /* ── Worklist month cells (compact: 26x26 to fit 12 months) ── */
+.worklist-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  background: var(--card);
+  box-shadow: 0 1px 0 var(--line);
+}
+
 .mcell {
   width: 26px; height: 26px; border-radius: 6px;
   border: 1px solid var(--line); background: #fff;
