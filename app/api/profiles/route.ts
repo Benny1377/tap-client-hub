@@ -14,13 +14,13 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   const access = await requireUserDirectoryAccess();
   if (access.status) return NextResponse.json({ error: access.status === 401 ? "Unauthorized" : "Forbidden" }, { status: access.status });
-  const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    { db: { schema: "tap_hub_project" } }
-  );
-
-  const { data: profiles, error } = await supabase
+  if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    return NextResponse.json({ error: "User directory is not configured" }, { status: 503 });
+  }
+  // Read the full directory with the admin client after the explicit server-side
+  // access check. The cookie-less anon client silently returns zero rows under RLS.
+  const adminSupabase = createAdminClient();
+  const { data: profiles, error } = await adminSupabase
     .from("profiles")
     .select("*")
     .order("full_name");
@@ -33,10 +33,9 @@ export async function GET() {
     return NextResponse.json([]);
   }
 
-  // Try to get real emails from auth.users (admin client may not have service_role key)
+  // Try to get real emails from auth.users; values stay server-side only.
   let emailMap: Record<string, string> = {};
   try {
-    const adminSupabase = createAdminClient();
     const { data: authUsers, error: authError } = await adminSupabase.auth.admin.listUsers();
     if (!authError && authUsers?.users) {
       for (const u of authUsers.users) {
