@@ -109,6 +109,71 @@ create index if not exists idx_external_ids_entity on tap_hub_project.external_a
 create index if not exists idx_collection_holds_client on tap_hub_project.collection_holds(client_id, released_at);
 create index if not exists idx_collection_events_client on tap_hub_project.collection_events(client_id, occurred_at desc);
 
+-- Allocation writes must go through an atomic RPC. The API layer should call
+-- this function rather than inserting payment_allocations directly.
+create or replace function tap_hub_project.allocate_payment(
+  p_payment_id uuid,
+  p_invoice_id uuid,
+  p_amount numeric,
+  p_created_by uuid default null
+) returns uuid
+language plpgsql
+security definer
+set search_path = tap_hub_project, public
+as $$
+declare
+  v_payment payments%rowtype;
+  v_invoice invoices%rowtype;
+  v_payment_used numeric(12,2);
+  v_invoice_used numeric(12,2);
+  v_allocation_id uuid;
+begin
+  if p_amount is null or p_amount <= 0 or p_amount <> round(p_amount, 2) then
+    raise exception 'invalid_input: allocation amount must be positive and have at most two decimals'
+      using errcode = '22023';
+  end if;
+
+  select * into v_payment from payments where id = p_payment_id for update;
+  if not found then
+    raise exception 'not_found: payment does not exist' using errcode = 'P0002';
+  end if;
+  if v_payment.status <> 'recorded' then
+    raise exception 'invariant_violation: payment is not available' using errcode = 'P0001';
+  end if;
+
+  select * into v_invoice from invoices where id = p_invoice_id for update;
+  if not found then
+    raise exception 'not_found: invoice does not exist' using errcode = 'P0002';
+  end if;
+  if v_invoice.status <> 'issued' then
+    raise exception 'invariant_violation: only issued invoices can be allocated' using errcode = 'P0001';
+  end if;
+  if v_payment.client_id <> v_invoice.client_id then
+    raise exception 'invariant_violation: payment and invoice belong to different clients' using errcode = 'P0001';
+  end if;
+
+  select coalesce(sum(amount), 0) into v_payment_used
+    from payment_allocations where payment_id = p_payment_id and reversed_at is null;
+  select coalesce(sum(amount), 0) into v_invoice_used
+    from payment_allocations where invoice_id = p_invoice_id and reversed_at is null;
+
+  if v_payment_used + p_amount > v_payment.amount then
+    raise exception 'invariant_violation: payment would be over-allocated' using errcode = 'P0001';
+  end if;
+  if v_invoice_used + p_amount > coalesce((select sum(amount) from invoice_lines where invoice_id = p_invoice_id), 0) then
+    raise exception 'invariant_violation: invoice would be over-allocated' using errcode = 'P0001';
+  end if;
+
+  insert into payment_allocations(payment_id, invoice_id, amount, created_by)
+  values (p_payment_id, p_invoice_id, p_amount, p_created_by)
+  returning id into v_allocation_id;
+  return v_allocation_id;
+end;
+$$;
+
+revoke all on function tap_hub_project.allocate_payment(uuid, uuid, numeric, uuid) from public, anon, authenticated;
+grant execute on function tap_hub_project.allocate_payment(uuid, uuid, numeric, uuid) to service_role;
+
 -- Financial tables are server-owned. Do not repeat the legacy anon grants.
 alter table tap_hub_project.invoices enable row level security;
 alter table tap_hub_project.invoice_lines enable row level security;
