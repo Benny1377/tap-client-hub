@@ -1,10 +1,10 @@
 # Contract: Collections Phase 1 Billing Ledger
 
-State: **Draft**. Not frozen for implementation.
+State: **Frozen for implementation**.
 
 - Producer: Engineer B (routes, Supabase, access policy, migrations).
 - Consumer: Engineer A (Billing and Collections UI).
-- Reviewers and approval date: NOT YET REVIEWED.
+- Reviewers and approval date: Project owner (Tejas Wilavanya), 2026-10-09.
 - Decision basis: `docs/decisions/2026-10-06-collections-billing-source-of-truth.md`.
 
 ## Capability boundary
@@ -84,7 +84,10 @@ Ledger writes that touch more than one row run inside a single Postgres function
 - Stable errors: `401 unauthenticated`, `403 forbidden`, `404 not_found`, `409 invariant_violation` (over-allocation, edit of an issued invoice, action blocked by a hold), and `422 invalid_input`.
 - A `409` is not retryable without changed input.
 - After any ledger mutation, consumers refetch the affected invoice, the client balances, and the aging. No optimistic balance math.
-- Fixtures, test files, environments, and limitations are not yet defined. They are required before the contract moves to `Frozen for implementation`.
+- Fixtures: schema-only hosted Supabase exports supplied on 2026-10-09; no business rows imported.
+- Test files: access-policy and route contract tests, plus the Phase 1 ledger invariant and RLS tests required below.
+- Environments: local development and the hosted Supabase project; production writes require separate approval.
+- Limitation: QuickBooks synchronization and outbound client messaging remain excluded from Phase 1.
 
 ## Phase 1 implementation risks
 

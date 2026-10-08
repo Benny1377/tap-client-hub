@@ -6,7 +6,7 @@
 | Branch | `codex/collections-phase-0` |
 | Base commit | `c259a6edf871b43a0aa2ad0d11cb73dfd8f82653` (`codex/tap-hub-delivery-playbook`, which is `origin/main` `210a08a` plus documentation only) |
 | Ready commit | The commit that adds this file on `codex/collections-phase-0` |
-| Contract status | `docs/contracts/collections-phase-1-billing-ledger.md`: Draft |
+| Contract status | `docs/contracts/collections-phase-1-billing-ledger.md`: Frozen for implementation (2026-10-09) |
 | Decision | `docs/decisions/2026-10-06-collections-billing-source-of-truth.md`: Approved |
 
 ## Owned paths and changed behavior
@@ -43,17 +43,17 @@ Commit: `c259a6e` plus the uncommitted Phase 0 documents. Environment: local che
 | Ad hoc read-only probe of `lib/access-policy.ts` (`effectiveModules`, `canAccessPathname`) | PASS. Owner/Admin get `Billing`. `["Collections"]` is dropped for staff. `/billing/invoices` is denied for Owner, Admin, and staff with Billing; only exact `/billing` is allowed. |
 | `node tests/regression-access-policy.mjs` | BLOCKED: needs the `typescript` package; dependencies are not installed. |
 | `npm run lint`, `npx tsc --noEmit`, `npm run build`, `npm run test:support` | NOT RUN: no dependencies installed, and no application code changed. |
-| Hosted Supabase schema, RLS, and row inspection | BLOCKED: no linked project configuration in the checkout, and no approval for production reads. |
+| Hosted Supabase schema/RLS/grants inspection | COMPLETE: schema-only exports supplied by the project owner on 2026-10-09. |
 
 ## Limitations and blockers
 
-- Live production state is unverified: the `billing_periods` shape and row count, the `clients.id` type, the `audit_log` shape, RLS, and grants.
+- The supplied metadata exports do not include row counts; no business rows were requested or inspected.
 - The Vercel deployment of `main` is unverified.
-- Phase 1 needs a migration location decision, approved hosted inspection, approval for `npm install`, and resolution of contract risk R1 (unsigned identity cookie).
+- Phase 1 needs approval for dependency installation and resolution of contract risk R1 (unsigned identity cookie).
 - This branch is stacked on `codex/tap-hub-delivery-playbook`, which must merge first.
 
 ## Consumer actions
 
-1. The producer and consumer review the Draft contract, set reviewer names and the approval date, and freeze it before Phase 1 code starts.
-2. The project owner approves the hosted read-only inspection and the migration location.
+1. The producer and consumer reviewed the contract; it was frozen on 2026-10-09.
+2. The project owner approved the hosted read-only inspection and selected `supabase/migrations/` as the migration location.
 3. Rollback: revert the documentation commit. No runtime effect.

@@ -1,6 +1,6 @@
 # 2026-10-06 Collections Uses TAP Hub Billing as the Source of Truth
 
-Status: Approved (Phase 0 brief, 2026-10-06). Named approver: NOT RECORDED; the production approver is still an open operating decision in `PROJECT_INTRO.md`.
+Status: Approved (Phase 0, confirmed 2026-10-09). Named approver: Project owner (Tejas Wilavanya).
 
 Milestone: Collections Phase 0 (read-only discovery). Branch: `codex/collections-phase-0`.
 
@@ -60,13 +60,15 @@ Adding Collections requires changes in all of these places:
 
 Owner and Admin users gain the module automatically as soon as it is registered.
 
-### 4. Hosted Supabase inspection is a pending dependency
+### 4. Hosted Supabase inspection
 
 - The checkout has no `supabase/config.toml`.
 - `supabase/.temp/` contains only `cli-latest`, with no linked project reference.
 - No `.env*` file is present. File contents were not read; only directory listings were checked.
 
-There is therefore no safe, approved linked project configuration in this checkout, and live schema facts remain unverified.
+The project owner supplied schema-only exports from the hosted Supabase SQL editor on 2026-10-09. They confirm `clients.id` is `uuid`, `billing_periods` retains its five-column period shape, `client_service_billing` contains only `client_service_id` and `monthly_fee`, and `audit_log` has the expected seven-column shape. No invoice, payment, or allocation tables appear in the export.
+
+The narrowed grants export confirms `anon` has full DML privileges on `clients`, `billing_periods`, `client_service_billing`, and `audit_log`. The narrowed `pg_policies` query returned no rows for those tables, confirming no RLS policies are present. This is a confirmed Phase 1 security finding, not an implementation pattern to copy.
 
 ## Options considered
 
@@ -90,13 +92,13 @@ There is therefore no safe, approved linked project configuration in this checko
 
 - Implementation: Phase 1 adds new ledger tables and leaves `billing_periods` untouched, with no backfill unless a separate decision approves one.
 - Security: new tables must not repeat migration 006's `anon` grants. The existing identity fallback must be resolved before Owner/Admin-only financial approvals rely on it (see the Phase 1 contract, risk R1).
-- Migration: blocked until one forward-only migration location is chosen (open operating decision).
+- Migration: Phase 1 forward-only migrations will live under `supabase/migrations/`; do not add a fifth migration location.
 - Operations: Collections data is only as correct as Billing. A Collections defect must not be "fixed" by editing ledger rows.
 
 ## Follow-up
 
 | Item | Owner | Revisit trigger |
 | --- | --- | --- |
-| Approved read-only hosted schema inspection | Engineer B with project-owner approval | Before the Phase 1 migration is drafted |
-| Choose the forward-only migration location | Project owner | Before the Phase 1 migration is drafted |
+| Approved read-only hosted schema inspection | Engineer B with project-owner approval | Complete 2026-10-09; schema-only exports recorded in the Phase 0 handoff |
+| Choose the forward-only migration location | Project owner | Complete 2026-10-09: `supabase/migrations/` |
 | QuickBooks sync design | Project owner | After the Phase 1 ledger is released |
