@@ -103,7 +103,7 @@ assert.match(accessServer, /canManageUsers\(role, profile\?\.can_manage_users\)/
 assert.match(accessServer, /const userManager = canManageUsers\(role, profile\?\.can_manage_users\)/);
 assert.match(accessServer, /allowEditClientData: userManager \|\| profile\?\.allow_edit_client_data === true/);
 assert.match(accessServer, /verifyDemoSession\(cookieStore\.get\("tap_demo_session"\)/);
-assert.match(accessServer, /cookieStore\.get\("tap_demo_user"\)/);
+assert.doesNotMatch(accessServer, /cookieStore\.get\("tap_demo_user"\)/, "unsigned demo identity cookies must not authorize requests");
 const demoLoginRoute = read("app/api/demo-login/route.ts");
 assert.match(demoLoginRoute, /createDemoSession/);
 assert.match(demoLoginRoute, /httpOnly:\s*true/);

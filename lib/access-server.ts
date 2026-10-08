@@ -36,10 +36,10 @@ export async function resolveAccessIdentity(): Promise<AccessIdentity | null> {
   const cookieStore = await cookies();
   const demoSession = verifyDemoSession(cookieStore.get("tap_demo_session")?.value);
   const demoEmail = demoSession?.email || "";
-  let demoName = demoSession?.name || "";
-  // Fallback: staff users who lack a tap_demo_session may only have tap_demo_user
-  const demoUserFromCookie = cookieStore.get("tap_demo_user")?.value || "";
-  if (!demoName && demoUserFromCookie) demoName = decodeURIComponent(demoUserFromCookie);
+  // Only the signed demo session is authoritative. The legacy tap_demo_user
+  // cookie is intentionally ignored because it is client-controlled and can
+  // be changed to impersonate another profile.
+  const demoName = demoSession?.name || "";
   let authUser: { id: string; email?: string } | null = null;
   const supabase = await createServerClient();
 
