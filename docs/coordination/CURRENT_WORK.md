@@ -12,7 +12,8 @@ Updated by: Claude Code (Collections Phase 0)
 - Active milestones:
   - M0 Stable ownership;
   - Collections Phase 0 (read-only discovery), complete.
-- Overall status: Phase 0 complete; Phase 1 ready to start after security-risk review.
+  - Collections Phase 1 (Billing ledger), initialized.
+- Overall status: Phase 1 initialized; implementation pending security review.
 
 ## Active branches
 
@@ -20,6 +21,7 @@ Updated by: Claude Code (Collections Phase 0)
 | --- | --- | --- | --- | --- | --- |
 | `codex/tap-hub-delivery-playbook` | Codex documentation setup | Initial delivery playbook and coordination structure | `210a08a2c02215f523acd511c1fb696ac551d393` | Ready for review | Project-owner approval |
 | `codex/collections-phase-0` | Claude Code | Collections Phase 0 discovery, hosted schema evidence, decision record, frozen Phase 1 contract, handoff. Documentation only. | `c259a6edf871b43a0aa2ad0d11cb73dfd8f82653` (stacked on the playbook branch) | Complete | Project-owner review |
+| `codex/collections-phase-1-billing-ledger` | Codex | Phase 1 Billing ledger implementation, beginning with R1 identity security review and contract validation. | `e953197` (`codex/collections-phase-0`) | Initialized | Security review and Phase 1 contract validation |
 
 ## Dependencies and blockers
 
