@@ -6,7 +6,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const access = await requireBillingAccess(true);
+  const access = await requireBillingAccess();
   if (access.response) return access.response;
   const { id } = await params;
   let body: any;
@@ -37,7 +37,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     return NextResponse.json({ invoice: data });
   }
   if (body?.action !== "issue") return NextResponse.json({ error: "action must be issue or void" }, { status: 422 });
-  const access = await requireBillingAccess(true);
+  const access = await requireBillingAccess();
   if (access.response) return access.response;
   const db = createAdminClient();
   const { data: lines, error: lineError } = await db.from("invoice_lines").select("id").eq("invoice_id", id);

@@ -12,7 +12,7 @@ function money(value: unknown) {
 }
 
 export async function POST(request: NextRequest) {
-  const access = await requireBillingAccess(true);
+  const access = await requireBillingAccess();
   if (access.response) return access.response;
   let body: any;
   try { body = await request.json(); } catch { return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 }); }
@@ -36,7 +36,7 @@ export async function POST(request: NextRequest) {
 }
 
 export async function DELETE(request: NextRequest) {
-  const access = await requireBillingAccess(true);
+  const access = await requireBillingAccess();
   if (access.response) return access.response;
   const id = request.nextUrl.searchParams.get("id");
   if (!id) return NextResponse.json({ error: "id is required" }, { status: 422 });

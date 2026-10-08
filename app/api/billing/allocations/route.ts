@@ -5,7 +5,7 @@ import { requireBillingAccess } from "@/lib/billing-access";
 export const runtime = "nodejs";
 
 export async function POST(request: NextRequest) {
-  const access = await requireBillingAccess(true);
+  const access = await requireBillingAccess();
   if (access.response) return access.response;
   let body: any;
   try { body = await request.json(); } catch { return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 }); }

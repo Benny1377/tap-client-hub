@@ -101,8 +101,8 @@ export function isPublicOrSelfServicePath(pathname: string) {
 
 export function canAccessPathname(role: unknown, modules: unknown, pathname: string) {
   if (isPublicOrSelfServicePath(pathname)) return true;
-  const module = moduleForPathname(pathname);
-  return Boolean(module && effectiveModules(role, modules).includes(module));
+  const routeModule = moduleForPathname(pathname);
+  return Boolean(routeModule && effectiveModules(role, modules).includes(routeModule));
 }
 
 export function firstAllowedRoute(role: unknown, modules: unknown) {
