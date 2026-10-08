@@ -49,3 +49,27 @@ export async function DELETE(request: NextRequest) {
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ deleted: true });
 }
+
+export async function PATCH(request: NextRequest) {
+  const access = await requireBillingAccess();
+  if (access.response) return access.response;
+  let body: any;
+  try { body = await request.json(); } catch { return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 }); }
+  if (!body?.id) return NextResponse.json({ error: "id is required" }, { status: 422 });
+  const db = createAdminClient();
+  const { data: line } = await db.from("invoice_lines").select("invoice_id").eq("id", body.id).maybeSingle();
+  if (!line) return NextResponse.json({ error: "Invoice line not found" }, { status: 404 });
+  const { data: invoice } = await db.from("invoices").select("status").eq("id", line.invoice_id).maybeSingle();
+  if (!invoice || invoice.status !== "draft") return NextResponse.json({ error: "Invoice lines can only be changed while the invoice is draft" }, { status: 409 });
+  const updates: Record<string, unknown> = {};
+  for (const key of ["description", "period", "client_service_id", "sort_order"]) if (body[key] !== undefined) updates[key] = body[key];
+  if (body.quantity !== undefined || body.unit_amount !== undefined) {
+    const { data: current } = await db.from("invoice_lines").select("quantity, unit_amount").eq("id", body.id).single();
+    const quantity = money(body.quantity ?? current?.quantity); const unit = money(body.unit_amount ?? current?.unit_amount);
+    if (!quantity || !unit || quantity.cents <= 0) return NextResponse.json({ error: "Invalid quantity or unit_amount" }, { status: 422 });
+    updates.quantity = (quantity.cents / 100).toFixed(4); updates.unit_amount = unit.value; updates.amount = (Math.round((quantity.cents * unit.cents) / 100) / 100).toFixed(2);
+  }
+  const { data, error } = await db.from("invoice_lines").update(updates).eq("id", body.id).select().single();
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  return NextResponse.json({ line: data });
+}
