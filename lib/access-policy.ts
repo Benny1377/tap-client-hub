@@ -15,6 +15,7 @@ export const MODULE_ROUTES: Record<string, string> = {
   "Users & Access": "/users",
   "Support": "/support",
   "Billing": "/billing",
+  "Collections": "/collections",
 };
 
 const MODULE_ALIASES: Record<string, string> = {
@@ -23,7 +24,7 @@ const MODULE_ALIASES: Record<string, string> = {
   stx: "Sales Tax", "sales tax": "Sales Tax", t9: "1099s", "1099s": "1099s",
   tax: "Tax Returns", btax: "Tax Returns", ptax: "Tax Returns", tax_returns: "Tax Returns",
   rend: "Renditions", renditions: "Renditions", annual: "Annual Reports", "annual reports": "Annual Reports",
-  vault: "Vault", users: "Users & Access", "users & access": "Users & Access", support: "Support", billing: "Billing",
+  vault: "Vault", users: "Users & Access", "users & access": "Users & Access", support: "Support", billing: "Billing", collections: "Collections",
 };
 
 export function normalizeRole(value: unknown): CanonicalRole {
@@ -88,6 +89,8 @@ export function moduleForPathname(pathname: string): string | null {
   // Contacts is a second Clients surface, not an independently assignable module.
   if (pathname === "/contacts") return "Clients";
   if (pathname.startsWith("/support/")) return "Support";
+  if (pathname.startsWith("/billing/")) return "Billing";
+  if (pathname.startsWith("/collections/")) return "Collections";
   const exact = Object.entries(MODULE_ROUTES).find(([, route]) => route === pathname)?.[0];
   return exact || null;
 }
