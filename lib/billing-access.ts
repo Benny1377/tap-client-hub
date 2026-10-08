@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { isPowerUser } from "@/lib/access-policy";
 import { resolveAccessIdentity } from "@/lib/access-server";
 
-export async function requireBillingAccess(write = false) {
+export async function requireBillingAccess() {
   const identity = await resolveAccessIdentity();
   if (!identity) return { identity: null, response: NextResponse.json({ error: "Unauthorized" }, { status: 401 }) };
   const allowed = isPowerUser(identity.role) || identity.modules.includes("Billing");
