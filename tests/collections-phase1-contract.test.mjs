@@ -9,6 +9,6 @@ assert.match(migration, /revoke all on function/);
 assert.match(migration, /grant execute.*service_role/);
 assert.match(allocation, /for update/);
 assert.match(allocation, /over-allocated/);
-assert.match(allocation, /cross-client/);
+assert.match(allocation, /different clients/);
 
 console.log("Collections Phase 1 database contract checks passed");
