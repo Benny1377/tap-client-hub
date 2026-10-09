@@ -11,10 +11,8 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   let body: any = {};
   try { body = await request.json(); } catch { /* empty body is valid */ }
   const db = createAdminClient();
-  const { count: activeAllocations, error: allocationError } = await db.from("payment_allocations").select("id", { count: "exact", head: true }).eq("payment_id", id).is("reversed_at", null);
-  if (allocationError) return NextResponse.json({ error: allocationError.message }, { status: 500 });
-  if ((activeAllocations || 0) > 0) return NextResponse.json({ error: "Reverse active allocations before reversing this payment" }, { status: 409 });
-  const { data, error } = await db.from("payments").update({ status: "reversed", reversed_by: access.identity!.id, reversed_at: new Date().toISOString(), reversal_reason: body.reason || null }).eq("id", id).eq("status", "recorded").select("*, payment_allocations(*)").single();
-  if (error) return NextResponse.json({ error: error.code === "PGRST116" ? "Recorded payment not found" : error.message }, { status: error.code === "PGRST116" ? 409 : 500 });
+  const { error } = await db.rpc("reverse_payment", { p_payment_id: id, p_actor: access.identity!.id, p_reason: body.reason || null });
+  if (error) return NextResponse.json({ error: error.message }, { status: /not_found/i.test(error.message) ? 404 : /invariant/i.test(error.message) ? 409 : 500 });
+  const { data } = await db.from("payments").select("*, payment_allocations(*)").eq("id", id).single();
   return NextResponse.json({ payment: data });
 }

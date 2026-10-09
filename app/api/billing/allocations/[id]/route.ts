@@ -9,7 +9,8 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
   if (access.response) return access.response;
   const { id } = await params;
   const db = createAdminClient();
-  const { data, error } = await db.from("payment_allocations").update({ reversed_at: new Date().toISOString() }).eq("id", id).is("reversed_at", null).select().single();
-  if (error) return NextResponse.json({ error: error.code === "PGRST116" ? "Active allocation not found" : error.message }, { status: error.code === "PGRST116" ? 409 : 500 });
+  const { error } = await db.rpc("reverse_payment_allocation", { p_allocation_id: id, p_actor: access.identity!.id });
+  if (error) return NextResponse.json({ error: error.message }, { status: /not_found/i.test(error.message) ? 404 : /invariant/i.test(error.message) ? 409 : 500 });
+  const { data } = await db.from("payment_allocations").select().eq("id", id).single();
   return NextResponse.json({ allocation: data });
 }
