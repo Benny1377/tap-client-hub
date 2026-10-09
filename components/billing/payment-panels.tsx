@@ -3,7 +3,7 @@
 import type { ApiResult } from "@/lib/billing-ui/api";
 import type { Invoice, Payment, Receivable, Viewer } from "@/lib/billing-ui/types";
 import { PAYMENT_METHODS, validateAllocation, validatePayment, validateReason } from "@/lib/billing-ui/validation";
-import { formatMoney, receivableFor, viewerIsPowerUser } from "@/lib/billing-ui/view-model";
+import { AGING_LABELS, formatMoney, receivableFor, viewerIsPowerUser } from "@/lib/billing-ui/view-model";
 import { ActionButton, cellStyle, hintStyle, LedgerForm, OwnerAdminOnly, StatusBadge, tableStyle, type FormValues } from "./ui";
 
 type Mutation = Promise<ApiResult<unknown>>;
@@ -149,6 +149,7 @@ export function ReceivablesTable({ receivables, clientNames }: { receivables: Re
             <th style={cellStyle}>Paid</th>
             <th style={cellStyle}>Balance</th>
             <th style={cellStyle}>Days past due</th>
+            <th style={cellStyle}>Aging</th>
           </tr>
         </thead>
         <tbody>
@@ -162,6 +163,7 @@ export function ReceivablesTable({ receivables, clientNames }: { receivables: Re
               <td style={cellStyle}>{formatMoney(row.allocated)}</td>
               <td style={cellStyle}><strong>{formatMoney(row.balance)}</strong></td>
               <td style={{ ...cellStyle, color: row.days_past_due > 0 ? "var(--red)" : undefined }}>{row.days_past_due}</td>
+              <td style={cellStyle} data-aging={row.aging_bucket || ""}>{row.aging_bucket ? AGING_LABELS[row.aging_bucket] || row.aging_bucket : "—"}</td>
             </tr>
           ))}
         </tbody>
