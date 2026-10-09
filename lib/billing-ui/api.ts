@@ -93,6 +93,8 @@ export function createBillingApi(fetchImpl: FetchLike) {
       post<{ invoice: Invoice }>(fetchImpl, "/api/billing/invoices", input),
     updateInvoice: (id: string, input: Partial<Pick<Invoice, "invoice_number" | "issue_date" | "due_date" | "memo">>) =>
       patch<{ invoice: Invoice }>(fetchImpl, `/api/billing/invoices/${encodeURIComponent(id)}`, input),
+    deleteDraftInvoice: (id: string) =>
+      request<{ deleted: boolean }>(fetchImpl, `/api/billing/invoices/${encodeURIComponent(id)}`, { method: "DELETE" }),
     issueInvoice: (id: string) => post<{ invoice: Invoice }>(fetchImpl, `/api/billing/invoices/${encodeURIComponent(id)}`, { action: "issue" }),
     voidInvoice: (id: string, reason: string) =>
       post<{ invoice: Invoice }>(fetchImpl, `/api/billing/invoices/${encodeURIComponent(id)}`, { action: "void", reason }),

@@ -3,18 +3,27 @@
 import type { ApiResult } from "@/lib/billing-ui/api";
 import type { CollectionEvent, CollectionHold, Receivable, Viewer } from "@/lib/billing-ui/types";
 import { LOGGABLE_EVENT_TYPES, validateEvent, validateHold } from "@/lib/billing-ui/validation";
-import { activeHolds, approvalRequests, EVENT_LABELS, holdExpiryPassed, viewerIsPowerUser } from "@/lib/billing-ui/view-model";
+import { activeHolds, approvalRequests, EVENT_LABELS, holdBlocks, holdExpiryPassed, holdInForce, viewerIsPowerUser } from "@/lib/billing-ui/view-model";
 import { ActionButton, cellStyle, hintStyle, LedgerForm, OwnerAdminOnly, tableStyle, type FormValues } from "./ui";
 
 type Mutation = Promise<ApiResult<unknown>>;
 
-export function ActiveHoldBanner({ holds, clientId, clientNames }: { holds: CollectionHold[]; clientId: string | null; clientNames: Record<string, string> }) {
-  const active = activeHolds(holds, clientId);
+export function ActiveHoldBanner({ holds, clientId, clientNames, invoiceNumbers, today }: {
+  holds: CollectionHold[];
+  clientId: string | null;
+  clientNames: Record<string, string>;
+  invoiceNumbers: Record<string, string>;
+  today: string;
+}) {
+  const active = activeHolds(holds, today, clientId);
   if (active.length === 0) return null;
-  const clients = [...new Set(active.map((hold) => clientNames[hold.client_id] || hold.client_id))];
+  const scopes = [...new Set(active.map((hold) => {
+    const client = clientNames[hold.client_id] || hold.client_id;
+    return hold.invoice_id ? `${client} (invoice ${invoiceNumbers[hold.invoice_id] || hold.invoice_id})` : client;
+  }))];
   return (
     <div role="status" data-active-hold-banner style={{ background: "var(--amber-soft)", border: "1px solid #e8d3a6", color: "#7a5210", borderRadius: 12, padding: "10px 14px", fontSize: 13.5, margin: "12px 0" }}>
-      <strong>Collections hold active</strong> for {clients.join(", ")}. Escalation and formal-notice approvals are blocked until the hold is released.
+      <strong>Collections hold in force</strong> for {scopes.join(", ")}. Escalation and formal-notice requests and approvals are blocked for that scope until the hold is released or its review date passes.
     </div>
   );
 }
@@ -45,19 +54,22 @@ export function HoldsPanel({ holds, clientId, clientNames, viewer, today, onPlac
             </thead>
             <tbody>
               {holds.map((hold) => {
-                const active = !hold.released_at;
+                const released = Boolean(hold.released_at);
+                const inForce = holdInForce(hold, today);
+                const holdState = released ? "released" : inForce ? "active" : "expired";
                 return (
-                  <tr key={hold.id} data-hold-row={hold.id} data-hold-state={active ? "active" : "released"}>
+                  <tr key={hold.id} data-hold-row={hold.id} data-hold-state={holdState}>
                     <td style={cellStyle}>{clientNames[hold.client_id] || hold.client_id}</td>
                     <td style={cellStyle}>{hold.reason}</td>
                     <td style={cellStyle}>{hold.placed_at.slice(0, 10)}</td>
                     <td style={cellStyle}>
                       {hold.expires_on || "—"}
-                      {active && holdExpiryPassed(hold, today) ? <div style={{ fontSize: 12, color: "var(--muted)" }}>Date passed; still blocks until released.</div> : null}
+                      {!released && holdExpiryPassed(hold, today) ? <div style={{ fontSize: 12, color: "var(--muted)" }}>Review date passed; no longer blocks. Release it to close it out.</div> : null}
                     </td>
                     <td style={cellStyle}>
-                      {active ? <strong>Active</strong> : `Released ${hold.released_at?.slice(0, 10)}`}
-                      {active && power ? <div><ActionButton quiet label="Release hold" onAction={() => onRelease(hold.id)} /></div> : null}
+                      {released ? `Released ${hold.released_at?.slice(0, 10)}` : inForce ? <strong>Active</strong> : "Expired, not released"}
+                      {hold.invoice_id ? <div style={{ fontSize: 12, color: "var(--muted)" }}>One invoice only</div> : null}
+                      {!released && power ? <div><ActionButton quiet label="Release hold" onAction={() => onRelease(hold.id)} /></div> : null}
                     </td>
                   </tr>
                 );
@@ -90,17 +102,19 @@ export function HoldsPanel({ holds, clientId, clientNames, viewer, today, onPlac
 
 const APPROVAL_LABELS: Record<string, string> = { escalated: "Approve escalation", formal_notice_approved: "Approve formal notice" };
 
-export function EventsPanel({ events, holds, receivables, clientId, clientNames, viewer, onLog, onApprove }: {
+export function EventsPanel({ events, holds, receivables, clientId, clientNames, viewer, today, onLog, onApprove }: {
   events: CollectionEvent[];
   holds: CollectionHold[];
   receivables: Receivable[];
   clientId: string | null;
   clientNames: Record<string, string>;
   viewer: Viewer | null;
+  today: string;
   onLog: (values: FormValues) => Mutation;
   onApprove: (eventId: string, approvalType: "escalated" | "formal_notice_approved") => Mutation;
 }) {
-  const requests = approvalRequests(events, holds, viewer);
+  const requests = approvalRequests(events, holds, viewer, today);
+  const clientWideHold = clientId ? holdBlocks(holds, today, clientId, null) : false;
   const clientInvoices = receivables.filter((row) => row.client_id === clientId);
 
   return (
@@ -122,6 +136,7 @@ export function EventsPanel({ events, holds, receivables, clientId, clientNames,
       {clientId ? (
         <section aria-label="Log activity" style={{ maxWidth: 420 }}>
           <h3 style={{ fontSize: 14, margin: "14px 0 6px" }}>Log activity</h3>
+          {clientWideHold ? <p data-requests-blocked style={hintStyle}>A client-wide hold is in force, so escalation and formal-notice requests will be refused. Notes, reminders, calls, and promises to pay can still be logged.</p> : null}
           <LedgerForm
             key={`event-${clientId}`}
             fields={[

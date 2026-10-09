@@ -73,7 +73,10 @@ export interface Receivable {
   allocated: string;
   balance: string;
   days_past_due: number;
+  aging_bucket?: AgingBucket;
 }
+
+export type AgingBucket = "current" | "1_30" | "31_60" | "61_90" | "90_plus";
 
 export interface CollectionHold {
   id: string;

@@ -75,6 +75,7 @@ export interface InvoiceDetailHandlers {
   onUpdateLine: (lineId: string, values: FormValues) => Mutation;
   onDeleteLine: (lineId: string) => Mutation;
   onIssue: () => Mutation;
+  onDeleteDraft: () => Mutation;
   onVoid: (reason: string) => Mutation;
 }
 
@@ -180,6 +181,13 @@ export function InvoiceDetail({ invoice, receivable, viewer, handlers }: {
           actions.canIssue
             ? <ActionButton label="Issue invoice" onAction={handlers.onIssue} />
             : <span data-issue-blocked style={{ fontSize: 12.5, color: "var(--muted)" }}>{actions.issueBlockedReason}</span>
+        ) : null}
+        {invoice.status === "draft" ? (
+          <details data-delete-draft>
+            <summary style={{ cursor: "pointer", fontSize: 13, color: "var(--red)", fontWeight: 600 }}>Delete draft</summary>
+            <p style={hintStyle}>This permanently removes the draft and its lines. Issued invoices cannot be deleted.</p>
+            <ActionButton label="Delete this draft" onAction={handlers.onDeleteDraft} />
+          </details>
         ) : null}
         {actions.canVoid ? (
           <details data-void-control>

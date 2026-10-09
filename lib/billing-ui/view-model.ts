@@ -39,6 +39,8 @@ export const EVENT_LABELS: Record<string, string> = {
   hold_released: "Hold released",
 };
 
+export const AGING_LABELS: Record<string, string> = { current: "Current", "1_30": "1–30 days", "31_60": "31–60 days", "61_90": "61–90 days", "90_plus": "90+ days" };
+
 export const STATUS_LABELS: Record<string, string> = { draft: "Draft", issued: "Issued", void: "Void", recorded: "Recorded", reversed: "Reversed" };
 
 export interface InvoiceActions {
@@ -66,16 +68,28 @@ export function receivableFor(invoiceId: string, receivables: Receivable[]) {
   return receivables.find((row) => row.id === invoiceId) || null;
 }
 
-/**
- * A hold is active until it is released. This matches the server, which blocks
- * approvals for any unreleased hold on the client even after its expiry date.
- */
-export function activeHolds(holds: CollectionHold[], clientId?: string | null) {
-  return holds.filter((hold) => !hold.released_at && (!clientId || hold.client_id === clientId));
-}
-
+/** True when the hold's review date has passed. Matches the server's UTC date comparison. */
 export function holdExpiryPassed(hold: CollectionHold, today: string) {
   return Boolean(hold.expires_on && hold.expires_on < today);
+}
+
+/** An unreleased hold whose review date has not passed. */
+export function holdInForce(hold: CollectionHold, today: string) {
+  return !hold.released_at && !holdExpiryPassed(hold, today);
+}
+
+/** Holds in force, optionally only those for one client. */
+export function activeHolds(holds: CollectionHold[], today: string, clientId?: string | null) {
+  return holds.filter((hold) => holdInForce(hold, today) && (!clientId || hold.client_id === clientId));
+}
+
+/**
+ * Whether a hold blocks an escalation or formal notice for this client and invoice.
+ * Mirrors the approve and request routes: a client-wide hold blocks everything for
+ * the client; an invoice hold blocks only requests about that invoice.
+ */
+export function holdBlocks(holds: CollectionHold[], today: string, clientId: string, invoiceId: string | null) {
+  return activeHolds(holds, today, clientId).some((hold) => !hold.invoice_id || hold.invoice_id === invoiceId);
 }
 
 const APPROVAL_FOR: Record<string, "escalated" | "formal_notice_approved"> = {
@@ -96,7 +110,7 @@ export interface PendingRequest {
 }
 
 /** Escalation and formal-notice requests with their approval state for this viewer. */
-export function approvalRequests(events: CollectionEvent[], holds: CollectionHold[], viewer: Viewer | null): PendingRequest[] {
+export function approvalRequests(events: CollectionEvent[], holds: CollectionHold[], viewer: Viewer | null, today: string): PendingRequest[] {
   const power = viewerIsPowerUser(viewer);
   const approvedIds = new Set(events.map((event) => event.approves_event_id).filter(Boolean));
   return events.flatMap((request) => {
@@ -104,7 +118,7 @@ export function approvalRequests(events: CollectionEvent[], holds: CollectionHol
     if (!approvalType) return [];
     let state: ApprovalState;
     if (approvedIds.has(request.id)) state = "approved";
-    else if (activeHolds(holds, request.client_id).length > 0) state = "blocked_by_hold";
+    else if (holdBlocks(holds, today, request.client_id, request.invoice_id)) state = "blocked_by_hold";
     else if (!power) state = "requires_owner_admin";
     else state = "can_approve";
     return [{ request, approvalType, state }];

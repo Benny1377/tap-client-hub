@@ -4,9 +4,9 @@
 | --- | --- |
 | Milestone | Collections Phase 1: UI consumer of the Billing and Collections API |
 | Branch | `codex/collections-phase-1-ui` |
-| Base commit | `22d7528711ce15b8cebe80c66dc6ef03f6a0d4a4` (`codex/collections-phase-1-billing-ledger`) |
+| Base commit | `b3ee47b` (`codex/collections-phase-1-billing-ledger`). First built on `22d7528`; rebased 2026-10-10 after the backend fixes. |
 | Contract | `docs/contracts/collections-phase-1-billing-ledger.md` (Frozen). The routes on the base branch were treated as the request/response contract, because the frozen contract outlines operations only. |
-| Backend changes | None. Mismatches are listed below for the producer to decide on. |
+| Backend changes | None from this branch. Mismatches are listed below for the producer. |
 
 ## Owned paths
 
@@ -19,62 +19,67 @@
 ## Behavior
 
 - **Billing page.** Invoices with their lifecycle:
-  - draft: edit, add, edit and remove lines, issue once it has a line;
+  - draft: edit, add, edit and remove lines, issue once it has a line, delete the draft;
   - issued: locked; void is Owner/Admin only;
   - void: read-only.
 
-  It also covers payments, allocations, reversals (Owner/Admin only), and receivables.
-- **Collections page.** Receivables, holds (place and release are Owner/Admin only), an active-hold banner, the activity log, and the approval queue. Escalation and formal-notice approval are Owner/Admin only and blocked by an active hold.
+  It also covers payments, allocations, reversals (Owner/Admin only), and receivables with the server's aging bucket.
+- **Collections page.**
+  - Receivables, the activity log, and the approval queue.
+  - Holds: place and release are Owner/Admin only. A hold is shown as active, expired, or released.
+  - A hold banner that names the hold's scope (client or invoice).
+  - Escalation and formal-notice approval are Owner/Admin only. They are blocked while a hold is in force, using the server's rule: unreleased, the review date not passed, and client-wide or the same invoice.
 - **Data flow.**
   - All data goes through `/api/billing/*`, `/api/collections/*`, `/api/me`, and `/api/clients?fields=lite`. The UI makes no Supabase calls and has no QuickBooks, OAuth, or email code; a test enforces this.
   - After every successful mutation, and after every `409`, the page reloads the affected sections from the API.
-  - Balances, totals, and days past due are displayed exactly as the server returns them.
+  - Balances, totals, days past due, and aging buckets are displayed exactly as the server returns them.
 - **Permissions.** The UI hides Owner/Admin-only controls from other roles and explains why. The server's `401`, `403`, `404`, `409`, and `422` responses are still shown wherever they occur.
 
-## API contract mismatches (for the producer; backend not changed)
+## API contract mismatches: status as of backend `b3ee47b`
 
-| ID | Severity | Mismatch | Evidence | UI handling today |
-| --- | --- | --- | --- | --- |
-| UI-M1 | High | Valid amounts are rejected. The payment and allocation routes check decimals with float math, so amounts such as 19.99, 1.13, 4.35, 0.29, and 0.07 return `422 amount must be positive and have at most two decimals`. | `app/api/billing/payments/route.ts:29`, `app/api/billing/allocations/route.ts:17`. Reproduced with Node using the same expression. | The UI accepts these amounts and shows the server's 422. Users cannot record such payments until the route is fixed. |
-| UI-M2 | High | Collections access uses the Billing module. Every `/api/collections/*` route, and every list route, calls `requireBillingAccess()`. Staff assigned only Collections get 403 everywhere, and staff assigned only Billing can log Collections activity and request escalations. The contract gives these operations to "users assigned Collections" (list: "Billing or Collections"). | `lib/billing-access.ts`, `app/api/collections/events/route.ts`, `app/api/collections/holds/route.ts` | The Collections page shows the 403 per section. Owner/Admin are unaffected. |
-| UI-M3 | High | No audit records are written. `writeBillingAudit` and the `record_billing_audit` RPC exist, but no route calls them, so no ledger or Collections mutation is audited. Phase 1 validation requirement 4 (the audit row) cannot pass. | `grep writeBillingAudit` / `record_billing_audit` under `app/` finds no callers. | None possible in the UI. |
-| UI-M4 | Medium | Hold events can be forged. `POST /api/collections/events` accepts `hold_placed` and `hold_released` from Billing-module staff without changing any hold. The hold routes do not log those events either. | `app/api/collections/events/route.ts:26` | The UI never offers these types; holds use the dedicated Owner/Admin controls. |
-| UI-M5 | Medium | `formal_notice_sent` is a contract event type, but no route accepts it. | events `allowed` set; approve route accepts only `escalated` and `formal_notice_approved` | Not offered. |
-| UI-M6 | Medium | Approval does not check its source event. `POST /api/collections/events/approve` does not verify that the source is a matching request (`escalation_requested` → `escalated`, `formal_notice_requested` → `formal_notice_approved`) or that it has not already been approved. Its hold check is client-wide (it ignores the invoice scope) and ignores `expires_on`. | `app/api/collections/events/approve/route.ts` | The UI offers only the matching approval and hides approved requests. It treats any unreleased hold as blocking, matching the server. |
-| UI-M7 | Medium | Receivables are not the contract read models. They are computed in the route with JavaScript `Number` math (R8), include **draft** invoices with days past due, and have no `client_receivables_aging` buckets. Payments carry no unallocated amount. | `app/api/billing/receivables/route.ts` | Shows the route's rows as returned. The Collections page filters to issued invoices. It shows no aging buckets or unallocated amounts, because computing them would be client-side balance math. |
-| UI-M8 | Low | Errors are not stable codes. Bodies are `{ error: <message> }`. Allocation `invalid_input` errors map to `409`, not `422`. Releasing a missing hold returns `404` where the other routes return `409`. An invalid JSON body returns `400`. | the allocation, hold, and all POST routes | Classified by HTTP status; the server message is shown. |
-| UI-M9 | Low | Reversal can race allocation. Payment reversal counts active allocations and then updates the payment, outside the `allocate_payment` row lock. A concurrent allocation can leave a reversed payment with an active allocation. | `app/api/billing/payments/[id]/route.ts` | None possible in the UI. |
-| UI-M10 | Low | Drafts cannot be discarded: there is no delete or void for draft invoices. | invoices routes | Drafts stay listed. |
+| ID | Severity | Mismatch | Status at `b3ee47b` |
+| --- | --- | --- | --- |
+| UI-M1 | High | The payment and allocation routes rejected valid amounts (19.99, 1.13, 4.35, 0.29, 0.07) because of float math. | **Fixed** (`ce73c09`): the amount is validated as a string and passed through. |
+| UI-M2 | High | Collections routes used the Billing module. | **Fixed** (`ce73c09`): `requireLedgerReadAccess` (Billing or Collections) on lists; `requireCollectionsAccess` for logging events. |
+| UI-M3 | High | No audit records were written. | **Open, partly fixed** (`12ee5fd`). Only payment reversal and allocation reversal write `audit_log`. These still write no audit: <ul><li>invoice create, update, issue, void, and delete;</li><li>line add, update, and delete;</li><li>recording a payment;</li><li>`allocate_payment`;</li><li>placing and releasing holds;</li><li>Collections events and approvals.</li></ul> Validation requirement 4 still cannot pass. |
+| UI-M4 | Medium | `hold_placed` and `hold_released` could be logged as free-form events. | **Fixed** (`ce73c09`). The hold routes still do not log hold events (minor). |
+| UI-M5 | Medium | `formal_notice_sent` is accepted by no route. | **Open.** |
+| UI-M6 | Medium | Approval did not check its source event or the hold's scope and expiry. | **Fixed** (`b3ee47b`). Requests are also refused during a hold. The duplicate-approval check is check-then-insert, not atomic (minor). |
+| UI-M7 | Medium | Receivables are not the contract read models. | **Open, partly fixed** (`b3ee47b`): issued invoices only, plus a per-row `aging_bucket`. Still JavaScript `Number` math, no per-client aging totals, and no unallocated amount on payments. |
+| UI-M8 | Low | Error codes are inconsistent. | **Open, partly fixed** (`ce73c09`): allocation `invalid_input` now returns `422`. Releasing a missing hold still returns `404`; bodies still have no stable code. |
+| UI-M9 | Low | Payment reversal could race an allocation. | **Fixed** (`12ee5fd`): `reverse_payment` locks the payment row. |
+| UI-M10 | Low | Drafts could not be discarded. | **Fixed, with gaps** (`b3ee47b`): `DELETE /api/billing/invoices/[id]`. It returns `{ deleted: true }` for a non-draft without deleting anything. A draft referenced by a hold or event fails the `on delete restrict` foreign key and returns `500`, not `409`. The delete is not audited. |
 
-## Outside this branch's scope (not changed)
+## Outside this branch's scope
 
-- `app/users/page.tsx` `MODULES_LIST` has no `Collections`, so the module cannot be assigned through Users & Access.
-- `GET /api/clients` uses the service-role client and has no identity check. Because `proxy.ts` treats `/api/` as public, the code suggests any caller can read active clients. The UI uses `?fields=lite` for client names. Not verified live.
+- `app/users/page.tsx` `MODULES_LIST`: **fixed** in `ce73c09`; Collections is now assignable.
+- `GET /api/clients` uses the service-role client with no identity check. Because `proxy.ts` treats `/api/` as public, the code suggests any caller can read active clients. Not verified live. **Open.**
 
 ## Commands and results
 
-Commit: working tree on `22d7528` plus this branch's changes. Environment: local, Node `v22.14.0`, dependencies from `npm ci`.
+Commit: this branch on `b3ee47b`. Environment: local, Node `v22.14.0`, dependencies from `npm ci`.
 
 | Command | Result |
 | --- | --- |
-| `node tests/billing-ui-data.test.mjs` | PASS (23 checks) |
-| `node tests/billing-ui-render.test.mjs` | PASS (25 checks) |
-| Mutation check: void allowed for every role, holds never active | FAIL as expected; restored and PASS |
+| `node tests/billing-ui-data.test.mjs` | PASS (24 checks) |
+| `node tests/billing-ui-render.test.mjs` | PASS (26 checks) |
+| Mutation checks: void for every role; holds never active; hold expiry ignored | Each FAILS as expected; restored and PASS |
 | `npx tsc --noEmit` | PASS |
 | `npx eslint` on all new files | PASS |
-| `npm run lint` (full repo) | 590 problems, identical to the base branch; none in new files. The `app/layout.tsx:202` error predates this branch. |
+| `npm run lint` (full repo) | 590 problems on 2026-10-09, identical to the base branch; none in new files. The `app/layout.tsx:202` error predates this branch. |
 | `npm run build` | PASS; `/billing` and `/collections` built |
 | `npm run test:support` | PASS |
 | `node --experimental-strip-types tests/collections-route-access.test.mjs` | PASS |
 | `node tests/collections-phase1-contract.test.mjs` | PASS |
 | `node tests/regression-access-policy.mjs` | FAIL on the existing demo-password assertion. It fails the same way on the base branch and is unrelated to this change. |
 | Responsive manual review in a browser | BLOCKED: there is no Supabase environment in this checkout, and `.env` files were not read or created. |
-| Persistence (UI → API → row → audit → reload) | BLOCKED: no approved environment, and audit writes are missing (UI-M3). |
+| Persistence (UI → API → row → audit → reload) | BLOCKED: no approved environment, and most mutations still write no audit (UI-M3). |
 
 ## Consumer and producer actions
 
-1. Producer: decide UI-M1 to UI-M3 before release. UI-M1 blocks normal payment entry.
-2. Producer: decide UI-M4 to UI-M10, or record them as deferred with an owner.
-3. Project owner: approve a non-production environment for browser and persistence validation.
-4. Merge order: `codex/collections-phase-1-billing-ledger` first, then this branch.
-5. Rollback: revert this branch's commit. It adds two routes and two nav entries and changes no backend or data.
+1. Producer: finish UI-M3 (audit every mutation), and fix the UI-M10 delete gaps.
+2. Producer: decide UI-M5, UI-M7, and UI-M8, or record them as deferred with an owner.
+3. Producer: add database tests for the ledger invariants, concurrency, and the anon-key RLS check. Confirm whether the three Phase 1 migrations are applied to the hosted project.
+4. Project owner: approve a non-production environment for browser and persistence validation.
+5. Merge order: `codex/collections-phase-1-billing-ledger` first, then this branch.
+6. Rollback: revert this branch's commits. They add two routes and two nav entries and change no backend or data.
