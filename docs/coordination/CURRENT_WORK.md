@@ -22,7 +22,7 @@ Updated by: Claude Code (Collections Phase 1 UI)
 | `codex/tap-hub-delivery-playbook` | Codex documentation setup | Initial delivery playbook and coordination structure | `210a08a2c02215f523acd511c1fb696ac551d393` | Ready for review | Project-owner approval |
 | `codex/collections-phase-0` | Claude Code | Collections Phase 0 discovery, hosted schema evidence, decision record, frozen Phase 1 contract, handoff. Documentation only. | `c259a6edf871b43a0aa2ad0d11cb73dfd8f82653` (stacked on the playbook branch) | Complete | Project-owner review |
 | `codex/collections-phase-1-billing-ledger` | Codex | Phase 1 Billing ledger implementation, beginning with R1 identity security review and contract validation. | `e953197` (`codex/collections-phase-0`) | Initialized | Security review and Phase 1 contract validation |
-| `codex/collections-phase-1-ui` | Claude Code (Engineer A track) | Phase 1 Billing and Collections UI consuming the existing API. No backend changes. API mismatches UI-M1 to UI-M10 reported for the producer. | `22d7528` (`codex/collections-phase-1-billing-ledger`) | Ready for review | Ledger branch merged first; UI-M1 to UI-M3 decided; browser validation in an approved environment |
+| `codex/collections-phase-1-ui` | Claude Code (Engineer A track) | Phase 1 Billing and Collections UI consuming the existing API. No backend changes. Rebased on backend fixes; UI-M1, M2, M4, M6, M9 fixed by backend; M3, M5, M7, M8, M10 gaps open. | `b3ee47b` (`codex/collections-phase-1-billing-ledger`) | Ready for review | Ledger branch merged first; UI-M3 audit complete; browser validation in an approved environment |
 
 ## Dependencies and blockers
 

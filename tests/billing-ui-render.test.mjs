@@ -38,8 +38,9 @@ const invoice = (overrides = {}) => ({
   id: "inv-1", client_id: "c-1", invoice_number: "TAP-1", status: "draft", issue_date: "2026-10-01", due_date: "2026-10-31", memo: null,
   created_by: null, created_at: "2026-10-01T00:00:00Z", voided_by: null, voided_at: null, void_reason: null, invoice_lines: [], ...overrides,
 });
-const receivable = { id: "inv-1", client_id: "c-1", invoice_number: "TAP-1", status: "issued", issue_date: "2026-10-01", due_date: "2026-10-31", total: "250.00", allocated: "100.00", balance: "150.00", days_past_due: 12 };
-const handlers = { onUpdate: noop, onAddLine: noop, onUpdateLine: noop, onDeleteLine: noop, onIssue: noop, onVoid: noop };
+const receivable = { id: "inv-1", client_id: "c-1", invoice_number: "TAP-1", status: "issued", issue_date: "2026-10-01", due_date: "2026-10-31", total: "250.00", allocated: "100.00", balance: "150.00", days_past_due: 12, aging_bucket: "1_30" };
+const TODAY = "2026-10-09";
+const handlers = { onUpdate: noop, onAddLine: noop, onUpdateLine: noop, onDeleteLine: noop, onIssue: noop, onVoid: noop, onDeleteDraft: noop };
 const detail = (inv, viewer, rec = null) => render(h(invoicePanels.InvoiceDetail, { invoice: inv, receivable: rec, viewer, handlers }));
 
 // --- Loading -------------------------------------------------------------
@@ -103,6 +104,7 @@ check("draft without lines: editable, issue blocked with a reason", () => {
   assert.match(html, /aria-label="Add line"/);
   assert.match(html, /aria-label="Edit draft"/);
   assert.match(html, /data-issue-blocked[^>]*>Add at least one line/);
+  assert.match(html, /data-delete-draft[\s\S]*>Delete this draft</);
   assert.doesNotMatch(html, />Issue invoice</);
   assert.doesNotMatch(html, /data-void-control/);
 });
@@ -118,7 +120,7 @@ check("issued for staff and managers: locked, void requires Owner/Admin", () => 
     const html = detail(invoice({ status: "issued", invoice_lines: [line] }), viewer, receivable);
     assert.match(html, /data-lifecycle="issued"/);
     assert.match(html, /Issued invoices are locked/);
-    assert.doesNotMatch(html, /aria-label="Add line"|>Edit<|>Remove<|>Issue invoice</);
+    assert.doesNotMatch(html, /aria-label="Add line"|>Edit<|>Remove<|>Issue invoice<|data-delete-draft/);
     assert.doesNotMatch(html, /data-void-control/);
     assert.match(html, /data-approval-boundary="owner-admin"[^>]*>Voiding an invoice requires Owner\/Admin/);
   }
@@ -136,7 +138,7 @@ check("void invoices show the reason and no actions", () => {
   const html = detail(invoice({ status: "void", voided_at: "2026-10-05T10:00:00Z", void_reason: "Duplicate", invoice_lines: [line] }), owner);
   assert.match(html, /data-lifecycle="void"/);
   assert.match(html, /Voided 2026-10-05: Duplicate/);
-  assert.doesNotMatch(html, /Issue invoice|data-void-control|aria-label="Add line"/);
+  assert.doesNotMatch(html, /Issue invoice|data-void-control|aria-label="Add line"|data-delete-draft/);
 });
 
 check("invoice list shows status and server balance", () => {
@@ -180,18 +182,22 @@ check("receivables render server-derived totals", () => {
   const html = render(h(paymentPanels.ReceivablesTable, { receivables: [receivable], clientNames: { "c-1": "Acme LLC" } }));
   assert.match(html, /\$250\.00[\s\S]*\$100\.00[\s\S]*\$150\.00/);
   assert.match(html, />12</);
+  assert.match(html, /data-aging="1_30"[^>]*>1–30 days</);
 });
 
 // --- Holds -----------------------------------------------------------------
 const hold = (overrides = {}) => ({ id: "h-1", client_id: "c-1", invoice_id: null, reason: "Disputed fee", placed_by: "u", placed_at: "2026-10-01T00:00:00Z", expires_on: null, released_by: null, released_at: null, ...overrides });
-const holdsPanel = (holds, viewer) => render(h(collections.HoldsPanel, { holds, clientId: "c-1", clientNames: {}, viewer, today: "2026-10-09", onPlace: noop, onRelease: noop }));
+const holdsPanel = (holds, viewer) => render(h(collections.HoldsPanel, { holds, clientId: "c-1", clientNames: {}, viewer, today: TODAY, onPlace: noop, onRelease: noop }));
+const banner = (holds, clientId = "c-1") => render(h(collections.ActiveHoldBanner, { holds, clientId, clientNames: { "c-1": "Acme LLC" }, invoiceNumbers: { "inv-1": "TAP-1" }, today: TODAY }));
 
-check("active hold banner appears only while a hold is unreleased", () => {
-  const active = render(h(collections.ActiveHoldBanner, { holds: [hold()], clientId: "c-1", clientNames: { "c-1": "Acme LLC" } }));
+check("hold banner appears only while a hold is in force, with its scope", () => {
+  const active = banner([hold()]);
   assert.match(active, /data-active-hold-banner/);
-  assert.match(active, /Acme LLC[\s\S]*approvals are blocked/);
-  assert.equal(render(h(collections.ActiveHoldBanner, { holds: [hold({ released_at: "2026-10-05T00:00:00Z" })], clientId: "c-1", clientNames: {} })), "");
-  assert.equal(render(h(collections.ActiveHoldBanner, { holds: [hold()], clientId: "c-2", clientNames: {} })), "");
+  assert.match(active, /Acme LLC\. Escalation[\s\S]*blocked/);
+  assert.match(banner([hold({ invoice_id: "inv-1" })]), /Acme LLC \(invoice TAP-1\)/);
+  assert.equal(banner([hold({ released_at: "2026-10-05T00:00:00Z" })]), "");
+  assert.equal(banner([hold({ expires_on: "2026-10-01" })]), "", "expired holds no longer block");
+  assert.equal(banner([hold()], "c-2"), "");
 });
 
 check("Owner/Admin can place and release holds", () => {
@@ -208,15 +214,17 @@ check("staff and managers cannot place or release holds", () => {
   }
 });
 
-check("an unreleased hold past its review date still shows as active", () => {
+check("an unreleased hold past its review date shows as expired and no longer blocking", () => {
   const html = holdsPanel([hold({ expires_on: "2026-10-01" })], owner);
-  assert.match(html, /data-hold-state="active"/);
-  assert.match(html, /still blocks until released/);
+  assert.match(html, /data-hold-state="expired"/);
+  assert.match(html, /Expired, not released/);
+  assert.match(html, /no longer blocks/);
+  assert.match(html, />Release hold</, "Owner/Admin can still close it out");
 });
 
 // --- Collections events and approval boundaries ---------------------------
 const request = { id: "e-1", client_id: "c-1", invoice_id: null, event_type: "formal_notice_requested", stage: null, occurred_at: "2026-10-02T09:00:00Z", actor: "u", detail: { note: "Third reminder ignored" }, approves_event_id: null };
-const eventsPanel = (events, holds, viewer) => render(h(collections.EventsPanel, { events, holds, receivables: [receivable], clientId: "c-1", clientNames: {}, viewer, onLog: noop, onApprove: noop }));
+const eventsPanel = (events, holds, viewer) => render(h(collections.EventsPanel, { events, holds, receivables: [receivable], clientId: "c-1", clientNames: {}, viewer, today: TODAY, onLog: noop, onApprove: noop }));
 
 check("Owner/Admin get an approve button", () => {
   const html = eventsPanel([request], [], owner);
@@ -232,11 +240,18 @@ check("staff and managers see the Owner/Admin boundary instead of an approve but
   }
 });
 
-check("an active hold blocks approval even for Owner/Admin", () => {
+check("a client-wide hold blocks approval even for Owner/Admin and warns before requesting", () => {
   const html = eventsPanel([request], [hold()], owner);
   assert.match(html, /data-approval-state="blocked_by_hold"/);
   assert.match(html, /data-blocked-by-hold/);
   assert.doesNotMatch(html, />Approve formal notice<\/button>/);
+  assert.match(html, /data-requests-blocked/);
+});
+
+check("an invoice hold does not block a client-level request", () => {
+  const html = eventsPanel([request], [hold({ invoice_id: "inv-1" })], owner);
+  assert.match(html, /data-approval-state="can_approve"/);
+  assert.doesNotMatch(html, /data-requests-blocked/);
 });
 
 check("approved requests leave the queue and the timeline shows details", () => {

@@ -14,6 +14,8 @@ export default function CollectionsPage() {
   const clientNames = useMemo(() => Object.fromEntries(clients.map((client) => [client.id, client.name])), [clients]);
   const holds = readyData(state.holds, []);
   const receivables = readyData(state.receivables, []);
+  const invoiceNumbers = useMemo(() => Object.fromEntries(receivables.map((row) => [row.id, row.invoice_number])), [receivables]);
+  const today = todayIso();
 
   return (
     <div style={{ padding: "20px 16px", maxWidth: 1280, margin: "0 auto" }}>
@@ -25,12 +27,12 @@ export default function CollectionsPage() {
         <ClientPicker clients={clients} value={clientId} onChange={setClientId} />
       </div>
 
-      <ActiveHoldBanner holds={holds} clientId={clientId} clientNames={clientNames} />
+      <ActiveHoldBanner holds={holds} clientId={clientId} clientNames={clientNames} invoiceNumbers={invoiceNumbers} today={today} />
 
       <section style={{ ...panelStyle, marginTop: 12 }} aria-label="Receivables">
         <h2 style={headingStyle}>Receivables</h2>
         <SectionView state={state.receivables} label="receivables">
-          {(rows) => <ReceivablesTable receivables={rows.filter((row) => row.status === "issued")} clientNames={clientNames} />}
+          {(rows) => <ReceivablesTable receivables={rows} clientNames={clientNames} />}
         </SectionView>
       </section>
 
@@ -46,6 +48,7 @@ export default function CollectionsPage() {
                 clientId={clientId}
                 clientNames={clientNames}
                 viewer={viewer}
+                today={today}
                 onLog={(values) => mutate(() => api.logEvent({ client_id: values.client_id, event_type: values.event_type, invoice_id: values.invoice_id || null, detail: values.note.trim() ? { note: values.note.trim() } : {} }))}
                 onApprove={(eventId, approvalType) => mutate(() => api.approveEvent(eventId, approvalType))}
               />
@@ -62,7 +65,7 @@ export default function CollectionsPage() {
                 clientId={clientId}
                 clientNames={clientNames}
                 viewer={viewer}
-                today={todayIso()}
+                today={today}
                 onPlace={(values) => mutate(() => api.placeHold({ client_id: values.client_id, reason: values.reason.trim(), expires_on: values.expires_on || null }))}
                 onRelease={(holdId) => mutate(() => api.releaseHold(holdId))}
               />

@@ -84,6 +84,7 @@ await check("mutations call the contract routes with the contract bodies", async
     "POST /api/collections/events/approve": [201, { event: {} }],
     "PATCH /api/collections/holds": [200, { hold: {} }],
     "DELETE /api/billing/invoice-lines": [200, { deleted: true }],
+    "DELETE /api/billing/invoices/inv-1": [200, { deleted: true }],
   });
   const client = api.createBillingApi(fetchImpl);
   await client.issueInvoice("inv-1");
@@ -92,6 +93,7 @@ await check("mutations call the contract routes with the contract bodies", async
   await client.approveEvent("e-1", "escalated");
   await client.releaseHold("h-1");
   await client.deleteLine("l-1");
+  await client.deleteDraftInvoice("inv-1");
   assert.deepEqual(calls.map((c) => `${c.method} ${c.url}`), [
     "POST /api/billing/invoices/inv-1",
     "POST /api/billing/invoices/inv-1",
@@ -99,6 +101,7 @@ await check("mutations call the contract routes with the contract bodies", async
     "POST /api/collections/events/approve",
     "PATCH /api/collections/holds",
     "DELETE /api/billing/invoice-lines?id=l-1",
+    "DELETE /api/billing/invoices/inv-1",
   ]);
   assert.deepEqual(calls[0].body, { action: "issue" });
   assert.deepEqual(calls[1].body, { action: "void", reason: "Duplicate" });
@@ -216,26 +219,42 @@ await check("void invoices allow no actions", () => {
 const hold = (overrides = {}) => ({ id: "h-1", client_id: "c-1", invoice_id: null, reason: "Disputed", placed_by: "u", placed_at: "2026-10-01T00:00:00Z", expires_on: null, released_by: null, released_at: null, ...overrides });
 const event = (overrides = {}) => ({ id: "e-1", client_id: "c-1", invoice_id: null, event_type: "escalation_requested", stage: null, occurred_at: "2026-10-02T00:00:00Z", actor: "u", detail: {}, approves_event_id: null, ...overrides });
 
-await check("a hold is active until released, even after its expiry date", () => {
-  const expired = hold({ expires_on: "2026-01-01" });
-  assert.equal(vm.activeHolds([expired], "c-1").length, 1);
-  assert.equal(vm.holdExpiryPassed(expired, "2026-10-09"), true);
-  assert.equal(vm.activeHolds([hold({ released_at: "2026-10-05T00:00:00Z" })], "c-1").length, 0);
-  assert.equal(vm.activeHolds([hold()], "c-2").length, 0, "holds are scoped to their client");
+const TODAY = "2026-10-09";
+
+await check("a hold is in force until released or past its review date (server rule)", () => {
+  assert.equal(vm.activeHolds([hold()], TODAY, "c-1").length, 1);
+  assert.equal(vm.activeHolds([hold({ expires_on: TODAY })], TODAY, "c-1").length, 1, "the review date itself still counts");
+  const expired = hold({ expires_on: "2026-10-08" });
+  assert.equal(vm.holdExpiryPassed(expired, TODAY), true);
+  assert.equal(vm.activeHolds([expired], TODAY, "c-1").length, 0);
+  assert.equal(vm.activeHolds([hold({ released_at: "2026-10-05T00:00:00Z" })], TODAY, "c-1").length, 0);
+  assert.equal(vm.activeHolds([hold()], TODAY, "c-2").length, 0, "holds are scoped to their client");
+});
+
+await check("hold scope: client-wide blocks everything, an invoice hold blocks only that invoice", () => {
+  const invoiceHold = hold({ invoice_id: "inv-1" });
+  assert.equal(vm.holdBlocks([hold()], TODAY, "c-1", null), true);
+  assert.equal(vm.holdBlocks([hold()], TODAY, "c-1", "inv-9"), true);
+  assert.equal(vm.holdBlocks([invoiceHold], TODAY, "c-1", "inv-1"), true);
+  assert.equal(vm.holdBlocks([invoiceHold], TODAY, "c-1", "inv-2"), false);
+  assert.equal(vm.holdBlocks([invoiceHold], TODAY, "c-1", null), false, "matches the server: an invoice hold does not block a client-level request");
 });
 
 await check("approval states: Owner/Admin can approve, others are told it requires Owner/Admin", () => {
-  for (const viewer of [owner, admin]) assert.equal(vm.approvalRequests([event()], [], viewer)[0].state, "can_approve");
-  for (const viewer of [staff, manager]) assert.equal(vm.approvalRequests([event()], [], viewer)[0].state, "requires_owner_admin");
+  for (const viewer of [owner, admin]) assert.equal(vm.approvalRequests([event()], [], viewer, TODAY)[0].state, "can_approve");
+  for (const viewer of [staff, manager]) assert.equal(vm.approvalRequests([event()], [], viewer, TODAY)[0].state, "requires_owner_admin");
 });
 
-await check("an active hold blocks approval for everyone", () => {
-  assert.equal(vm.approvalRequests([event()], [hold()], owner)[0].state, "blocked_by_hold");
-  assert.equal(vm.approvalRequests([event()], [hold({ released_at: "2026-10-05T00:00:00Z" })], owner)[0].state, "can_approve");
+await check("a hold in force blocks approval for everyone; released or expired holds do not", () => {
+  assert.equal(vm.approvalRequests([event()], [hold()], owner, TODAY)[0].state, "blocked_by_hold");
+  assert.equal(vm.approvalRequests([event()], [hold({ released_at: "2026-10-05T00:00:00Z" })], owner, TODAY)[0].state, "can_approve");
+  assert.equal(vm.approvalRequests([event()], [hold({ expires_on: "2026-10-01" })], owner, TODAY)[0].state, "can_approve");
+  assert.equal(vm.approvalRequests([event({ invoice_id: "inv-2" })], [hold({ invoice_id: "inv-1" })], owner, TODAY)[0].state, "can_approve");
+  assert.equal(vm.approvalRequests([event({ invoice_id: "inv-1" })], [hold({ invoice_id: "inv-1" })], owner, TODAY)[0].state, "blocked_by_hold");
 });
 
 await check("approved requests are recognised and request types map to approval types", () => {
-  const requests = vm.approvalRequests([event(), event({ id: "e-2", event_type: "escalated", approves_event_id: "e-1" })], [], owner);
+  const requests = vm.approvalRequests([event(), event({ id: "e-2", event_type: "escalated", approves_event_id: "e-1" })], [], owner, TODAY);
   assert.equal(requests.length, 1);
   assert.equal(requests[0].state, "approved");
   assert.equal(vm.approvalTypeFor("formal_notice_requested"), "formal_notice_approved");

@@ -64,6 +64,11 @@ export default function BillingPage() {
                 onUpdateLine: (lineId, values) => mutate(() => api.updateLine(lineId, { description: values.description.trim(), quantity: values.quantity.trim(), unit_amount: values.unit_amount.trim(), period: values.period || null })),
                 onDeleteLine: (lineId) => mutate(() => api.deleteLine(lineId)),
                 onIssue: () => mutate(() => api.issueInvoice(selectedInvoice.id)),
+                onDeleteDraft: async () => {
+                  const result = await mutate(() => api.deleteDraftInvoice(selectedInvoice.id));
+                  if (result.ok) setSelectedInvoiceId(null);
+                  return result;
+                },
                 onVoid: (reason) => mutate(() => api.voidInvoice(selectedInvoice.id, reason.trim())),
               }}
             />
