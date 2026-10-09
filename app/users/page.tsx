@@ -15,7 +15,7 @@ interface CurrentUser {
   id: string; name: string; role: string; modules: string[]; canManageUsers?: boolean;
 }
 
-const MODULES_LIST = ["Tax Returns", "Clients", "Financials", "Payroll", "Sales Tax", "1099s", "Renditions", "Annual Reports", "Timesheet", "Vault", "Workload", "Users & Access", "Billing", "Support"];
+const MODULES_LIST = ["Tax Returns", "Clients", "Financials", "Payroll", "Sales Tax", "1099s", "Renditions", "Annual Reports", "Timesheet", "Vault", "Workload", "Users & Access", "Billing", "Collections", "Support"];
 const ROLE_OPTIONS = ["Owner / Admin", "Manager", "Staff", "Offshore"];
 
 export default function UsersPage() {

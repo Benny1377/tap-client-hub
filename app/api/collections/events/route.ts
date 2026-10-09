@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { requireBillingAccess } from "@/lib/billing-access";
+import { requireCollectionsAccess, requireLedgerReadAccess } from "@/lib/billing-access";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET(request: NextRequest) {
-  const access = await requireBillingAccess();
+  const access = await requireLedgerReadAccess();
   if (access.response) return access.response;
   const db = createAdminClient();
   let query = db.from("collection_events").select("*").order("occurred_at", { ascending: false }).limit(500);
@@ -18,7 +18,7 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const access = await requireBillingAccess();
+  const access = await requireCollectionsAccess();
   if (access.response) return access.response;
   let body: any;
   try { body = await request.json(); } catch { return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 }); }

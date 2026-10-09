@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { requireBillingPowerUser, requireBillingAccess } from "@/lib/billing-access";
+import { requireBillingPowerUser, requireLedgerReadAccess } from "@/lib/billing-access";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET(request: NextRequest) {
-  const access = await requireBillingAccess();
+  const access = await requireLedgerReadAccess();
   if (access.response) return access.response;
   const db = createAdminClient();
   let query = db.from("collection_holds").select("*").order("placed_at", { ascending: false });

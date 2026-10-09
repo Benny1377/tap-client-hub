@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { requireBillingAccess } from "@/lib/billing-access";
+import { requireLedgerReadAccess } from "@/lib/billing-access";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET(request: NextRequest) {
-  const access = await requireBillingAccess();
+  const access = await requireLedgerReadAccess();
   if (access.response) return access.response;
   const db = createAdminClient();
   const clientId = request.nextUrl.searchParams.get("client_id");

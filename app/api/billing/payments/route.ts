@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { requireBillingAccess } from "@/lib/billing-access";
+import { requireBillingAccess, requireLedgerReadAccess } from "@/lib/billing-access";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET(request: NextRequest) {
-  const access = await requireBillingAccess();
+  const access = await requireLedgerReadAccess();
   if (access.response) return access.response;
   const db = createAdminClient();
   let query = db.from("payments").select("*, payment_allocations(*)").order("received_on", { ascending: false });
@@ -25,13 +25,13 @@ export async function POST(request: NextRequest) {
   if (!body?.client_id || !body?.received_on || !body?.amount || !body?.method) {
     return NextResponse.json({ error: "client_id, received_on, amount, and method are required" }, { status: 422 });
   }
-  const amount = Number(body.amount);
-  if (!Number.isFinite(amount) || amount <= 0 || Math.round(amount * 100) !== amount * 100) {
+  const amount = String(body.amount).trim();
+  if (!/^\d+(\.\d{1,2})?$/.test(amount) || Number(amount) <= 0) {
     return NextResponse.json({ error: "amount must be positive and have at most two decimals" }, { status: 422 });
   }
   const db = createAdminClient();
   const { data, error } = await db.from("payments").insert({
-    client_id: body.client_id, received_on: body.received_on, amount: amount.toFixed(2),
+    client_id: body.client_id, received_on: body.received_on, amount,
     method: body.method, reference: body.reference ?? null, created_by: access.identity?.id || null,
   }).select("*, payment_allocations(*)").single();
   if (error) return NextResponse.json({ error: error.message }, { status: error.code === "23514" ? 422 : 500 });
