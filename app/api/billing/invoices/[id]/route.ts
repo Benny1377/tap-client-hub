@@ -24,6 +24,16 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   return NextResponse.json({ invoice: data });
 }
 
+export async function DELETE(_request: Request, { params }: { params: Promise<{ id: string }> }) {
+  const access = await requireBillingAccess();
+  if (access.response) return access.response;
+  const { id } = await params;
+  const db = createAdminClient();
+  const { error } = await db.from("invoices").delete().eq("id", id).eq("status", "draft");
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  return NextResponse.json({ deleted: true });
+}
+
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   let body: any;

@@ -23,9 +23,14 @@ export async function POST(request: NextRequest) {
   let body: any;
   try { body = await request.json(); } catch { return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 }); }
   if (!body?.client_id || !body?.event_type) return NextResponse.json({ error: "client_id and event_type are required" }, { status: 422 });
-  const allowed = new Set(["note", "reminder_logged", "call_logged", "promise_to_pay", "escalation_requested", "formal_notice_requested", "hold_placed", "hold_released"]);
+  const allowed = new Set(["note", "reminder_logged", "call_logged", "promise_to_pay", "escalation_requested", "formal_notice_requested"]);
   if (!allowed.has(body.event_type)) return NextResponse.json({ error: "Invalid event_type" }, { status: 422 });
   const db = createAdminClient();
+  if (["escalation_requested", "formal_notice_requested"].includes(body.event_type)) {
+    const { data: hold } = await db.from("collection_holds").select("id, invoice_id, expires_on").eq("client_id", body.client_id).is("released_at", null).limit(20);
+    const activeHold = (hold || []).find((item: any) => (!item.expires_on || item.expires_on >= new Date().toISOString().slice(0, 10)) && (!item.invoice_id || item.invoice_id === body.invoice_id));
+    if (activeHold) return NextResponse.json({ error: "Action blocked by an active Collections hold" }, { status: 409 });
+  }
   const { data, error } = await db.from("collection_events").insert({
     client_id: body.client_id, invoice_id: body.invoice_id ?? null, event_type: body.event_type,
     stage: body.stage ?? null, actor: access.identity?.id || null, detail: body.detail ?? {},
