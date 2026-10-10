@@ -34,10 +34,16 @@ export function ActiveHoldBanner({ holds, clientId, clientNames, invoiceNumbers,
 }) {
   const active = activeHolds(holds, today, clientId);
   if (active.length === 0) return null;
-  const scopes = [...new Set(active.map((hold) => {
-    const client = clientNames[hold.client_id] || hold.client_id;
-    return hold.invoice_id ? `${client} (invoice ${invoiceNumbers[hold.invoice_id] || hold.invoice_id})` : client;
-  }))];
+  const byClient = new Map<string, Set<string>>();
+  for (const hold of active) {
+    const scopes = byClient.get(hold.client_id) || new Set<string>();
+    scopes.add(hold.invoice_id ? `invoice ${invoiceNumbers[hold.invoice_id] || hold.invoice_id}` : "whole client");
+    byClient.set(hold.client_id, scopes);
+  }
+  const scopes = [...byClient.entries()].map(([id, parts]) => {
+    const list = [...parts].sort((a, b) => (a === "whole client" ? -1 : b === "whole client" ? 1 : a.localeCompare(b)));
+    return `${clientNames[id] || id} (${list.join(", ")})`;
+  });
   return (
     <div role="status" data-active-hold-banner style={{ background: "var(--amber-soft)", border: "1px solid #e8d3a6", color: "#7a5210", borderRadius: 12, padding: "10px 14px", fontSize: 13.5, margin: "12px 0" }}>
       <strong>Collections hold in force</strong> for {scopes.join(", ")}. Escalation and formal-notice requests and approvals are blocked for that scope until the hold is released or its review date passes.
@@ -143,6 +149,9 @@ export function EventsPanel({ events, holds, invoiceOptions, clientId, clientNam
   const clientWideHold = clientId ? holdBlocks(holds, today, clientId, null) : false;
   const clientInvoices = invoiceOptions.filter((option) => option.client_id === clientId);
   const invoiceNumbers = Object.fromEntries(invoiceOptions.map((option) => [option.id, option.invoice_number]));
+  const heldInvoices = clientWideHold ? [] : [...new Set(
+    activeHolds(holds, today, clientId).filter((hold) => hold.invoice_id).map((hold) => invoiceNumbers[hold.invoice_id as string] || (hold.invoice_id as string)),
+  )];
   const describe = (event: CollectionEvent) =>
     `${clientNames[event.client_id] || event.client_id}${event.invoice_id ? ` · invoice ${invoiceNumbers[event.invoice_id] || event.invoice_id}` : ""} · ${event.occurred_at.slice(0, 10)}`;
 
@@ -192,6 +201,11 @@ export function EventsPanel({ events, holds, invoiceOptions, clientId, clientNam
         <section aria-label="Log activity" style={{ maxWidth: 420 }}>
           <h3 style={{ fontSize: 14, margin: "14px 0 6px" }}>Log activity</h3>
           {clientWideHold ? <p data-requests-blocked style={hintStyle}>A client-wide hold is in force, so escalation and formal-notice requests will be refused. Notes, reminders, calls, and promises to pay can still be logged.</p> : null}
+          {heldInvoices.length ? (
+            <p data-invoice-holds style={hintStyle}>
+              {heldInvoices.length === 1 ? "Invoice" : "Invoices"} {heldInvoices.join(", ")} {heldInvoices.length === 1 ? "has" : "have"} a hold, so escalation and formal-notice requests for {heldInvoices.length === 1 ? "it" : "them"} will be refused.
+            </p>
+          ) : null}
           <LedgerForm
             key={`event-${clientId}`}
             fields={[

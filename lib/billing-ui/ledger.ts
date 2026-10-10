@@ -31,7 +31,7 @@ export function loadingLedger(): LedgerState {
 }
 
 function toSection<R, T>(result: ApiResult<R>, pick: (data: R) => T): SectionState<T> {
-  return result.ok === false ? { status: "error", kind: result.kind, message: result.message } : { status: "ready", data: pick(result.data) };
+  return result.ok === false ? { status: "error", kind: result.kind, message: result.message, code: result.code } : { status: "ready", data: pick(result.data) };
 }
 
 /**

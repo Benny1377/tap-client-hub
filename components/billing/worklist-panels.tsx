@@ -7,14 +7,15 @@ import type { Viewer } from "@/lib/billing-ui/types";
 import { DISPOSITION_LABELS, formatMoney, PREVIEW_REASON_LABELS, stageLabel, viewerIsPowerUser } from "@/lib/billing-ui/view-model";
 import { buttonStyle, cellStyle, ErrorBanner, hintStyle, OwnerAdminOnly, quietButtonStyle, tableStyle } from "./ui";
 
-const cardStyle: CSSProperties = { flex: "1 1 150px", border: "1px solid var(--line)", borderRadius: 12, padding: "10px 12px", minWidth: 0 };
+const cardStyle: CSSProperties = { border: "1px solid var(--line)", borderRadius: 12, padding: "10px 12px", minWidth: 0 };
+const cardGridStyle: CSSProperties = { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(100px, 1fr))", gap: 10 };
 const flagStyle: CSSProperties = { display: "inline-block", borderRadius: 999, padding: "1px 8px", fontSize: 11.5, fontWeight: 600, marginRight: 4, marginTop: 2 };
 
 function Card({ label, value, testId }: { label: string; value: string; testId: string }) {
   return (
     <div style={cardStyle} data-summary={testId}>
       <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".06em", textTransform: "uppercase", color: "var(--muted)" }}>{label}</div>
-      <div style={{ fontSize: 18, fontWeight: 700, marginTop: 2 }}>{value}</div>
+      <div style={{ fontSize: 16, fontWeight: 700, marginTop: 2, overflowWrap: "anywhere" }}>{value}</div>
     </div>
   );
 }
@@ -25,7 +26,7 @@ export function WorklistSummary({ worklist }: { worklist: CollectionsReceivables
   return (
     <div>
       <p style={hintStyle}>As of {worklist.as_of_date} (firm date). Amounts come from Billing.</p>
-      <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+      <div style={cardGridStyle}>
         <Card testId="gross" label="Open balance" value={formatMoney(summary.gross_open_balance)} />
         <Card testId="credit" label="Unallocated credit" value={formatMoney(summary.unallocated_credit)} />
         <Card testId="net" label="Net AR estimate" value={formatMoney(summary.net_ar_estimate)} />
@@ -33,7 +34,7 @@ export function WorklistSummary({ worklist }: { worklist: CollectionsReceivables
         <Card testId="invoices" label="Open invoices" value={String(summary.open_invoice_count)} />
         <Card testId="oldest" label="Oldest days past due" value={String(summary.oldest_days_past_due)} />
       </div>
-      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 10 }}>
+      <div style={{ ...cardGridStyle, marginTop: 10 }}>
         <Card testId="aging-current" label="Current" value={formatMoney(summary.aging.current)} />
         <Card testId="aging-1-30" label="1–30 days" value={formatMoney(summary.aging.days_1_30)} />
         <Card testId="aging-31-60" label="31–60 days" value={formatMoney(summary.aging.days_31_60)} />
@@ -156,7 +157,7 @@ export function WorklistTable({ worklist, onSelectClient, onPage }: {
                             <td style={cellStyle}>{formatMoney(invoice.balance)}</td>
                             <td style={cellStyle}>{invoice.days_past_due}</td>
                             <td style={cellStyle}>
-                              {invoice.next_stage ? stageLabel(invoice.next_stage) : "Up to date"}
+                              {invoice.next_stage ? stageLabel(invoice.next_stage) : invoice.days_past_due > 0 ? "Ladder complete — follow up manually" : "Not due yet"}
                               {invoice.on_hold ? <div style={{ color: "#7a5210" }}>On hold</div> : null}
                               {invoice.below_minimum ? <div style={{ color: "var(--muted)" }}>Below minimum</div> : null}
                             </td>
@@ -265,7 +266,7 @@ export function AutomationPreviewPanel({ viewer, runPreview }: {
           {pending ? "Building preview…" : "Run preview"}
         </button>
       </div>
-      {result && result.ok === false ? <ErrorBanner kind={result.kind} message={result.message} /> : null}
+      {result && result.ok === false ? <ErrorBanner kind={result.kind} message={result.message} code={result.code} /> : null}
       {result && result.ok === true ? <PreviewResults preview={result.data} onPage={(offset) => run(offset)} /> : null}
     </div>
   );

@@ -94,7 +94,7 @@ export function InvoiceDetail({ invoice, receivable, viewer, handlers }: {
         <StatusBadge status={invoice.status} />
       </div>
       <p style={hintStyle}>
-        Issued {invoice.issue_date} · Due {invoice.due_date}
+        {invoice.status === "draft" ? "Issue date" : "Issued"} {invoice.issue_date} · Due {invoice.due_date}
         {receivable ? <> · Total {formatMoney(receivable.total)} · Paid {formatMoney(receivable.allocated)} · Balance <strong>{formatMoney(receivable.balance)}</strong>{receivable.days_past_due > 0 ? ` · ${receivable.days_past_due} days past due` : ""}</> : null}
       </p>
       {invoice.memo ? <p style={hintStyle}>{invoice.memo}</p> : null}
@@ -128,6 +128,8 @@ export function InvoiceDetail({ invoice, receivable, viewer, handlers }: {
                     <details>
                       <summary style={{ cursor: "pointer", fontSize: 12.5 }}>Edit</summary>
                       <LedgerForm
+                        key={`${line.id}-${line.description}-${line.period ?? ""}-${line.quantity}-${line.unit_amount}`}
+                        resetOnSuccess={false}
                         fields={lineFields}
                         initialValues={{ description: line.description, period: line.period || "", quantity: String(line.quantity), unit_amount: String(line.unit_amount) }}
                         validate={validateLine}
@@ -160,7 +162,8 @@ export function InvoiceDetail({ invoice, receivable, viewer, handlers }: {
           <section style={{ flex: "1 1 240px" }} aria-label="Edit draft">
             <h3 style={{ fontSize: 14, margin: "6px 0" }}>Edit draft</h3>
             <LedgerForm
-              key={`${invoice.id}-header`}
+              key={`${invoice.id}-header-${invoice.invoice_number}-${invoice.issue_date}-${invoice.due_date}-${invoice.memo ?? ""}`}
+              resetOnSuccess={false}
               fields={[
                 { name: "invoice_number", label: "Invoice number" },
                 { name: "issue_date", label: "Issue date", type: "date" },

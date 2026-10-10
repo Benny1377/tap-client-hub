@@ -19,11 +19,7 @@ export default function BillingPage() {
 
   return (
     <div style={{ padding: "20px 16px", maxWidth: 1280, margin: "0 auto" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-        <div>
-          <h1 style={{ ...headingStyle, fontSize: 26, margin: 0 }}>Billing</h1>
-          <p style={hintStyle}>Invoices, payments, and balances. Balances come from the server and refresh after every change.</p>
-        </div>
+      <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
         <ClientPicker clients={clients} value={clientId} onChange={(id) => { setClientId(id); setSelectedInvoiceId(null); }} />
       </div>
 

@@ -1,34 +1,36 @@
 "use client";
 
-import { useState, type CSSProperties, type ReactNode } from "react";
+import { useId, useState, type CSSProperties, type ReactNode } from "react";
 import type { ApiErrorKind, ApiResult } from "@/lib/billing-ui/api";
 import type { FieldErrors } from "@/lib/billing-ui/validation";
 import { hasErrors } from "@/lib/billing-ui/validation";
-import { errorHeadline, STATUS_LABELS, type SectionState } from "@/lib/billing-ui/view-model";
+import { friendlyError, STATUS_LABELS, type SectionState } from "@/lib/billing-ui/view-model";
 
 export const panelStyle: CSSProperties = { background: "var(--card)", border: "1px solid var(--line)", borderRadius: 16, padding: "18px 20px", minWidth: 0 };
 export const headingStyle: CSSProperties = { fontFamily: '"Fraunces",Georgia,serif', fontWeight: 600, fontSize: 19, margin: "0 0 10px" };
 export const hintStyle: CSSProperties = { color: "var(--muted)", fontSize: 13, lineHeight: 1.5, margin: "4px 0 10px" };
 const labelStyle: CSSProperties = { display: "block", fontSize: 11, fontWeight: 700, letterSpacing: ".06em", textTransform: "uppercase", color: "var(--muted)", margin: "10px 0 4px" };
-const inputStyle: CSSProperties = { width: "100%", border: "1px solid var(--line)", borderRadius: 10, padding: "8px 10px", fontSize: 14, background: "#fff", color: "var(--ink)" };
+// Border longhands only: mixing `border` with an error `borderColor` breaks React re-renders.
+const inputStyle: CSSProperties = { width: "100%", borderWidth: 1, borderStyle: "solid", borderColor: "var(--line)", borderRadius: 10, padding: "8px 10px", fontSize: 14, background: "#fff", color: "var(--ink)" };
 export const buttonStyle: CSSProperties = { border: "1px solid var(--teal)", background: "var(--teal)", color: "#fff", borderRadius: 10, padding: "7px 14px", fontSize: 13, fontWeight: 600, cursor: "pointer" };
 export const quietButtonStyle: CSSProperties = { ...buttonStyle, background: "#fff", color: "var(--teal)" };
 export const tableStyle: CSSProperties = { width: "100%", borderCollapse: "collapse", fontSize: 13.5 };
 export const cellStyle: CSSProperties = { borderBottom: "1px solid var(--line)", padding: "8px 6px", textAlign: "left", verticalAlign: "top" };
 
-export function ErrorBanner({ kind, message }: { kind: ApiErrorKind; message: string }) {
+export function ErrorBanner({ kind, message, code }: { kind: ApiErrorKind; message: string; code?: string }) {
   const tone = kind === "forbidden" || kind === "unauthorized" ? { background: "var(--amber-soft)", color: "#7a5210" } : { background: "var(--red-soft)", color: "var(--red)" };
+  const { headline, detail } = friendlyError(kind, code, message);
   return (
-    <div role="alert" data-error-kind={kind} style={{ ...tone, borderRadius: 10, padding: "10px 12px", fontSize: 13, margin: "8px 0" }}>
-      <strong>{errorHeadline(kind)}</strong>
-      {message ? <div style={{ marginTop: 2 }}>{message}</div> : null}
+    <div role="alert" data-error-kind={kind} data-error-code={code || undefined} style={{ ...tone, borderRadius: 10, padding: "10px 12px", fontSize: 13, margin: "8px 0" }}>
+      <strong>{headline}</strong>
+      {detail ? <div style={{ marginTop: 2 }}>{detail}</div> : null}
     </div>
   );
 }
 
 export function SectionView<T>({ state, label, children }: { state: SectionState<T>; label: string; children: (data: T) => ReactNode }) {
   if (state.status === "loading") return <p role="status" style={hintStyle}>Loading {label}…</p>;
-  if (state.status === "error") return <ErrorBanner kind={state.kind} message={state.message} />;
+  if (state.status === "error") return <ErrorBanner kind={state.kind} message={state.message} code={state.code} />;
   return <>{children(state.data)}</>;
 }
 
@@ -62,7 +64,7 @@ export interface FieldConfig {
 }
 
 export type FormValues = Record<string, string>;
-type ServerError = { kind: ApiErrorKind; message: string } | null;
+type ServerError = { kind: ApiErrorKind; message: string; code?: string } | null;
 
 export interface LedgerFormViewProps {
   fields: FieldConfig[];
@@ -76,18 +78,21 @@ export interface LedgerFormViewProps {
 }
 
 export function LedgerFormView({ fields, values, errors, serverError, submitting, submitLabel, onChange, onSubmit }: LedgerFormViewProps) {
+  // Several forms share field names on one page, so ids are scoped per form.
+  const formId = useId();
   return (
     <form noValidate onSubmit={(event) => { event.preventDefault(); onSubmit(); }}>
       {fields.map((field) => {
-        const id = `field-${field.name}`;
+        const id = `${formId}-${field.name}`;
         const error = errors[field.name];
         const common = {
           id,
           name: field.name,
+          "data-field": field.name,
           value: values[field.name] ?? "",
           "aria-invalid": error ? true : undefined,
           "aria-describedby": error ? `${id}-error` : undefined,
-          style: { ...inputStyle, ...(error ? { borderColor: "var(--red)" } : {}) },
+          style: { ...inputStyle, borderColor: error ? "var(--red)" : "var(--line)" },
           onChange: (event: { target: { value: string } }) => onChange(field.name, event.target.value),
         };
         return (
@@ -110,7 +115,7 @@ export function LedgerFormView({ fields, values, errors, serverError, submitting
           </div>
         );
       })}
-      {serverError ? <ErrorBanner kind={serverError.kind} message={serverError.message} /> : null}
+      {serverError ? <ErrorBanner kind={serverError.kind} message={serverError.message} code={serverError.code} /> : null}
       <button type="submit" disabled={submitting} style={{ ...buttonStyle, marginTop: 12, opacity: submitting ? 0.6 : 1 }}>
         {submitting ? "Saving…" : submitLabel}
       </button>
@@ -124,9 +129,22 @@ export interface LedgerFormProps {
   validate: (values: FormValues) => FieldErrors;
   onSubmit: (values: FormValues) => Promise<ApiResult<unknown>>;
   submitLabel: string;
+  /**
+   * Clear the form after a successful save (create forms). Edit forms pass false
+   * and are re-keyed on the saved record, so they never fall back to stale values.
+   */
+  resetOnSuccess?: boolean;
 }
 
-export function LedgerForm({ fields, initialValues, validate, onSubmit, submitLabel }: LedgerFormProps) {
+/**
+ * What a form shows after a submit: create forms clear on success; edit forms and
+ * failed submits keep what the user typed (never the stale pre-save values).
+ */
+export function valuesAfterSubmit(succeeded: boolean, current: FormValues, initial: FormValues, resetOnSuccess: boolean) {
+  return succeeded && resetOnSuccess ? initial : current;
+}
+
+export function LedgerForm({ fields, initialValues, validate, onSubmit, submitLabel, resetOnSuccess = true }: LedgerFormProps) {
   const [values, setValues] = useState<FormValues>(initialValues);
   const [errors, setErrors] = useState<FieldErrors>({});
   const [serverError, setServerError] = useState<ServerError>(null);
@@ -140,8 +158,8 @@ export function LedgerForm({ fields, initialValues, validate, onSubmit, submitLa
     setSubmitting(true);
     const result = await onSubmit(values);
     setSubmitting(false);
-    if (result.ok === false) setServerError({ kind: result.kind, message: result.message });
-    else setValues(initialValues);
+    if (result.ok === false) setServerError({ kind: result.kind, message: result.message, code: result.code });
+    setValues(valuesAfterSubmit(result.ok === true, values, initialValues, resetOnSuccess));
   }
 
   return (
@@ -185,12 +203,29 @@ export function ActionButton({ label, onAction, quiet }: { label: string; onActi
           setError(null);
           const result = await onAction();
           setPending(false);
-          if (result.ok === false) setError({ kind: result.kind, message: result.message });
+          if (result.ok === false) setError({ kind: result.kind, message: result.message, code: result.code });
         }}
       >
         {pending ? "Working…" : label}
       </button>
-      {error ? <ErrorBanner kind={error.kind} message={error.message} /> : null}
+      {error ? <ErrorBanner kind={error.kind} message={error.message} code={error.code} /> : null}
     </span>
+  );
+}
+
+/** A two-step action: open it, read what will happen, then confirm. */
+export function ConfirmAction({ label, description, confirmLabel, onConfirm, testId }: {
+  label: string;
+  description: string;
+  confirmLabel: string;
+  onConfirm: () => Promise<ApiResult<unknown>>;
+  testId?: string;
+}) {
+  return (
+    <details data-confirm-action={testId}>
+      <summary style={{ cursor: "pointer", fontSize: 12.5, color: "var(--red)", fontWeight: 600 }}>{label}</summary>
+      <p style={{ ...hintStyle, margin: "4px 0 6px" }}>{description}</p>
+      <ActionButton label={confirmLabel} onAction={onConfirm} />
+    </details>
   );
 }

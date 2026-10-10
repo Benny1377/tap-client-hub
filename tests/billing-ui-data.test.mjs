@@ -365,6 +365,49 @@ await check("preview posts only the supplied options and never sends anything it
   assert.equal(calls.length, 2, "one request per preview; no follow-up delivery calls");
 });
 
+// --- Browser-test fixes (2026-10-10) ------------------------------------------
+await check("friendly errors: stable codes get plain headlines and internal prefixes are stripped", () => {
+  const conflict = vm.friendlyError("conflict", "LEDGER_CONFLICT", "invariant_violation: payment would be over-allocated");
+  assert.equal(conflict.headline, "That change would break the ledger's rules.");
+  assert.equal(conflict.detail, "Payment would be over-allocated");
+  const dup = vm.friendlyError("conflict", "INVOICE_NUMBER_EXISTS", "Invoice number already exists");
+  assert.match(dup.headline, /already in use/);
+  assert.doesNotMatch(dup.headline, /reloaded/, "a duplicate number is not described as a stale-data conflict");
+  assert.equal(vm.friendlyError("forbidden", "FORBIDDEN", "Forbidden").detail, "", "a bare 'Forbidden' adds nothing");
+  assert.match(vm.friendlyError("conflict", undefined, "conflict: action blocked by an active Collections hold").detail, /^Action blocked by an active Collections hold$/);
+  assert.equal(vm.cleanServerMessage("due_date must be on or after issue_date"), "due_date must be on or after issue_date", "unprefixed messages are left as they are");
+  assert.match(vm.friendlyError("server", "SOMETHING_NEW", "boom").headline, /went wrong on the server/, "unknown codes fall back to the kind");
+});
+
+await check("forms keep saved values after an edit and only create forms clear", () => {
+  const ui = loadTs("components/billing/ui.tsx");
+  const typed = { memo: "First memo" };
+  const initial = { memo: "" };
+  assert.deepEqual(ui.valuesAfterSubmit(true, typed, initial, false), typed, "edit forms keep the saved values");
+  assert.deepEqual(ui.valuesAfterSubmit(true, typed, initial, true), initial, "create forms clear after success");
+  assert.deepEqual(ui.valuesAfterSubmit(false, typed, initial, true), typed, "a failed submit keeps what was typed");
+  const panels = readFileSync(join(root, "components/billing/invoice-panels.tsx"), "utf8");
+  assert.equal((panels.match(/resetOnSuccess=\{false\}/g) || []).length, 2, "both the line edit and the draft edit forms keep saved values");
+  assert.match(panels, /key=\{`\$\{line\.id\}-\$\{line\.description\}/, "the line edit form remounts when the saved line changes");
+  assert.match(panels, /key=\{`\$\{invoice\.id\}-header-\$\{invoice\.invoice_number\}/, "the draft edit form remounts when the saved draft changes");
+});
+
+await check("the app shell titles Billing and Collections; pages do not repeat the title", () => {
+  const layout = readFileSync(join(root, "app/layout.tsx"), "utf8");
+  assert.match(layout, /"\/billing": \{ title: "Billing"/);
+  assert.match(layout, /"\/collections": \{ title: "Collections"/);
+  for (const page of ["app/billing/page.tsx", "app/collections/page.tsx"]) {
+    assert.doesNotMatch(readFileSync(join(root, page), "utf8"), /<h1/, `${page} leaves the title to the app shell`);
+  }
+});
+
+await check("the Collections page pages the call list on its own loader", () => {
+  const page = readFileSync(join(root, "app/collections/page.tsx"), "utf8");
+  assert.match(page, /useLedger\(clientId, \["holds", "events", "receivables"\]\)/);
+  assert.match(page, /useLedger\(clientId, \["worklist"\], \{ worklistLimit: WORKLIST_PAGE, worklistOffset, includeMeta: false \}\)/);
+  assert.match(page, /receivables\.receivables\.map/, "invoice names come from every issued invoice, not one call-list page");
+});
+
 await check("stage labels cover the five ladder steps", () => {
   assert.equal(vm.stageLabel(1), "1 · Friendly reminder");
   assert.equal(vm.stageLabel(5), "5 · Formal notice");

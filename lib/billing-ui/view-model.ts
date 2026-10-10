@@ -8,7 +8,7 @@ import type { CollectionEvent, CollectionHold, Invoice, Numeric, Receivable, Vie
 export type SectionState<T> =
   | { status: "loading" }
   | { status: "ready"; data: T }
-  | { status: "error"; kind: ApiErrorKind; message: string };
+  | { status: "error"; kind: ApiErrorKind; message: string; code?: string };
 
 export function viewerIsPowerUser(viewer: Viewer | null) {
   return Boolean(viewer && isPowerUser(viewer.role));
@@ -200,6 +200,40 @@ export function errorHeadline(kind: ApiErrorKind) {
     default:
       return "Something went wrong on the server.";
   }
+}
+
+/** Plain-language headlines for the server's stable error codes. */
+const CODE_HEADLINES: Record<string, string> = {
+  INVOICE_NUMBER_EXISTS: "That invoice number is already in use. Choose a different number.",
+  INVOICE_NOT_DRAFT: "This invoice is no longer a draft, so it can't be changed that way.",
+  INVOICE_NOT_ISSUED: "Only issued invoices can be voided.",
+  INVOICE_HAS_NO_LINES: "Add at least one line before issuing.",
+  INVOICE_REFERENCED: "This draft has Collections history, so it can't be deleted.",
+  LEDGER_CONFLICT: "That change would break the ledger's rules.",
+  COLLECTIONS_CONFLICT: "Collections can't record that right now.",
+  APPROVAL_CONFLICT: "That approval can't be recorded right now.",
+  APPROVAL_REQUIRED: "A matching approval is required first.",
+  HOLD_NOT_ACTIVE: "That hold is no longer active.",
+  INVALID_AMOUNT: "Check the amount: it must be positive with at most two decimals.",
+  INVALID_DATE_RANGE: "The due date must be on or after the issue date.",
+};
+
+const GENERIC_MESSAGES = new Set(["forbidden", "unauthorized"]);
+
+/** Strip internal prefixes such as "invariant_violation:" from a server message. */
+export function cleanServerMessage(message: string | undefined) {
+  const raw = String(message || "").trim();
+  const cleaned = raw.replace(/^(invariant_violation|conflict|not_found|invalid_input)\s*:\s*/i, "");
+  // Capitalise only text we unwrapped; other messages may start with a field name.
+  return cleaned !== raw && cleaned ? cleaned.charAt(0).toUpperCase() + cleaned.slice(1) : cleaned;
+}
+
+/** Headline from the stable code when known, else from the HTTP kind; detail is the cleaned server text. */
+export function friendlyError(kind: ApiErrorKind, code?: string, message?: string) {
+  const headline = (code && CODE_HEADLINES[code]) || errorHeadline(kind);
+  let detail = cleanServerMessage(message);
+  if (GENERIC_MESSAGES.has(detail.toLowerCase()) || headline.toLowerCase().includes(detail.toLowerCase())) detail = "";
+  return { headline, detail };
 }
 
 export function todayIso(now = new Date()) {
