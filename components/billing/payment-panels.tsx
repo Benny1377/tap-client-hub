@@ -1,7 +1,7 @@
 "use client";
 
 import type { ApiResult } from "@/lib/billing-ui/api";
-import type { Invoice, Payment, Receivable, Viewer } from "@/lib/billing-ui/types";
+import type { ClientAging, Invoice, Payment, Receivable, Viewer } from "@/lib/billing-ui/types";
 import { PAYMENT_METHODS, validateAllocation, validatePayment, validateReason } from "@/lib/billing-ui/validation";
 import { AGING_LABELS, formatMoney, receivableFor, viewerIsPowerUser } from "@/lib/billing-ui/view-model";
 import { ActionButton, cellStyle, hintStyle, LedgerForm, OwnerAdminOnly, StatusBadge, tableStyle, type FormValues } from "./ui";
@@ -39,6 +39,7 @@ export function PaymentsPanel({ payments, invoices, receivables, clientId, clien
                 <th style={cellStyle}>Received</th>
                 <th style={cellStyle}>Client</th>
                 <th style={cellStyle}>Amount</th>
+                <th style={cellStyle}>Unallocated</th>
                 <th style={cellStyle}>Method</th>
                 <th style={cellStyle}>Status</th>
                 <th style={cellStyle}>Allocations</th>
@@ -50,6 +51,7 @@ export function PaymentsPanel({ payments, invoices, receivables, clientId, clien
                   <td style={cellStyle}>{payment.received_on}</td>
                   <td style={cellStyle}>{clientNames[payment.client_id] || payment.client_id}</td>
                   <td style={cellStyle}>{formatMoney(payment.amount)}</td>
+                  <td style={cellStyle} data-unallocated={payment.unallocated_amount ?? ""}>{payment.unallocated_amount !== undefined ? formatMoney(payment.unallocated_amount) : "—"}</td>
                   <td style={cellStyle}>{payment.method}{payment.reference ? ` · ${payment.reference}` : ""}</td>
                   <td style={cellStyle}>
                     <StatusBadge status={payment.status} />
@@ -114,7 +116,10 @@ export function PaymentsPanel({ payments, invoices, receivables, clientId, clien
               <LedgerForm
                 key={`alloc-${clientId}`}
                 fields={[
-                  { name: "payment_id", label: "Payment", type: "select", options: recordedForClient.map((payment) => ({ value: payment.id, label: `${payment.received_on} · ${formatMoney(payment.amount)}` })) },
+                  { name: "payment_id", label: "Payment", type: "select", options: recordedForClient.map((payment) => ({
+                    value: payment.id,
+                    label: `${payment.received_on} · ${formatMoney(payment.amount)}${payment.unallocated_amount !== undefined ? ` · ${formatMoney(payment.unallocated_amount)} left` : ""}`,
+                  })) },
                   { name: "invoice_id", label: "Invoice", type: "select", options: issuedForClient.map((invoice) => {
                     const receivable = receivableFor(invoice.id, receivables);
                     return { value: invoice.id, label: `${invoice.invoice_number}${receivable ? ` · balance ${formatMoney(receivable.balance)}` : ""}` };
@@ -168,6 +173,19 @@ export function ReceivablesTable({ receivables, clientNames }: { receivables: Re
           ))}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+/** Per-client aging totals from the server's Billing read model. */
+export function ClientAgingSummary({ aging }: { aging: ClientAging | null }) {
+  if (!aging) return null;
+  const buckets: Array<[keyof ClientAging, string]> = [["current", "Current"], ["1_30", "1–30"], ["31_60", "31–60"], ["61_90", "61–90"], ["90_plus", "90+"]];
+  return (
+    <div data-client-aging={aging.client_id} style={{ display: "flex", gap: 14, flexWrap: "wrap", fontSize: 13, margin: "4px 0 10px" }}>
+      {buckets.map(([key, label]) => (
+        <span key={key} data-aging-total={key}><span style={{ color: "var(--muted)" }}>{label}:</span> <strong>{formatMoney(aging[key])}</strong></span>
+      ))}
     </div>
   );
 }

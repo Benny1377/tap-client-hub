@@ -125,6 +125,64 @@ export function approvalRequests(events: CollectionEvent[], holds: CollectionHol
   });
 }
 
+export type NoticeSendState = "blocked_by_hold" | "requires_owner_admin" | "can_record";
+
+export interface ApprovedNotice {
+  approval: CollectionEvent;
+  state: NoticeSendState;
+}
+
+/**
+ * Formal-notice approvals that have no matching "notice sent" record yet.
+ * Recording the send is Owner/Admin only and is refused while a hold applies.
+ */
+export function noticesAwaitingSend(events: CollectionEvent[], holds: CollectionHold[], viewer: Viewer | null, today: string): ApprovedNotice[] {
+  const power = viewerIsPowerUser(viewer);
+  const sentFor = new Set(
+    events
+      .filter((event) => event.event_type === "formal_notice_sent")
+      .map((event) => (typeof event.detail?.approval_event_id === "string" ? event.detail.approval_event_id : null))
+      .filter(Boolean),
+  );
+  return events
+    .filter((event) => event.event_type === "formal_notice_approved" && !sentFor.has(event.id))
+    .map((approval) => {
+      let state: NoticeSendState;
+      if (holdBlocks(holds, today, approval.client_id, approval.invoice_id)) state = "blocked_by_hold";
+      else if (!power) state = "requires_owner_admin";
+      else state = "can_record";
+      return { approval, state };
+    });
+}
+
+/** Display names for the default ladder stages (the rules API is not available yet). */
+export const STAGE_LABELS: Record<number, string> = {
+  1: "Friendly reminder",
+  2: "Professional reminder",
+  3: "Firm reminder",
+  4: "Owner escalation",
+  5: "Formal notice",
+};
+
+export function stageLabel(stage: number | null | undefined) {
+  if (!stage) return "—";
+  return `${stage} · ${STAGE_LABELS[stage] || "Stage"}`;
+}
+
+export const PREVIEW_REASON_LABELS: Record<string, string> = {
+  active_hold: "Active hold",
+  unallocated_credit_review: "Unallocated credit to review",
+  below_minimum_balance: "Below minimum balance",
+  contact_review_required: "Primary contact or email missing",
+  email_contact_missing: "No client email on file",
+};
+
+export const DISPOSITION_LABELS: Record<string, string> = {
+  suppressed: "Suppressed",
+  preview_only: "Would be a reminder candidate",
+  approval_required: "Needs Owner/Admin review",
+};
+
 export function errorHeadline(kind: ApiErrorKind) {
   switch (kind) {
     case "unauthorized":

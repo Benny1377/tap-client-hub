@@ -59,6 +59,8 @@ export interface Payment {
   reversal_reason: string | null;
   created_by: string | null;
   payment_allocations: PaymentAllocation[];
+  /** Server-derived amount of a recorded payment not yet allocated; "0.00" once reversed. */
+  unallocated_amount?: string;
 }
 
 /** One row of GET /api/billing/receivables. Totals are server-derived strings. */
@@ -77,6 +79,25 @@ export interface Receivable {
 }
 
 export type AgingBucket = "current" | "1_30" | "31_60" | "61_90" | "90_plus";
+
+/** Per-client aging totals from GET /api/billing/receivables. Keys match AgingBucket. */
+export interface ClientAging {
+  client_id: string;
+  current: string;
+  "1_30": string;
+  "31_60": string;
+  "61_90": string;
+  "90_plus": string;
+}
+
+/** Full response of GET /api/billing/receivables (shared Billing read model). */
+export interface ReceivablesResponse {
+  as_of_date?: string;
+  receivables: Receivable[];
+  client_aging?: ClientAging[];
+  unallocated_payment_balances?: Array<{ payment_id: string; client_id: string; amount: string; unallocated: string }>;
+  unallocated_by_client?: Array<{ client_id: string; amount: string }>;
+}
 
 export interface CollectionHold {
   id: string;
@@ -108,7 +129,8 @@ export interface CollectionEvent {
   client_id: string;
   invoice_id: string | null;
   event_type: CollectionEventType;
-  stage: string | null;
+  /** Ladder stage 1–5 (integer in the database). */
+  stage: number | null;
   occurred_at: string;
   actor: string | null;
   detail: Record<string, unknown> | null;

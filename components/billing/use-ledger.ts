@@ -2,17 +2,18 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createBillingApi, mutateThenRefresh, type ApiResult } from "@/lib/billing-ui/api";
-import { loadLedger, loadingLedger, type LedgerSection, type LedgerState } from "@/lib/billing-ui/ledger";
+import { loadLedger, loadingLedger, type LedgerOptions, type LedgerSection, type LedgerState } from "@/lib/billing-ui/ledger";
 import type { ClientOption, Viewer } from "@/lib/billing-ui/types";
 
-export function useLedger(clientId: string | null, sections: LedgerSection[]) {
+export function useLedger(clientId: string | null, sections: LedgerSection[], options: LedgerOptions = {}) {
   const api = useMemo(() => createBillingApi((input, init) => fetch(input, init)), []);
   const [viewer, setViewer] = useState<Viewer | null>(null);
   const [clients, setClients] = useState<ClientOption[]>([]);
   const sectionKey = sections.join(",");
-  const key = `${clientId ?? ""}|${sectionKey}`;
-  // Data is tagged with the client/sections it was loaded for, so switching
-  // clients shows "loading" instead of the previous client's ledger.
+  const { worklistLimit, worklistOffset } = options;
+  const key = `${clientId ?? ""}|${sectionKey}|${worklistLimit ?? ""}|${worklistOffset ?? ""}`;
+  // Data is tagged with the client/sections/page it was loaded for, so switching
+  // shows "loading" instead of the previous selection's data.
   const [loaded, setLoaded] = useState<{ key: string; ledger: LedgerState } | null>(null);
   const requestId = useRef(0);
 
@@ -25,10 +26,10 @@ export function useLedger(clientId: string | null, sections: LedgerSection[]) {
 
   const refresh = useCallback(async () => {
     const id = ++requestId.current;
-    const ledger = await loadLedger(api, clientId, sectionKey.split(",") as LedgerSection[]);
-    // Ignore responses for a client the user has already switched away from.
+    const ledger = await loadLedger(api, clientId, sectionKey.split(",") as LedgerSection[], { worklistLimit, worklistOffset });
+    // Ignore responses for a selection the user has already moved away from.
     if (id === requestId.current) setLoaded({ key, ledger });
-  }, [api, clientId, sectionKey, key]);
+  }, [api, clientId, sectionKey, worklistLimit, worklistOffset, key]);
 
   useEffect(() => {
     void refresh();
