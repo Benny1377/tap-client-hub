@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireLedgerReadAccess } from "@/lib/billing-access";
 import { createAdminClient } from "@/lib/supabase/admin";
+import type { CollectionsReceivablesResponse } from "@/lib/collections-api";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -51,5 +52,6 @@ export async function GET(request: NextRequest) {
       { status: 500, headers: { "Cache-Control": "no-store" } },
     );
   }
-  return NextResponse.json(data, { headers: { "Cache-Control": "no-store" } });
+  const response = data as CollectionsReceivablesResponse;
+  return NextResponse.json(response, { headers: { "Cache-Control": "no-store" } });
 }

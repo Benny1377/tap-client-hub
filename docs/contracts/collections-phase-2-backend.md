@@ -7,6 +7,7 @@ State: **Draft for Engineer A review; implementation is owner-authorized on the 
 - Owner decision: QuickBooks is **not needed** for this scope; Collections reads TAP Hub Billing as its sole receivables source (2026-10-10).
 - Engineer A approval: pending; record compatibility feedback before the contract is frozen.
 - Prerequisite for release: Phase 1 ledger migration and UI/backend integration verification.
+- Migration order: `20261010110000_billing_audit_and_receivables.sql` → `20261010120000_collections_automation_foundation.sql` → `20261010130000_collections_shared_date_and_stage_model.sql`.
 - Prototype source: owner-provided `practiceops_1.html` and `TAP_Client_Hub_Demo_v14.html`; numbers and demo copy are not production-approved defaults.
 
 ## Capability boundary
@@ -22,8 +23,9 @@ QuickBooks, CSV/aging-report imports, client portal payment processing, and any 
 - `collection_holds` and `collection_events` provide pause state, manual contacts, promises, requests, and approvals. Active account- or invoice-scoped holds suppress automated actions until released/expired.
 - Only recorded payments with active allocations reduce an invoice. Unallocated payments are shown separately as a credit/reconciliation warning; they are not silently allocated or treated as proof a particular invoice is paid. Any client with an unresolved unallocated credit is excluded from automatic delivery pending review.
 - Worklist rows are invoice-level so due dates and balances remain traceable. Client/account totals aggregate those rows. This prevents account-level totals from losing the invoice context that drives aging.
+- Both Billing and Collections read models use the same `get_billing_invoice_balances` SQL function for invoice totals, active allocations, open balances, and days past due, and `collections_firm_today()` for the firm's date. Hold activity/expiry validation uses that same firm date, so the Billing/Collections boundaries cannot diverge because of UTC versus Central date rollover.
 - Aging buckets are current/not-due, 1–30, 31–60, 61–90, and 91+ days past due (non-overlapping). The report's as-of date and send windows use the configured firm timezone (prototype: Central time); no hard-coded historical `AR_ASOF` is allowed.
-- Priority score for the human call list follows the demo's proposed age weighting: balance × 1.0 through 30 days, 1.3 for 31–60, 1.6 for 61–90, 2.0 for 91–180, 2.4 after 180. Score applies only at/after the first human gate; expose the score components so UI can explain ranking. No predicted recovery amount or AI-generated collection decision is permitted.
+- Priority score for the human call list is zero before day 21. At/after the first human gate, apply balance × 1.0 to 21–30 days, 1.3 for 31–60, 1.6 for 61–90, 2.0 for 91–180, and 2.4 after 180. Return each band's balance, multiplier, and weighted contribution so the UI can explain ranking. No predicted recovery amount or AI-generated collection decision is permitted.
 - A payment allocation that clears an invoice suppresses future actions for that invoice. Existing jobs are cancelled transactionally where possible, and the worker rechecks balance/hold state immediately before delivery. A provider request already accepted cannot be recalled; the UI must distinguish that boundary.
 
 ## Proposed ladder and guardrails
@@ -38,6 +40,8 @@ The demo provides these values as starting points, not approved live settings:
 | 4 Owner escalation | 21 days past due | Internal request/queue item; pause client-facing automation | Owner/Admin only |
 | 5 Formal notice | 28 days past due | Approval request; no automatic send | Explicit Owner/Admin approval; test-only delivery in this milestone |
 
+Reminder history is invoice-aware. A `reminder_logged` event with explicit `stage` must use stage 1, 2, or 3. If the UI omits it, the database records the highest enabled automatic ladder stage eligible for that invoice on the firm's date at logging time. For legacy reminder events without a stage, the worklist derives the equivalent stage from the event's timestamp in the configured firm timezone. Escalation request/approval events imply stage 4; formal-notice request/approval/sent events imply stage 5. Account-level reminders apply to each eligible invoice at its own due-date age.
+
 Prototype guardrails to expose as configurable settings (not to silently assume as production policy): minimum balance `$50`, direct-owner escalation above `$5,000`, weekdays only, 9:00 a.m.–5:00 p.m. Central time, stop on recorded payment, sender/reply-to, test recipient, and optional assigned-staffer copy. The first-touch body says “due” while its trigger says “1 day past due”; use a neutral editable template until owner/client approves exact copy and timing. Payment links remain off until a Billing-owned payment URL is specified.
 
 The initial migration leaves automation disabled and delivery mode `disabled`. This implementation has no executable email-delivery path. Any later test-recipient delivery must reject an unset/invalid recipient and must make it impossible to target a real client address. No live-client send mode is in scope without separate approval.
@@ -49,13 +53,15 @@ All routes are server-authorized. Exact response schemas and stable errors must 
 | Endpoint | Purpose | Access |
 | --- | --- | --- |
 | `GET /api/collections/receivables` | Implemented: summary, invoice rows, client aggregates, aging, holds, credit-review flags, contact gaps, and priority sort | Billing or Collections module; Owner/Admin always |
-| `POST /api/collections/automation/preview` | Implemented: side-effect-free proposed actions using a supplied/as-of date | Owner/Admin |
+| `POST /api/collections/automation/preview` | Implemented: side-effect-free proposed actions using a supplied/as-of date; scans all accounts in stable pages and paginates the returned actions | Owner/Admin |
 | `GET /api/collections/rules` | Deferred: current ladder and guardrail settings (never secrets) | Owner/Admin read; safe display subset requires Engineer A review |
 | `PATCH /api/collections/rules` | Deferred: update approved thresholds, wording, and test settings | Owner/Admin only; audited transaction |
 | `POST /api/collections/automation/run` | Deferred: protected scheduled job; no worker/provider send exists in this branch yet | Machine secret, not an app-user cookie |
 | `GET /api/collections/deliveries` | Deferred: delivery attempts and suppression/failure history | Owner/Admin |
 
-The API returns money as decimal strings, never JavaScript floating-point numbers. Pagination, sorting, and filter limits are server-enforced. Responses are `no-store`. A stable error code accompanies every failure.
+Exact TypeScript success/error response contracts are in `lib/collections-api.ts`. Receivables accepts `client_id?`, `as_of_date?`, `limit?` (default 100, 1–200), and `offset?` (default 0, max 100,000); its `pagination` object returns `limit`, `offset`, and `total_accounts`. Preview accepts JSON `{ as_of_date?, limit?, offset? }` (same limit/offset bounds), scans the account set in stable 200-account database pages rather than stopping at the top 200 priority rows, then returns a page of actions and `{ limit, offset, total_actions, has_more }`. Money is decimal strings, responses are `no-store`, and every error has a stable `code`.
+
+Error codes: receivables returns `UNAUTHENTICATED` (401), `FORBIDDEN` (403), `INVALID_CLIENT_ID`, `INVALID_AS_OF_DATE`, `INVALID_LIMIT`, or `INVALID_OFFSET` (422), and `COLLECTIONS_READ_MODEL_FAILED` (500). Preview returns `UNAUTHENTICATED` (401), `FORBIDDEN` (403), `INVALID_JSON` (400), `INVALID_INPUT`, `INVALID_AS_OF_DATE`, `INVALID_LIMIT`, or `INVALID_OFFSET` (422), and `PREVIEW_READ_FAILED` (500). Error bodies are `{ "error": string, "code": string }`.
 
 ## Persistence and atomicity
 
@@ -68,6 +74,7 @@ The API returns money as decimal strings, never JavaScript floating-point number
 ## Security, approval, and communication boundaries
 
 - Only Owner/Admin can change rules, sender details, delivery mode, test recipient, or resolve data-quality/approval gates.
+- The receivables endpoint intentionally exposes the selected primary contact's name, email, and phone only to Owner/Admin and staff assigned Billing or Collections. This is an operational Collections data boundary, not a general directory API. Phone-only clients remain on the human call list; preview actions retain the available phone number for internal follow-up, while missing/ambiguous email suppresses client-facing reminder candidates but not internal calls or Owner escalation review.
 - The current preview has no send side effect. A future test worker must route only to the configured test recipient; the customer's real email must never be used by it.
 - Stage 4 is internal only. Stage 5 requires a matching explicit Owner/Admin approval event and still routes only to the test recipient.
 - Manual Collections notes, calls, holds, and promise-to-pay continue to use the Phase 1 endpoints and audit transaction boundaries.

@@ -5,8 +5,10 @@ const root = new URL("../", import.meta.url);
 const read = (path) => readFile(new URL(path, root), "utf8");
 
 const migration = await read("supabase/migrations/20261010120000_collections_automation_foundation.sql");
+const followupMigration = await read("supabase/migrations/20261010130000_collections_shared_date_and_stage_model.sql");
 const receivablesRoute = await read("app/api/collections/receivables/route.ts");
 const previewRoute = await read("app/api/collections/automation/preview/route.ts");
+const contracts = await read("lib/collections-api.ts");
 
 assert.match(migration, /create or replace function tap_hub_project\.get_collections_worklist/i);
 assert.match(migration, /from invoice_lines il where il\.invoice_id = i\.id/i);
@@ -23,5 +25,21 @@ assert.match(receivablesRoute, /Cache-Control.*no-store/);
 assert.match(previewRoute, /requireBillingPowerUser/);
 assert.match(previewRoute, /delivery_performed: false/);
 assert.doesNotMatch(previewRoute, /resend|sendEmail|\.send\(/i, "preview must never call an outbound messaging provider");
+assert.match(previewRoute, /p_sort_order: "stable"/);
+assert.match(previewRoute, /pageOffset \+= 200/);
+assert.match(previewRoute, /has_more: offset \+ actions\.length < allActions\.length/);
+assert.match(previewRoute, /contact_phone: account\.contact_phone/);
+assert.match(contracts, /contact_phone: string \| null/);
+
+assert.match(followupMigration, /create or replace function tap_hub_project\.collections_firm_today/i);
+assert.match(followupMigration, /create or replace function tap_hub_project\.get_billing_invoice_balances/i);
+assert.match(followupMigration, /get_billing_invoice_balances\(collections_firm_today\(\)\)/i);
+assert.doesNotMatch(followupMigration, /current_date/i, "Phase 2 date and hold boundaries must use the shared firm-date function");
+assert.match(followupMigration, /when e\.event_type in \('escalation_requested','escalated'\) then 4/i);
+assert.match(followupMigration, /when e\.event_type in \('formal_notice_requested','formal_notice_approved','formal_notice_sent'\) then 5/i);
+assert.match(followupMigration, /'priority_score_components'/);
+assert.match(followupMigration, /perform set_config\('tap_hub\.actor_id', p_actor::text, true\)/g);
+assert.match(contracts, /CollectionsReceivablesResponse/);
+assert.match(contracts, /CollectionsAutomationPreviewResponse/);
 
 console.log("Collections Phase 2 backend contract checks passed.");

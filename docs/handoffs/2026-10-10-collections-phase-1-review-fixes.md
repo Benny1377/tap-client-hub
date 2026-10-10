@@ -15,7 +15,7 @@ Status: implementation changes are local and uncommitted; no production migratio
   - draft invoice/line deletion RPCs preserve actor identity and enforce lifecycle checks.
 - API changes call the new read/mutation RPCs, return missing-hold as 409, expose `formal_notice_sent` only to Owner/Admin with a matching approval, and add stable error codes to changed paths while preserving `{ error }` for the UI.
 - The clients GET route now requires an authenticated, active profile with a module assignment (or a power-user role); its unauthenticated service-role read path is closed.
-- Retired shared-password/demo-session login. The former shared password is rejected by normal sign-in using its SHA-256 digest; the password itself is no longer in source. Auth identity resolution no longer trusts demo cookies.
+- Retired the application demo-session fallback and added a hash guard to the application's sign-in route; this does not block direct Supabase Auth `signInWithPassword` calls. The project owner must reset affected Supabase Auth passwords and review sessions before sign-off; see `docs/decisions/2026-10-10-supabase-shared-password-rotation.md`. Auth identity resolution no longer trusts demo cookies.
 - Added `tests/collections-phase1-review.test.mjs` and `supabase/tests/collections_phase1_security_and_audit.sql`; updated access-policy regression assertions for the retired demo path.
 
 ## Validation evidence
@@ -38,7 +38,7 @@ Status: implementation changes are local and uncommitted; no production migratio
 1. Review and execute the new migration against local/disposable Postgres first. Do not use production as a test target.
 2. Run the SQL assertions in `supabase/tests/collections_phase1_security_and_audit.sql`; exercise over-allocation, cross-client allocation, duplicate approval, hold blocking, and deletion of both referenced and unreferenced drafts.
 3. Integrate the UI branch against non-production data. Confirm advance-payment-only clients appear in `unallocated_by_client` and each payment exposes its own remaining amount.
-4. Confirm users have individual Supabase Auth credentials. Accounts relying only on the retired demo fallback must be provisioned/reset before deployment; the former public shared password is rejected.
+4. Project owner must retire the exposed credential in Supabase Auth for all affected accounts and review/revoke sessions as appropriate. The app route hash check is only defense-in-depth and cannot stop direct Supabase Auth login.
 5. Complete Preview behavior and Phase 1 sign-off. This handoff does not authorize merge to `main` or production migration.
 
 ## Architectural note
