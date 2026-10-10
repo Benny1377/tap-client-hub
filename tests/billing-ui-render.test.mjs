@@ -79,7 +79,12 @@ check("field errors are rendered next to their inputs and marked invalid", () =>
     errors: { amount: "Amount must be positive with at most two decimals.", method: "Choose a payment method." },
     serverError: null, submitting: false, submitLabel: "Record payment", onChange: () => {}, onSubmit: () => {},
   }));
-  assert.match(html, /id="field-amount"[^>]*aria-invalid="true"[^>]*aria-describedby="field-amount-error"|aria-invalid="true"[^>]*id="field-amount"/);
+  const amountInput = html.match(/<input[^>]*data-field="amount"[^>]*>/)?.[0] || "";
+  const inputId = amountInput.match(/ id="([^"]+)"/)?.[1];
+  assert.ok(inputId, "the amount input has an id");
+  assert.match(amountInput, /aria-invalid="true"/);
+  assert.match(amountInput, new RegExp(`aria-describedby="${inputId}-error"`), "the error is linked to its own input");
+  assert.match(html, new RegExp(`<label for="${inputId}"`), "the label points at its own input");
   assert.match(html, /data-field-error="amount"[^>]*>Amount must be positive/);
   assert.match(html, /data-field-error="method"[^>]*>Choose a payment method/);
 });
@@ -171,11 +176,23 @@ check("staff see payments and can allocate, but reversals require Owner/Admin", 
   assert.match(html, /aria-label="Allocate payment"[\s\S]*TAP-1 · balance \$150\.00/);
 });
 
-check("Owner/Admin see reversal controls only for active records", () => {
+check("Owner/Admin reverse allocations with a confirm step, only for active ones", () => {
   const html = paymentsPanel(owner);
-  assert.match(html, /data-reverse-payment/);
-  assert.equal((html.match(/>Reverse<\/button>/g) || []).length, 1, "only the active allocation can be reversed");
+  assert.equal((html.match(/data-confirm-action=/g) || []).length, 1, "only the active allocation can be reversed");
+  assert.match(html, /data-confirm-action="a-1"[\s\S]*?This returns \$60\.00 to the payment and reopens it on TAP-1[\s\S]*?>Confirm reversal</);
   assert.doesNotMatch(html, /data-approval-boundary/);
+});
+
+check("a payment with active allocations explains why it can't be reversed yet", () => {
+  const html = paymentsPanel(owner);
+  assert.match(html, /data-reverse-blocked[^>]*>Reverse its allocations first/);
+  assert.doesNotMatch(html, /data-reverse-payment/);
+  const clean = render(h(paymentPanels.PaymentsPanel, {
+    payments: [{ ...payment, payment_allocations: [{ ...payment.payment_allocations[1] }] }], invoices: [invoice({ status: "issued", invoice_lines: [line] })], receivables: [receivable], clientId: "c-1",
+    clientNames: {}, viewer: owner, handlers: { onRecord: noop, onAllocate: noop, onReversePayment: noop, onReverseAllocation: noop },
+  }));
+  assert.match(clean, /data-reverse-payment/, "with only reversed allocations, the payment can be reversed");
+  assert.doesNotMatch(clean, /data-reverse-blocked/);
 });
 
 check("receivables render server-derived totals", () => {
@@ -194,8 +211,11 @@ const banner = (holds, clientId = "c-1") => render(h(collections.ActiveHoldBanne
 check("hold banner appears only while a hold is in force, with its scope", () => {
   const active = banner([hold()]);
   assert.match(active, /data-active-hold-banner/);
-  assert.match(active, /Acme LLC\. Escalation[\s\S]*blocked/);
-  assert.match(banner([hold({ invoice_id: "inv-1" })]), /Acme LLC \(invoice TAP-1\)/);
+  assert.match(active, /Acme LLC \(whole client\)\. Escalation[\s\S]*blocked/);
+  assert.match(banner([hold({ invoice_id: "inv-1" })]), /Acme LLC \(invoice TAP-1\)\./);
+  const both = banner([hold({ id: "h-2", invoice_id: "inv-1" }), hold()]);
+  assert.match(both, /Acme LLC \(whole client, invoice TAP-1\)\./, "one entry per client, whole client first");
+  assert.equal((both.match(/Acme LLC/g) || []).length, 1, "the client name is not repeated");
   assert.equal(banner([hold({ released_at: "2026-10-05T00:00:00Z" })]), "");
   assert.equal(banner([hold({ expires_on: "2026-10-01" })]), "", "expired holds no longer block");
   assert.equal(banner([hold()], "c-2"), "");
@@ -368,7 +388,11 @@ check("call list shows flags, contact, score breakdown, and invoice next steps",
   assert.match(html, /data-score-band="31_60"[\s\S]*?\$1,000\.00[\s\S]*?× 1\.3[\s\S]*?= 1,300\.00/);
   assert.match(html, /under 21 days past due add nothing/);
   assert.match(html, /data-worklist-invoice="inv-1" data-next-stage="4"[\s\S]*?4 · Owner escalation[\s\S]*?On hold/);
-  assert.match(html, /data-worklist-invoice="inv-2" data-next-stage=""[\s\S]*?Up to date/);
+  assert.match(html, /data-worklist-invoice="inv-2" data-next-stage=""[\s\S]*?Ladder complete — follow up manually/);
+  assert.doesNotMatch(html, /Up to date/, "an overdue invoice is never shown as up to date");
+  const notDue = { ...worklistAccount, invoices: [{ ...worklistAccount.invoices[1], invoice_id: "inv-3", days_past_due: 0, next_stage: null }] };
+  const notDueHtml = render(h(worklistPanels.WorklistTable, { worklist: worklist({ accounts: [notDue] }), onSelectClient: () => {}, onPage: () => {} }));
+  assert.match(notDueHtml, /data-worklist-invoice="inv-3"[\s\S]*?Not due yet/);
 });
 
 check("call list pagination reflects the server's page", () => {
@@ -403,6 +427,50 @@ check("preview results say nothing was sent and explain each outcome", () => {
   assert.match(html, /data-preview-action="inv-7" data-disposition="suppressed"[\s\S]*?data-suppression="below_minimum_balance"[\s\S]*?data-suppression="active_hold"/);
   assert.match(html, /2 actions in total/);
   assert.match(html, /disabled=""[^>]*>Next</);
+});
+
+// --- Browser-test fixes (2026-10-10) ------------------------------------------
+check("two forms on one page never share input ids", () => {
+  const html = paymentsPanel(staff);
+  const ids = [...html.matchAll(/<(?:input|select|textarea)[^>]* id="([^"]+)"/g)].map((match) => match[1]);
+  assert.ok(ids.length >= 6, `expected inputs from both payment forms, found ${ids.length}`);
+  assert.equal(new Set(ids).size, ids.length, `duplicate ids: ${ids.filter((id, i) => ids.indexOf(id) !== i).join(", ")}`);
+  assert.equal((html.match(/data-field="amount"/g) || []).length, 2, "both forms still have an amount field");
+});
+
+check("inputs use border longhands only, so error styling clears cleanly", () => {
+  const html = render(h(ui.LedgerFormView, {
+    fields: [{ name: "amount", label: "Amount" }], values: { amount: "x" }, errors: { amount: "Bad" },
+    serverError: null, submitting: false, submitLabel: "Save", onChange: () => {}, onSubmit: () => {},
+  }));
+  const style = html.match(/<input[^>]*style="([^"]+)"/)?.[1] || "";
+  assert.doesNotMatch(style, /(^|;)border:/, "no border shorthand on inputs");
+  assert.match(style, /border-color:var\(--red\)/);
+});
+
+check("error banners use the server's stable code for the headline", () => {
+  const html = render(h(ui.ErrorBanner, { kind: "conflict", code: "LEDGER_CONFLICT", message: "invariant_violation: payment would be over-allocated" }));
+  assert.match(html, /data-error-code="LEDGER_CONFLICT"/);
+  assert.match(html, /That change would break the ledger&#x27;s rules\.[\s\S]*Payment would be over-allocated/);
+  assert.doesNotMatch(html, /invariant_violation|reloaded/);
+});
+
+check("a draft shows its issue date, not that it was issued", () => {
+  assert.match(detail(invoice(), staff), /Issue date 2026-10-01 · Due 2026-10-31/);
+  assert.doesNotMatch(detail(invoice(), staff), /Issued 2026-10-01/);
+  assert.match(detail(invoice({ status: "issued", invoice_lines: [line] }), staff, receivable), /Issued 2026-10-01 · Due 2026-10-31/);
+});
+
+check("the activity form names invoices with their own hold before a request is tried", () => {
+  const html = eventsPanel([], [hold({ invoice_id: "inv-1" })], staff);
+  assert.match(html, /data-invoice-holds[^>]*>Invoice TAP-1 has a hold, so escalation and formal-notice requests for it will be refused\./);
+  assert.doesNotMatch(eventsPanel([], [hold()], staff), /data-invoice-holds/, "a client-wide hold uses the client-wide warning instead");
+});
+
+check("AR summary cards sit in a grid that fits two per row on a phone", () => {
+  const html = render(h(worklistPanels.WorklistSummary, { worklist: worklist() }));
+  // 100px minimum: the cards area is about 230px wide on a 375px phone, so two fit per row.
+  assert.equal((html.match(/grid-template-columns:repeat\(auto-fill, minmax\(100px, 1fr\)\)/g) || []).length, 2);
 });
 
 console.log(`billing UI render checks passed (${passed})`);

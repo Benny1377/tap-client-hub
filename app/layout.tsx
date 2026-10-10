@@ -56,6 +56,8 @@ const PAGE_TITLES: Record<string, { title: string; subtitle: string }> = {
   "/support": { title: "Help & Support", subtitle: "Stuck on something? Open a ticket and our team will jump on it." },
   "/support/inbox": { title: "Support Inbox", subtitle: "Firm-wide support tickets, grouped by application." },
   "/settings": { title: "Settings", subtitle: "Your account details, password, and security settings." },
+  "/billing": { title: "Billing", subtitle: "Invoices, payments, and balances. Balances come from the server and refresh after every change." },
+  "/collections": { title: "Collections", subtitle: "Follow up on balances owed. Amounts come from Billing, and nothing here sends anything to a client." },
 };
 
 async function logoutAndRedirect() {

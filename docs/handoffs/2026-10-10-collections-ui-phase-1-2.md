@@ -74,8 +74,8 @@ Commit: this branch on `50b886a`. Environment: local, Node `v22.14.0`, dependenc
 
 | Command | Result |
 | --- | --- |
-| `node tests/billing-ui-data.test.mjs` | PASS (34 checks) |
-| `node tests/billing-ui-render.test.mjs` | PASS (38 checks) |
+| `node tests/billing-ui-data.test.mjs` | PASS (38 checks) |
+| `node tests/billing-ui-render.test.mjs` | PASS (45 checks) |
 | Mutation checks: notice recording open to all roles; preview open to all roles; no invoice requirement | Each FAILS as expected; restored and PASS |
 | `npx tsc --noEmit` | PASS |
 | `npx eslint` on the UI files and tests | PASS |
@@ -85,6 +85,37 @@ Commit: this branch on `50b886a`. Environment: local, Node `v22.14.0`, dependenc
 | `client-card-iss-008-009-011`, `client-slideover-renditions`, `contact-profile-actions.contract`, `support-resend-delivery` | FAIL; these fail identically on `origin/main` and are unrelated |
 | SQL tests (`supabase/tests/*.sql`) | NOT RUN: no non-production database |
 | Browser and responsive review; persistence (UI → API → row → audit → reload) | BLOCKED: no non-production environment in this checkout |
+
+## Browser test, 2026-10-10
+
+**Setup.**
+- The real app ran under `next dev` in the built-in browser.
+- A temporary in-browser mock of the `0e01c19` routes stood in for the API, because no non-production database exists.
+- That mock is local only: it lives in `dev-mock/`, excluded from git and not committed. The real routes and SQL were not exercised.
+- Roles tested: Owner, Billing-only staff, Collections-only staff, and staff with neither module, plus a mid-session permission change (403).
+- Viewports: desktop and 375px.
+
+**Twelve UI bugs were found and fixed.** Each fix has a unit or render test and was re-checked in the browser.
+
+| # | Bug | Fix |
+| --- | --- | --- |
+| 1 | The draft and line edit forms reset to pre-save values after a save, so a second save could wipe data. | Edit forms keep saved values (`resetOnSuccess={false}`) and remount when the saved record changes. |
+| 2 | The shell header showed the Clients title on `/billing` and `/collections`. | Added `PAGE_TITLES` entries and removed the duplicate in-page headings. |
+| 3 | Input ids were duplicated across forms on one page. | Ids are scoped per form with `useId`. |
+| 4 | Every conflict showed a generic headline plus raw text such as `invariant_violation: …`. | Stable error codes map to plain-language headlines, and internal prefixes are stripped. |
+| 5 | Drafts read "Issued <date>". | Drafts read "Issue date <date>". |
+| 6 | Overdue invoices with no next stage read "Up to date". | They now read "Ladder complete — follow up manually", or "Not due yet". |
+| 7 | "Reverse payment" was offered while allocations were still active, and allocation reversal took one click. | The page explains that allocations must be reversed first, and allocation reversal has a confirm step. |
+| 8 | Holds on a single invoice were not flagged in the activity form. | Held invoices are named before a request is tried. |
+| 9 | The hold banner repeated the client name. | One entry per client, listing that client's hold scopes. |
+| 10 | Paging the call list reloaded holds and activity, and invoice names were lost on later pages. | The worklist has its own loader, and invoice names come from all issued invoices. |
+| 11 | Summary cards stacked one per row on a phone. | A grid with a 100px minimum fits two per row at 375px. |
+| 12 | A React warning came from mixing `border` with `borderColor`. | Inputs use border longhands; the warning no longer appears. |
+
+**Backend findings from the same test** (reported to the producer):
+- Unapproved escalation and formal-notice requests count as completed ladder stages.
+- Error messages carry internal prefixes.
+- Open question: whether a 21+ day invoice with no reminders should start at stage 1.
 
 ## Release gates still open (not UI work)
 

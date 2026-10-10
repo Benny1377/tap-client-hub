@@ -4,7 +4,7 @@ import type { ApiResult } from "@/lib/billing-ui/api";
 import type { ClientAging, Invoice, Payment, Receivable, Viewer } from "@/lib/billing-ui/types";
 import { PAYMENT_METHODS, validateAllocation, validatePayment, validateReason } from "@/lib/billing-ui/validation";
 import { AGING_LABELS, formatMoney, receivableFor, viewerIsPowerUser } from "@/lib/billing-ui/view-model";
-import { ActionButton, cellStyle, hintStyle, LedgerForm, OwnerAdminOnly, StatusBadge, tableStyle, type FormValues } from "./ui";
+import { cellStyle, ConfirmAction, hintStyle, LedgerForm, OwnerAdminOnly, StatusBadge, tableStyle, type FormValues } from "./ui";
 
 type Mutation = Promise<ApiResult<unknown>>;
 
@@ -55,7 +55,10 @@ export function PaymentsPanel({ payments, invoices, receivables, clientId, clien
                   <td style={cellStyle}>{payment.method}{payment.reference ? ` · ${payment.reference}` : ""}</td>
                   <td style={cellStyle}>
                     <StatusBadge status={payment.status} />
-                    {payment.status === "recorded" && power ? (
+                    {payment.status === "recorded" && power && (payment.payment_allocations || []).some((allocation) => !allocation.reversed_at) ? (
+                      <div data-reverse-blocked style={{ fontSize: 12, color: "var(--muted)" }}>Reverse its allocations first to reverse this payment.</div>
+                    ) : null}
+                    {payment.status === "recorded" && power && !(payment.payment_allocations || []).some((allocation) => !allocation.reversed_at) ? (
                         <details data-reverse-payment>
                           <summary style={{ cursor: "pointer", fontSize: 12.5, color: "var(--red)" }}>Reverse</summary>
                           <LedgerForm
@@ -75,7 +78,15 @@ export function PaymentsPanel({ payments, invoices, receivables, clientId, clien
                           <li key={allocation.id} data-allocation={allocation.id} data-allocation-state={allocation.reversed_at ? "reversed" : "active"}>
                             {invoiceNumber(allocation.invoice_id)}: {formatMoney(allocation.amount)}
                             {allocation.reversed_at ? " (reversed)" : power
-                              ? <> <ActionButton quiet label="Reverse" onAction={() => handlers.onReverseAllocation(allocation.id)} /></>
+                              ? (
+                                <ConfirmAction
+                                  testId={allocation.id}
+                                  label="Reverse"
+                                  description={`This returns ${formatMoney(allocation.amount)} to the payment and reopens it on ${invoiceNumber(allocation.invoice_id)}.`}
+                                  confirmLabel="Confirm reversal"
+                                  onConfirm={() => handlers.onReverseAllocation(allocation.id)}
+                                />
+                              )
                               : null}
                           </li>
                         ))}
