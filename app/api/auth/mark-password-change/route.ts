@@ -1,16 +1,10 @@
 import { NextResponse } from "next/server";
 import { resolveAccessIdentity } from "@/lib/access-server";
 
-const TEMP_PASSWORD = "TapHub2026!";
-
-export async function POST(request: Request) {
+export async function POST() {
   const identity = await resolveAccessIdentity();
-  if (!identity) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  const body = await request.json().catch(() => null);
-  const password = typeof body?.password === "string" ? body.password : "";
-  const response = NextResponse.json({ mustChangePassword: password === TEMP_PASSWORD });
-  if (password === TEMP_PASSWORD) {
-    response.cookies.set("tap_force_password", "1", { httpOnly: true, sameSite: "lax", secure: process.env.NODE_ENV === "production", path: "/", maxAge: 86400 });
-  }
+  if (!identity) return NextResponse.json({ error: "Unauthorized", code: "UNAUTHENTICATED" }, { status: 401 });
+  const response = NextResponse.json({ mustChangePassword: false });
+  response.cookies.delete("tap_force_password");
   return response;
 }

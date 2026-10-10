@@ -89,39 +89,6 @@ function LoginContent() {
       return;
     }
 
-    // Backward-compatible demo login fallback for accounts that exist only in
-    // the app's demo credential registry.
-    const demoResponse = await fetch("/api/demo-login", {
-      method: "POST",
-      credentials: "include",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email: authEmail, password }),
-    });
-    if (demoResponse.ok) {
-      // Check if 2FA is enabled for this user
-      try {
-        const res = await fetch("/api/2fa/status");
-        const data = await res.json();
-        if (data.enabled) {
-          setStep("2fa");
-          setTwoFAMessage("Sending verification code...");
-          setLoading(false);
-          fetch("/api/2fa/challenge", { method: "POST" })
-            .then(r => r.json())
-            .then(d => setTwoFAMessage(d.message || "Check your email for the code"))
-            .catch(() => setTwoFAMessage("Enter the code from your email"));
-          return;
-        }
-      } catch {
-        // If 2FA check fails, proceed with login
-      }
-
-      fetch("/api/me", { credentials: "include" }).catch(() => {});
-      router.push(next);
-      router.refresh();
-      return;
-    }
-
     setError(authResult?.error || "Invalid email or password");
     setLoading(false);
   }

@@ -8,13 +8,13 @@ export async function POST(request: NextRequest) {
   const access = await requireBillingAccess();
   if (access.response) return access.response;
   let body: any;
-  try { body = await request.json(); } catch { return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 }); }
+  try { body = await request.json(); } catch { return NextResponse.json({ error: "Invalid JSON body", code: "INVALID_JSON" }, { status: 400 }); }
   if (!body?.payment_id || !body?.invoice_id || body.amount == null) {
-    return NextResponse.json({ error: "payment_id, invoice_id, and amount are required" }, { status: 422 });
+    return NextResponse.json({ error: "payment_id, invoice_id, and amount are required", code: "INVALID_INPUT" }, { status: 422 });
   }
   const amount = String(body.amount).trim();
   if (!/^\d+(\.\d{1,2})?$/.test(amount) || Number(amount) <= 0) {
-    return NextResponse.json({ error: "amount must be positive and have at most two decimals" }, { status: 422 });
+    return NextResponse.json({ error: "amount must be positive and have at most two decimals", code: "INVALID_AMOUNT" }, { status: 422 });
   }
   const db = createAdminClient();
   const { data, error } = await db.rpc("allocate_payment", {
@@ -22,7 +22,8 @@ export async function POST(request: NextRequest) {
   });
   if (error) {
     const status = /not_found/i.test(error.message) ? 404 : /invalid_input/i.test(error.message) ? 422 : /invariant/i.test(error.message) ? 409 : 500;
-    return NextResponse.json({ error: error.message }, { status });
+    const code = /not_found/i.test(error.message) ? "NOT_FOUND" : /invalid_input/i.test(error.message) ? "INVALID_INPUT" : /invariant/i.test(error.message) ? "LEDGER_CONFLICT" : "ALLOCATION_FAILED";
+    return NextResponse.json({ error: error.message, code }, { status });
   }
   return NextResponse.json({ allocation_id: data }, { status: 201 });
 }

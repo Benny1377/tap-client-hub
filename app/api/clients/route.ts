@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import type { ServiceKey } from "@/lib/types";
 import { SERVICE_META } from "@/lib/data";
 import { randomUUID } from "crypto";
-import { requireClientDataEditAccess } from "@/lib/access-server";
+import { requireClientDataEditAccess, resolveAccessIdentity } from "@/lib/access-server";
+import { isPowerUser } from "@/lib/access-policy";
 import { calculatePayrollStartDate, normalizePayDay } from "@/lib/payroll-schedule";
 
 // ── Helper: create a Supabase client ──
@@ -11,16 +12,6 @@ async function getSupabase() {
   return createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
-    { db: { schema: "tap_hub_project" } }
-  );
-}
-
-// Separate reader client for unauthenticated GETs
-async function getSupabaseAnon() {
-  const { createClient } = await import("@supabase/supabase-js");
-  return createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     { db: { schema: "tap_hub_project" } }
   );
 }
@@ -34,6 +25,9 @@ const CODE_TO_KEY: Record<string, ServiceKey> = {
 export const dynamic = "force-dynamic"; // Never cache — data changes frequently
 
 export async function GET(request: Request) {
+  const identity = await resolveAccessIdentity();
+  if (!identity) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!isPowerUser(identity.role) && identity.modules.length === 0) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   try {
     const supabase = await getSupabase();
 

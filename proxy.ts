@@ -2,7 +2,7 @@ import { type NextRequest, NextResponse } from "next/server";
 
 /**
  * Auth proxy — replaces middleware.ts in Next.js 16.
- * Checks for demo cookie or Supabase session cookie.
+ * Checks for a Supabase session cookie.
  * Protects all routes except /login and /auth/callback.
  * Role-based access is handled by sidebar + per-page logic.
  */
@@ -14,10 +14,6 @@ export async function proxy(request: NextRequest) {
   });
 
   const cookieHeader = request.headers.get("cookie") || "";
-
-  // Only the server-issued signed demo session is authoritative.
-  const hasDemoCookie = /(?:^|;\s*)tap_demo_session=([^;]*)/.test(cookieHeader);
-
 
   // Check for Supabase auth token cookie (handles chunked cookies: .0, .1, etc.)
   const hasAuthToken = /(?:^|;\s*)sb-[^-]+-auth-token(?:\.\d+)?=/.test(cookieHeader);
@@ -34,7 +30,7 @@ export async function proxy(request: NextRequest) {
     pathname === "/icon-192x192.png" ||
     pathname === "/icon-512x512.png";
 
-  if (!hasDemoCookie && !hasAuthToken && !isPublicRoute) {
+  if (!hasAuthToken && !isPublicRoute) {
     const loginUrl = new URL("/login", request.url);
     // Preserve the originally requested destination through authentication.
     loginUrl.searchParams.set("next", `${pathname}${request.nextUrl.search}`);
@@ -42,7 +38,7 @@ export async function proxy(request: NextRequest) {
   }
 
   // Redirect authenticated users away from login
-  if ((hasDemoCookie || hasAuthToken) && pathname.startsWith("/login")) {
+  if (hasAuthToken && pathname.startsWith("/login")) {
     return NextResponse.redirect(new URL("/", request.url));
   }
 
