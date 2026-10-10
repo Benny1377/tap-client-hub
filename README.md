@@ -57,17 +57,21 @@ TAP-specific terminology:
 Install dependencies and start the development server:
 
 ```bash
-npm install
+npm ci
 npm run dev
 ```
 
 Open `http://localhost:3000`.
 
+Each Git worktree has its own ignored `node_modules` directory. After creating
+or checking out a separate worktree, run `npm ci` from that worktree before
+running checks or starting the app. The lockfile keeps installations consistent.
+
 Useful commands:
 
 ```bash
 npm run lint
-npx tsc --noEmit
+npm run typecheck
 npm run build
 ```
 
