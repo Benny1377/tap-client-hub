@@ -3,11 +3,11 @@
 import { useCallback, useMemo, useState } from "react";
 import { mutateThenRefresh, type ApiResult } from "@/lib/billing-ui/api";
 import { readyData } from "@/lib/billing-ui/ledger";
-import { todayIso } from "@/lib/billing-ui/view-model";
+import { stageLabelsFrom, todayIso } from "@/lib/billing-ui/view-model";
 import { useLedger } from "@/components/billing/use-ledger";
 import { ClientPicker, headingStyle, hintStyle, panelStyle, SectionView } from "@/components/billing/ui";
 import { ActiveHoldBanner, EventsPanel, HoldsPanel, type InvoiceOption } from "@/components/billing/collections-panels";
-import { AutomationPreviewPanel, WorklistSummary, WorklistTable } from "@/components/billing/worklist-panels";
+import { AutomationPreviewPanel, LadderSummary, WorklistSummary, WorklistTable } from "@/components/billing/worklist-panels";
 
 const WORKLIST_PAGE = 50;
 
@@ -15,7 +15,7 @@ export default function CollectionsPage() {
   const [clientId, setClientId] = useState<string | null>(null);
   const [worklistOffset, setWorklistOffset] = useState(0);
   // Two loaders: paging the call list reloads only the worklist, not holds and activity.
-  const ledger = useLedger(clientId, ["holds", "events", "receivables"]);
+  const ledger = useLedger(clientId, ["holds", "events", "receivables", "rules"]);
   const calls = useLedger(clientId, ["worklist"], { worklistLimit: WORKLIST_PAGE, worklistOffset, includeMeta: false });
   const { api, viewer, clients, state } = ledger;
   const refreshLedger = ledger.refresh;
@@ -27,6 +27,8 @@ export default function CollectionsPage() {
   const worklist = readyData(worklistState, null);
   const holds = readyData(state.holds, []);
   const receivables = readyData(state.receivables, { receivables: [] });
+  const rules = readyData(state.rules, []);
+  const stageLabels = useMemo(() => stageLabelsFrom(rules), [rules]);
   // The server's firm date drives hold and ladder rules; fall back to the browser
   // date only while neither read model has loaded.
   const today = worklist?.as_of_date || receivables.as_of_date || todayIso();
@@ -56,8 +58,9 @@ export default function CollectionsPage() {
       <section style={{ ...panelStyle, marginTop: 16 }} aria-label="Call list">
         <h2 style={headingStyle}>Call list</h2>
         <p style={hintStyle}>Accounts ranked by the server&rsquo;s priority score. Open a score to see how it was built.</p>
+        <LadderSummary rules={rules} />
         <SectionView state={worklistState} label="call list">
-          {(data) => <WorklistTable worklist={data} onSelectClient={selectClient} onPage={setWorklistOffset} />}
+          {(data) => <WorklistTable worklist={data} onSelectClient={selectClient} onPage={setWorklistOffset} stageLabels={stageLabels} />}
         </SectionView>
       </section>
 
@@ -109,7 +112,7 @@ export default function CollectionsPage() {
 
       <section style={{ ...panelStyle, marginTop: 16 }} aria-label="Automation preview">
         <h2 style={headingStyle}>Automation preview</h2>
-        <AutomationPreviewPanel viewer={viewer} runPreview={(params) => api.preview(params)} />
+        <AutomationPreviewPanel viewer={viewer} runPreview={(params) => api.preview(params)} stageLabels={stageLabels} />
       </section>
     </div>
   );

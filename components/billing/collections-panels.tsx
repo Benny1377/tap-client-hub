@@ -37,7 +37,7 @@ export function ActiveHoldBanner({ holds, clientId, clientNames, invoiceNumbers,
   const byClient = new Map<string, Set<string>>();
   for (const hold of active) {
     const scopes = byClient.get(hold.client_id) || new Set<string>();
-    scopes.add(hold.invoice_id ? `invoice ${invoiceNumbers[hold.invoice_id] || hold.invoice_id}` : "whole client");
+    scopes.add(hold.invoice_id ? `invoice ${hold.invoice_number || invoiceNumbers[hold.invoice_id] || hold.invoice_id}` : "whole client");
     byClient.set(hold.client_id, scopes);
   }
   const scopes = [...byClient.entries()].map(([id, parts]) => {
@@ -95,7 +95,7 @@ export function HoldsPanel({ holds, clientId, clientNames, invoiceOptions, viewe
                     <td style={cellStyle}>
                       {released ? `Released ${hold.released_at?.slice(0, 10)}` : inForce ? <strong>Active</strong> : "Expired, not released"}
                       <div data-hold-scope style={{ fontSize: 12, color: "var(--muted)" }}>
-                        {hold.invoice_id ? `Invoice ${invoiceNumbers[hold.invoice_id] || hold.invoice_id} only` : "Whole client"}
+                        {hold.invoice_id ? `Invoice ${hold.invoice_number || invoiceNumbers[hold.invoice_id] || hold.invoice_id} only` : "Whole client"}
                       </div>
                       {!released && power ? <div><ActionButton quiet label="Release hold" onAction={() => onRelease(hold.id)} /></div> : null}
                     </td>
@@ -150,10 +150,11 @@ export function EventsPanel({ events, holds, invoiceOptions, clientId, clientNam
   const clientInvoices = invoiceOptions.filter((option) => option.client_id === clientId);
   const invoiceNumbers = Object.fromEntries(invoiceOptions.map((option) => [option.id, option.invoice_number]));
   const heldInvoices = clientWideHold ? [] : [...new Set(
-    activeHolds(holds, today, clientId).filter((hold) => hold.invoice_id).map((hold) => invoiceNumbers[hold.invoice_id as string] || (hold.invoice_id as string)),
+    activeHolds(holds, today, clientId).filter((hold) => hold.invoice_id).map((hold) => hold.invoice_number || invoiceNumbers[hold.invoice_id as string] || (hold.invoice_id as string)),
   )];
+  const invoiceLabel = (event: CollectionEvent) => event.invoice_number || (event.invoice_id ? invoiceNumbers[event.invoice_id] || event.invoice_id : null);
   const describe = (event: CollectionEvent) =>
-    `${clientNames[event.client_id] || event.client_id}${event.invoice_id ? ` · invoice ${invoiceNumbers[event.invoice_id] || event.invoice_id}` : ""} · ${event.occurred_at.slice(0, 10)}`;
+    `${clientNames[event.client_id] || event.client_id}${event.invoice_id ? ` · invoice ${invoiceLabel(event)}` : ""} · ${event.occurred_at.slice(0, 10)}`;
 
   return (
     <div>
@@ -172,7 +173,7 @@ export function EventsPanel({ events, holds, invoiceOptions, clientId, clientNam
       )}
 
       <h3 style={{ fontSize: 14, margin: "14px 0 6px" }}>Approved notices not yet recorded as sent</h3>
-      <p style={hintStyle}>TAP Hub does not send notices. After the approved notice goes out by your usual process, an Owner or Admin records it here.</p>
+      <p style={hintStyle}>TAP Hub does not send notices. After the approved notice goes out by your usual process, an Owner or Admin records it here. A hold placed after the notice went out does not stop you recording it.</p>
       {notices.length === 0 ? <p style={hintStyle}>No approved notices waiting.</p> : (
         <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
           {notices.map(({ approval, state }) => (
@@ -191,7 +192,6 @@ export function EventsPanel({ events, holds, invoiceOptions, clientId, clientNam
                 </details>
               ) : null}
               {state === "requires_owner_admin" ? <OwnerAdminOnly action="Recording a notice as sent" /> : null}
-              {state === "blocked_by_hold" ? <span data-blocked-by-hold style={{ fontSize: 12.5, color: "#7a5210" }}>Blocked by an active hold.</span> : null}
             </li>
           ))}
         </ul>
@@ -240,7 +240,7 @@ export function EventsPanel({ events, holds, invoiceOptions, clientId, clientNam
                 <tr key={event.id} data-event-row={event.id}>
                   <td style={cellStyle}>{event.occurred_at.slice(0, 16).replace("T", " ")}</td>
                   <td style={cellStyle}>{clientNames[event.client_id] || event.client_id}</td>
-                  <td style={cellStyle}>{event.invoice_id ? invoiceNumbers[event.invoice_id] || "—" : "All"}</td>
+                  <td style={cellStyle}>{event.invoice_id ? invoiceLabel(event) || "—" : "All"}</td>
                   <td style={cellStyle}>
                     {EVENT_LABELS[event.event_type] || event.event_type}
                     {event.event_type === "reminder_logged" && event.stage ? <div style={{ fontSize: 12, color: "var(--muted)" }}>Ladder {stageLabel(event.stage)}</div> : null}

@@ -3,7 +3,7 @@
 // shows its 403/409 responses when they differ.
 import { isPowerUser } from "@/lib/access-policy";
 import type { ApiErrorKind } from "./api";
-import type { CollectionEvent, CollectionHold, Invoice, Numeric, Receivable, Viewer } from "./types";
+import type { AwaitingApproval, CollectionEvent, CollectionHold, CollectionRule, Invoice, Numeric, Receivable, Viewer } from "./types";
 
 export type SectionState<T> =
   | { status: "loading" }
@@ -125,7 +125,7 @@ export function approvalRequests(events: CollectionEvent[], holds: CollectionHol
   });
 }
 
-export type NoticeSendState = "blocked_by_hold" | "requires_owner_admin" | "can_record";
+export type NoticeSendState = "requires_owner_admin" | "can_record";
 
 export interface ApprovedNotice {
   approval: CollectionEvent;
@@ -134,8 +134,10 @@ export interface ApprovedNotice {
 
 /**
  * Formal-notice approvals that have no matching "notice sent" record yet.
- * Recording the send is Owner/Admin only and is refused while a hold applies.
+ * Recording the send is Owner/Admin only. It records a historical fact, so a
+ * hold placed afterwards does not block it (contract, 20261010140000).
  */
+// eslint-disable-next-line @typescript-eslint/no-unused-vars -- kept for a stable call signature
 export function noticesAwaitingSend(events: CollectionEvent[], holds: CollectionHold[], viewer: Viewer | null, today: string): ApprovedNotice[] {
   const power = viewerIsPowerUser(viewer);
   const sentFor = new Set(
@@ -146,16 +148,10 @@ export function noticesAwaitingSend(events: CollectionEvent[], holds: Collection
   );
   return events
     .filter((event) => event.event_type === "formal_notice_approved" && !sentFor.has(event.id))
-    .map((approval) => {
-      let state: NoticeSendState;
-      if (holdBlocks(holds, today, approval.client_id, approval.invoice_id)) state = "blocked_by_hold";
-      else if (!power) state = "requires_owner_admin";
-      else state = "can_record";
-      return { approval, state };
-    });
+    .map((approval) => ({ approval, state: (power ? "can_record" : "requires_owner_admin") as NoticeSendState }));
 }
 
-/** Display names for the default ladder stages (the rules API is not available yet). */
+/** Default ladder names, used until GET /api/collections/rules has loaded. */
 export const STAGE_LABELS: Record<number, string> = {
   1: "Friendly reminder",
   2: "Professional reminder",
@@ -164,9 +160,21 @@ export const STAGE_LABELS: Record<number, string> = {
   5: "Formal notice",
 };
 
-export function stageLabel(stage: number | null | undefined) {
+export type StageLabels = Record<number, string>;
+
+/** Stage names from the configured ladder, falling back to the defaults. */
+export function stageLabelsFrom(rules: CollectionRule[] | null | undefined): StageLabels {
+  return { ...STAGE_LABELS, ...Object.fromEntries((rules || []).map((rule) => [rule.stage, rule.label])) };
+}
+
+export function stageLabel(stage: number | null | undefined, labels: StageLabels = STAGE_LABELS) {
   if (!stage) return "—";
-  return `${stage} · ${STAGE_LABELS[stage] || "Stage"}`;
+  return `${stage} · ${labels[stage] || STAGE_LABELS[stage] || "Stage"}`;
+}
+
+/** "Awaiting Owner/Admin approval: 4 · Owner escalation (requested 2026-10-01)". */
+export function awaitingApprovalLabel(pending: AwaitingApproval, labels: StageLabels = STAGE_LABELS) {
+  return `Awaiting Owner/Admin approval: ${stageLabel(pending.stage, labels)} (requested ${pending.requested_at.slice(0, 10)})`;
 }
 
 export const PREVIEW_REASON_LABELS: Record<string, string> = {
@@ -213,6 +221,7 @@ const CODE_HEADLINES: Record<string, string> = {
   COLLECTIONS_CONFLICT: "Collections can't record that right now.",
   APPROVAL_CONFLICT: "That approval can't be recorded right now.",
   APPROVAL_REQUIRED: "A matching approval is required first.",
+  EVENT_CONFLICT: "That Collections event has already been recorded.",
   HOLD_NOT_ACTIVE: "That hold is no longer active.",
   INVALID_AMOUNT: "Check the amount: it must be positive with at most two decimals.",
   INVALID_DATE_RANGE: "The due date must be on or after the issue date.",

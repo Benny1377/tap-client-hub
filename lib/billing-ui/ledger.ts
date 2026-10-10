@@ -1,9 +1,9 @@
 import type { CollectionsReceivablesResponse } from "@/lib/collections-api";
 import type { ApiResult, BillingApi } from "./api";
-import type { CollectionEvent, CollectionHold, Invoice, Payment, ReceivablesResponse } from "./types";
+import type { CollectionEvent, CollectionHold, CollectionRule, Invoice, Payment, ReceivablesResponse } from "./types";
 import type { SectionState } from "./view-model";
 
-export type LedgerSection = "invoices" | "receivables" | "payments" | "holds" | "events" | "worklist";
+export type LedgerSection = "invoices" | "receivables" | "payments" | "holds" | "events" | "worklist" | "rules";
 
 export interface LedgerState {
   invoices: SectionState<Invoice[]>;
@@ -12,6 +12,7 @@ export interface LedgerState {
   holds: SectionState<CollectionHold[]>;
   events: SectionState<CollectionEvent[]>;
   worklist: SectionState<CollectionsReceivablesResponse>;
+  rules: SectionState<CollectionRule[]>;
 }
 
 export interface LedgerOptions {
@@ -27,6 +28,7 @@ export function loadingLedger(): LedgerState {
     holds: { status: "loading" },
     events: { status: "loading" },
     worklist: { status: "loading" },
+    rules: { status: "loading" },
   };
 }
 
@@ -49,6 +51,7 @@ export async function loadLedger(api: BillingApi, clientId: string | null, secti
     wanted.has("events") && api.events(clientId).then((r) => { state.events = toSection(r, (d) => d.events || []); }),
     wanted.has("worklist") && api.worklist({ clientId, limit: options.worklistLimit, offset: options.worklistOffset })
       .then((r) => { state.worklist = toSection(r, (d) => d); }),
+    wanted.has("rules") && api.rules().then((r) => { state.rules = toSection(r, (d) => d.rules || []); }),
   ]);
   return state;
 }

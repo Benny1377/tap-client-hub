@@ -3,8 +3,8 @@
 import { useState, type CSSProperties } from "react";
 import type { ApiResult } from "@/lib/billing-ui/api";
 import type { CollectionsAccount, CollectionsAutomationPreviewResponse, CollectionsReceivablesResponse } from "@/lib/collections-api";
-import type { Viewer } from "@/lib/billing-ui/types";
-import { DISPOSITION_LABELS, formatMoney, PREVIEW_REASON_LABELS, stageLabel, viewerIsPowerUser } from "@/lib/billing-ui/view-model";
+import type { AwaitingApproval, CollectionRule, Viewer } from "@/lib/billing-ui/types";
+import { awaitingApprovalLabel, DISPOSITION_LABELS, formatMoney, PREVIEW_REASON_LABELS, stageLabel, STAGE_LABELS, viewerIsPowerUser, type StageLabels } from "@/lib/billing-ui/view-model";
 import { buttonStyle, cellStyle, ErrorBanner, hintStyle, OwnerAdminOnly, quietButtonStyle, tableStyle } from "./ui";
 
 const cardStyle: CSSProperties = { border: "1px solid var(--line)", borderRadius: 12, padding: "10px 12px", minWidth: 0 };
@@ -94,10 +94,29 @@ function Flags({ account }: { account: CollectionsAccount }) {
   );
 }
 
-export function WorklistTable({ worklist, onSelectClient, onPage }: {
+/** The configured ladder from GET /api/collections/rules. */
+export function LadderSummary({ rules }: { rules: CollectionRule[] }) {
+  if (rules.length === 0) return null;
+  return (
+    <p data-ladder style={hintStyle}>
+      Ladder:{" "}
+      {rules.map((rule, index) => (
+        <span key={rule.stage} data-ladder-stage={rule.stage} style={rule.enabled ? undefined : { textDecoration: "line-through" }}>
+          {index > 0 ? " · " : ""}{rule.stage} {rule.label} ({rule.days_past_due}+ days{rule.automatic ? "" : ", Owner/Admin"}{rule.enabled ? "" : ", off"})
+        </span>
+      ))}
+    </p>
+  );
+}
+
+/** Worklist invoices may carry a pending approval (not yet in lib/collections-api.ts). */
+type WorklistInvoice = CollectionsAccount["invoices"][number] & { awaiting_approval?: AwaitingApproval | null };
+
+export function WorklistTable({ worklist, onSelectClient, onPage, stageLabels = STAGE_LABELS }: {
   worklist: CollectionsReceivablesResponse;
   onSelectClient: (clientId: string) => void;
   onPage: (offset: number) => void;
+  stageLabels?: StageLabels;
 }) {
   const { accounts, pagination } = worklist;
   if (accounts.length === 0) return <p style={hintStyle}>No accounts owe money or have credit to review.</p>;
@@ -150,14 +169,16 @@ export function WorklistTable({ worklist, onSelectClient, onPage }: {
                         </tr>
                       </thead>
                       <tbody>
-                        {account.invoices.map((invoice) => (
-                          <tr key={invoice.invoice_id} data-worklist-invoice={invoice.invoice_id} data-next-stage={invoice.next_stage ?? ""}>
+                        {(account.invoices as WorklistInvoice[]).map((invoice) => (
+                          <tr key={invoice.invoice_id} data-worklist-invoice={invoice.invoice_id} data-next-stage={invoice.next_stage ?? ""} data-awaiting={invoice.awaiting_approval ? invoice.awaiting_approval.stage : undefined}>
                             <td style={cellStyle}>{invoice.invoice_number}</td>
                             <td style={cellStyle}>{invoice.due_date}</td>
                             <td style={cellStyle}>{formatMoney(invoice.balance)}</td>
                             <td style={cellStyle}>{invoice.days_past_due}</td>
                             <td style={cellStyle}>
-                              {invoice.next_stage ? stageLabel(invoice.next_stage) : invoice.days_past_due > 0 ? "Ladder complete — follow up manually" : "Not due yet"}
+                              {invoice.awaiting_approval
+                                ? <span style={{ color: "#7a5210" }}>{awaitingApprovalLabel(invoice.awaiting_approval, stageLabels)}</span>
+                                : invoice.next_stage ? stageLabel(invoice.next_stage, stageLabels) : invoice.days_past_due > 0 ? "Ladder complete — follow up manually" : "Not due yet"}
                               {invoice.on_hold ? <div style={{ color: "#7a5210" }}>On hold</div> : null}
                               {invoice.below_minimum ? <div style={{ color: "var(--muted)" }}>Below minimum</div> : null}
                             </td>
@@ -183,7 +204,7 @@ export function WorklistTable({ worklist, onSelectClient, onPage }: {
 
 const PREVIEW_PAGE = 50;
 
-export function PreviewResults({ preview, onPage }: { preview: CollectionsAutomationPreviewResponse; onPage: (offset: number) => void }) {
+export function PreviewResults({ preview, onPage, stageLabels = STAGE_LABELS }: { preview: CollectionsAutomationPreviewResponse; onPage: (offset: number) => void; stageLabels?: StageLabels }) {
   const { actions, pagination } = preview;
   return (
     <div>
@@ -213,7 +234,7 @@ export function PreviewResults({ preview, onPage }: { preview: CollectionsAutoma
                   <td style={cellStyle}>{action.invoice_number}</td>
                   <td style={cellStyle}>{formatMoney(action.balance)}</td>
                   <td style={cellStyle}>{action.days_past_due}</td>
-                  <td style={cellStyle}>{stageLabel(action.stage)}</td>
+                  <td style={cellStyle}>{stageLabel(action.stage, stageLabels)}</td>
                   <td style={cellStyle}>
                     <strong>{DISPOSITION_LABELS[action.disposition] || action.disposition}</strong>
                     {action.suppression_reasons.map((reason) => <div key={reason} data-suppression={reason} style={{ fontSize: 12 }}>{PREVIEW_REASON_LABELS[reason] || reason}</div>)}
@@ -238,8 +259,9 @@ export function PreviewResults({ preview, onPage }: { preview: CollectionsAutoma
  * Owner/Admin automation preview. Other roles see the boundary and never call
  * the endpoint; the server still enforces it if they do.
  */
-export function AutomationPreviewPanel({ viewer, runPreview }: {
+export function AutomationPreviewPanel({ viewer, runPreview, stageLabels = STAGE_LABELS }: {
   viewer: Viewer | null;
+  stageLabels?: StageLabels;
   runPreview: (params: { asOfDate: string | null; offset: number; limit: number }) => Promise<ApiResult<CollectionsAutomationPreviewResponse>>;
 }) {
   const [asOfDate, setAsOfDate] = useState("");
@@ -267,7 +289,7 @@ export function AutomationPreviewPanel({ viewer, runPreview }: {
         </button>
       </div>
       {result && result.ok === false ? <ErrorBanner kind={result.kind} message={result.message} code={result.code} /> : null}
-      {result && result.ok === true ? <PreviewResults preview={result.data} onPage={(offset) => run(offset)} /> : null}
+      {result && result.ok === true ? <PreviewResults preview={result.data} onPage={(offset) => run(offset)} stageLabels={stageLabels} /> : null}
     </div>
   );
 }

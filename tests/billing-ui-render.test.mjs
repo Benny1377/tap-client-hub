@@ -332,10 +332,11 @@ check("Owner/Admin can record an approved notice as sent; staff see the boundary
   assert.doesNotMatch(staffHtml, />Record notice sent</);
 });
 
-check("a hold on the notice's invoice blocks recording it as sent", () => {
+check("a notice sent before a later hold can still be recorded", () => {
   const html = eventsPanel([approvalEvent], [hold({ invoice_id: "inv-1" })], owner);
-  assert.match(html, /data-notice-state="blocked_by_hold"/);
-  assert.doesNotMatch(html, />Record notice sent</);
+  assert.match(html, /data-notice-state="can_record"[\s\S]*>Record notice sent</);
+  assert.match(html, /A hold placed after the notice went out does not stop you recording it/);
+  assert.doesNotMatch(html, /data-notice-approval[\s\S]*?data-blocked-by-hold/, "no hold block on the notice row");
 });
 
 check("notices already recorded as sent leave the list", () => {
@@ -471,6 +472,40 @@ check("AR summary cards sit in a grid that fits two per row on a phone", () => {
   const html = render(h(worklistPanels.WorklistSummary, { worklist: worklist() }));
   // 100px minimum: the cards area is about 230px wide on a 375px phone, so two fit per row.
   assert.equal((html.match(/grid-template-columns:repeat\(auto-fill, minmax\(100px, 1fr\)\)/g) || []).length, 2);
+});
+
+// --- Integration contract (3bec72a) -------------------------------------------
+check("an invoice awaiting approval says so instead of 'Ladder complete'", () => {
+  const pending = { ...worklistAccount.invoices[0], next_stage: null, awaiting_approval: { event_id: "e-1", event_type: "escalation_requested", stage: 4, requested_at: "2026-10-01T15:00:00Z" } };
+  const html = render(h(worklistPanels.WorklistTable, { worklist: worklist({ accounts: [{ ...worklistAccount, invoices: [pending] }] }), onSelectClient: () => {}, onPage: () => {} }));
+  assert.match(html, /data-worklist-invoice="inv-1" data-next-stage="" data-awaiting="4"[\s\S]*?Awaiting Owner\/Admin approval: 4 · Owner escalation \(requested 2026-10-01\)/);
+  assert.doesNotMatch(html, /Ladder complete/);
+});
+
+check("worklist and preview use the configured ladder labels", () => {
+  const labels = { 1: "Courtesy", 2: "Professional reminder", 3: "Firm reminder", 4: "Partner review", 5: "Formal notice" };
+  const html = render(h(worklistPanels.WorklistTable, { worklist: worklist(), onSelectClient: () => {}, onPage: () => {}, stageLabels: labels }));
+  assert.match(html, /4 · Partner review/);
+  const ladder = render(h(worklistPanels.LadderSummary, { rules: [
+    { stage: 1, label: "Courtesy", days_past_due: 1, automatic: true, enabled: true },
+    { stage: 4, label: "Partner review", days_past_due: 21, automatic: false, enabled: true },
+    { stage: 3, label: "Firm", days_past_due: 15, automatic: true, enabled: false },
+  ] }));
+  assert.match(ladder, /data-ladder-stage="1"[^>]*>1 Courtesy \(1\+ days\)/);
+  assert.match(ladder, /4 Partner review \(21\+ days, Owner\/Admin\)/);
+  assert.match(ladder, /text-decoration:line-through[^>]*>[\s\S]*?3 Firm \(15\+ days, off\)/);
+  assert.equal(render(h(worklistPanels.LadderSummary, { rules: [] })), "");
+});
+
+check("hold and event rows prefer the server's invoice_number", () => {
+  const serverNamedHold = hold({ id: "h-9", invoice_id: "inv-paid", invoice_number: "TAP-OLD-7" });
+  const holdsHtml = holdsPanel([serverNamedHold], owner);
+  assert.match(holdsHtml, /data-hold-scope[^>]*>Invoice TAP-OLD-7 only/, "a paid invoice not in the local list still shows its number");
+  const bannerHtml = banner([serverNamedHold]);
+  assert.match(bannerHtml, /Acme LLC \(invoice TAP-OLD-7\)/);
+  const eventHtml = eventsPanel([{ ...request, invoice_id: "inv-paid", invoice_number: "TAP-OLD-7" }], [], staff);
+  assert.match(eventHtml, /data-event-row="e-1"[\s\S]*?>TAP-OLD-7</);
+  assert.match(eventHtml, /invoice TAP-OLD-7/);
 });
 
 console.log(`billing UI render checks passed (${passed})`);

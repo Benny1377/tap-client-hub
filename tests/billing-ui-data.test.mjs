@@ -325,11 +325,13 @@ await check("receivables keep the server's firm date and per-client aging", asyn
   assert.equal(state.receivables.data.client_aging[0]["1_30"], "150.00");
 });
 
-await check("notices awaiting send: Owner/Admin can record, others see the boundary, holds block, sent ones drop out", () => {
+await check("notices awaiting send: Owner/Admin can record (even after a later hold), others see the boundary, sent ones drop out", () => {
   const approval = event({ id: "a-1", event_type: "formal_notice_approved", invoice_id: "inv-1", approves_event_id: "e-1" });
   assert.equal(vm.noticesAwaitingSend([approval], [], owner, TODAY)[0].state, "can_record");
   assert.equal(vm.noticesAwaitingSend([approval], [], staff, TODAY)[0].state, "requires_owner_admin");
-  assert.equal(vm.noticesAwaitingSend([approval], [hold({ invoice_id: "inv-1" })], owner, TODAY)[0].state, "blocked_by_hold");
+  // Contract 20261010140000: recording an already-sent notice is a historical fact; a later hold does not block it.
+  assert.equal(vm.noticesAwaitingSend([approval], [hold({ invoice_id: "inv-1" })], owner, TODAY)[0].state, "can_record");
+  assert.equal(vm.noticesAwaitingSend([approval], [hold()], owner, TODAY)[0].state, "can_record");
   const sent = event({ id: "s-1", event_type: "formal_notice_sent", invoice_id: "inv-1", detail: { approval_event_id: "a-1" } });
   assert.equal(vm.noticesAwaitingSend([approval, sent], [], owner, TODAY).length, 0);
 });
@@ -403,9 +405,36 @@ await check("the app shell titles Billing and Collections; pages do not repeat t
 
 await check("the Collections page pages the call list on its own loader", () => {
   const page = readFileSync(join(root, "app/collections/page.tsx"), "utf8");
-  assert.match(page, /useLedger\(clientId, \["holds", "events", "receivables"\]\)/);
+  assert.match(page, /useLedger\(clientId, \["holds", "events", "receivables", "rules"\]\)/);
   assert.match(page, /useLedger\(clientId, \["worklist"\], \{ worklistLimit: WORKLIST_PAGE, worklistOffset, includeMeta: false \}\)/);
   assert.match(page, /receivables\.receivables\.map/, "invoice names come from every issued invoice, not one call-list page");
+});
+
+// --- Integration contract (3bec72a) -------------------------------------------
+await check("rules load from GET /api/collections/rules and drive stage labels", async () => {
+  const rules = [
+    { stage: 1, label: "Courtesy", days_past_due: 1, automatic: true, enabled: true },
+    { stage: 4, label: "Partner review", days_past_due: 21, automatic: false, enabled: true },
+  ];
+  const { fetchImpl, calls } = fakeFetch({ "GET /api/collections/rules": [200, { rules }] });
+  const state = await ledger.loadLedger(api.createBillingApi(fetchImpl), null, ["rules"]);
+  assert.equal(calls[0].url, "/api/collections/rules");
+  assert.equal(state.rules.data.length, 2);
+  const labels = vm.stageLabelsFrom(state.rules.data);
+  assert.equal(vm.stageLabel(1, labels), "1 · Courtesy");
+  assert.equal(vm.stageLabel(4, labels), "4 · Partner review");
+  assert.equal(vm.stageLabel(5, labels), "5 · Formal notice", "missing stages fall back to the defaults");
+  assert.equal(vm.stageLabel(2), "2 · Professional reminder", "defaults apply before rules load");
+});
+
+await check("pending approvals read as awaiting approval, with the configured label", () => {
+  const pending = { event_id: "e-1", event_type: "escalation_requested", stage: 4, requested_at: "2026-10-01T15:00:00Z" };
+  assert.equal(vm.awaitingApprovalLabel(pending), "Awaiting Owner/Admin approval: 4 · Owner escalation (requested 2026-10-01)");
+  assert.match(vm.awaitingApprovalLabel(pending, vm.stageLabelsFrom([{ stage: 4, label: "Partner review", days_past_due: 21, automatic: false, enabled: true }])), /4 · Partner review/);
+});
+
+await check("a duplicate Collections event gets a plain-language headline", () => {
+  assert.equal(vm.friendlyError("conflict", "EVENT_CONFLICT", "This Collections event has already been recorded").headline, "That Collections event has already been recorded.");
 });
 
 await check("stage labels cover the five ladder steps", () => {

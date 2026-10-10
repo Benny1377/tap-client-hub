@@ -109,6 +109,8 @@ export interface CollectionHold {
   expires_on: string | null;
   released_by: string | null;
   released_at: string | null;
+  /** Invoice number from the server; null for a whole-client hold. */
+  invoice_number?: string | null;
 }
 
 export type CollectionEventType =
@@ -135,6 +137,29 @@ export interface CollectionEvent {
   actor: string | null;
   detail: Record<string, unknown> | null;
   approves_event_id: string | null;
+  /** Invoice number from the server; null for client-level history. */
+  invoice_number?: string | null;
+}
+
+/** One ladder step from GET /api/collections/rules (display subset only). */
+export interface CollectionRule {
+  stage: number;
+  label: string;
+  days_past_due: number;
+  automatic: boolean;
+  enabled: boolean;
+}
+
+/**
+ * A pending escalation or formal-notice request on a worklist invoice. The
+ * worklist proposes no later stage until it is approved. Returned by the
+ * 20261010140000 migration; not yet in lib/collections-api.ts.
+ */
+export interface AwaitingApproval {
+  event_id: string;
+  event_type: "escalation_requested" | "formal_notice_requested";
+  stage: 4 | 5;
+  requested_at: string;
 }
 
 export interface ClientOption {

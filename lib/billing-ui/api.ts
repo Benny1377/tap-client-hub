@@ -6,6 +6,7 @@ import type { CollectionsAutomationPreviewResponse, CollectionsReceivablesRespon
 import type {
   ClientOption,
   CollectionEvent,
+  CollectionRule,
   CollectionHold,
   Invoice,
   InvoiceLine,
@@ -98,6 +99,9 @@ export function createBillingApi(fetchImpl: FetchLike) {
     payments: (clientId?: string | null) => request<{ payments: Payment[] }>(fetchImpl, withClient("/api/billing/payments", clientId)),
     holds: (clientId?: string | null) => request<{ holds: CollectionHold[] }>(fetchImpl, withClient("/api/collections/holds", clientId)),
     events: (clientId?: string | null) => request<{ events: CollectionEvent[] }>(fetchImpl, withClient("/api/collections/events", clientId)),
+
+    /** Ladder display settings (no templates or secrets). */
+    rules: () => request<{ rules: CollectionRule[] }>(fetchImpl, "/api/collections/rules"),
 
     /** Phase 2 worklist: AR summary, priority call list, and invoice stages from the shared Billing read model. */
     worklist: (params: { clientId?: string | null; limit?: number; offset?: number } = {}) => {
