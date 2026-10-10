@@ -6,8 +6,12 @@ const read = (path) => readFile(new URL(path, root), "utf8");
 
 const migration = await read("supabase/migrations/20261010120000_collections_automation_foundation.sql");
 const followupMigration = await read("supabase/migrations/20261010130000_collections_shared_date_and_stage_model.sql");
+const catchUpMigration = await read("supabase/migrations/20261011100000_collections_catch_up_policy.sql");
 const receivablesRoute = await read("app/api/collections/receivables/route.ts");
 const previewRoute = await read("app/api/collections/automation/preview/route.ts");
+const rulesRoute = await read("app/api/collections/rules/route.ts");
+const eventRoute = await read("app/api/collections/events/route.ts");
+const holdsRoute = await read("app/api/collections/holds/route.ts");
 const contracts = await read("lib/collections-api.ts");
 
 assert.match(migration, /create or replace function tap_hub_project\.get_collections_worklist/i);
@@ -39,6 +43,16 @@ assert.match(followupMigration, /when e\.event_type in \('escalation_requested',
 assert.match(followupMigration, /when e\.event_type in \('formal_notice_requested','formal_notice_approved','formal_notice_sent'\) then 5/i);
 assert.match(followupMigration, /'priority_score_components'/);
 assert.match(followupMigration, /perform set_config\('tap_hub\.actor_id', p_actor::text, true\)/g);
+assert.match(catchUpMigration, /where r\.enabled and r\.automatic and r\.stage <= 3\s+and r\.stage > v_completed and r\.days_past_due <= v_days/i,
+  "missed reminders should catch up to the latest currently due automatic stage");
+assert.match(catchUpMigration, /if v_next is null then\s+select min\(r\.stage\)/i,
+  "approval stages should remain sequential after automatic reminders");
+assert.match(rulesRoute, /requireLedgerReadAccess/);
+assert.match(rulesRoute, /stage, label, days_past_due, automatic, enabled/);
+assert.match(eventRoute, /invoice:invoices\(invoice_number\)/);
+assert.match(holdsRoute, /invoice:invoices\(invoice_number\)/);
+assert.match(eventRoute, /collectionsError/);
+assert.match(holdsRoute, /collectionsError/);
 assert.match(contracts, /CollectionsReceivablesResponse/);
 assert.match(contracts, /CollectionsAutomationPreviewResponse/);
 

@@ -11,3 +11,5 @@ Record:
 - Consumer actions, refresh behavior, merge order, and rollback notes.
 
 A handoff is not ready until the consumer can reproduce its branch and use its contract without private chat context.
+
+Current Collections local database instructions and the Engineer A validation request are in `2026-10-11-collections-local-setup.md`.

@@ -1,8 +1,8 @@
 # TAP Client Hub Current Work
 
-Last updated: 2026-10-10 Asia Kolkata
+Last updated: 2026-10-11 Asia Kolkata
 
-Updated by: Codex (Collections Phase 2 backend)
+Updated by: Codex (Collections Phase 2 integration)
 
 ## Shared baseline
 
@@ -13,8 +13,8 @@ Updated by: Codex (Collections Phase 2 backend)
   - M0 Stable ownership;
   - Collections Phase 0 (read-only discovery), complete.
   - Collections Phase 1 (Billing ledger), backend review fixes pushed; integrated UI validation remains open.
-  - Collections Phase 2 (Billing-backed Collections automation), backend implementation in progress; QuickBooks explicitly out of scope.
-- Overall status: The project owner reports applying migrations `20261010110000_billing_audit_and_receivables.sql` and `20261010120000_collections_automation_foundation.sql`; neither report has been independently verified from this branch. New forward-only migration `20261010130000_collections_shared_date_and_stage_model.sql` is local and unverified. Phase 1 UI/backend integration and release validation remain open. Phase 2 code remains on its feature branch; no production email delivery is authorized.
+  - Collections Phase 2 backend and local-only SQL harness, in progress; QuickBooks explicitly out of scope.
+- Overall status: This integration branch starts from `origin/codex/collections-phase-2-backend` (`0e01c19`). It restores the reviewed `20261010140000` migration and regression test from the prior local review, adds the owner-approved reminder catch-up migration `20261011100000`, and adds an isolated synthetic Supabase harness. The local SQL security, audit, and stage suites pass through `20261011100000`. Hosted migration state remains unverified here. Phase 1 UI/backend integration and Phase 2 real UI/API/database validation remain open. No production email delivery is authorized.
 
 ## Active branches
 
@@ -24,6 +24,7 @@ Updated by: Codex (Collections Phase 2 backend)
 | `codex/collections-phase-0` | Claude Code | Collections Phase 0 discovery, hosted schema evidence, decision record, frozen Phase 1 contract, handoff. Documentation only. | `c259a6edf871b43a0aa2ad0d11cb73dfd8f82653` (stacked on the playbook branch) | Complete | Project-owner review |
 | `codex/collections-phase-1-billing-ledger` | Codex | Phase 1 Billing ledger and backend review fixes. | `ded69a3` | Backend fixes pushed at `e2df16e`; owner reports migration applied; UI integration validation pending | Review handoff `docs/handoffs/2026-10-10-collections-phase-1-review-fixes.md`; integrated UI/backend validation and release gates |
 | `codex/collections-phase-2-backend` | Codex | Billing-backed Collections read model and safe automation backend. | `e2df16e` (`codex/collections-phase-1-billing-ledger`) | Base implementation pushed at `292de5c`; developer review fixes in progress locally; Engineer A contract review pending | Engineer A API review, Phase 1 integrated release gates, Phase 2 non-production database/UI validation |
+| `codex/collections-phase2-integration` | Codex | Restore Phase 2 reviewed migration/test, implement approved catch-up policy, complete API contract items, and document reproducible local SQL testing. | `0e01c19` (`origin/codex/collections-phase-2-backend`) | Local work in progress; SQL security/audit/stage checks and TypeScript, targeted ESLint, and backend contract checks pass | Review changes, share branch with Engineer A, complete real UI/API/database validation; do not merge to `main` |
 
 ## Dependencies and blockers
 
@@ -39,7 +40,8 @@ Updated by: Codex (Collections Phase 2 backend)
 | COL-DEP-08 | Collections Phase 2 | Engineer A + Engineer B | Complete Phase 1 integrated UI/backend validation before Phase 2 release. | OPEN | Phase 1 handoff and test evidence |
 | COL-DEP-09 | Collections Phase 2 | Project owner + client | Confirm ladder copy/timing, limits, sender/test recipient, contact selection, and production-send approval. | OPEN; production sending disabled | Phase 2 contract, open decisions |
 | COL-DEP-10 | Collections Phase 1 | Project owner | Rotate the exposed shared Supabase Auth password for affected users and review existing sessions. | OWNER ACTION REQUIRED before Phase 1 sign-off; application hash guard does not block direct Supabase Auth login | `docs/decisions/2026-10-10-supabase-shared-password-rotation.md` |
-| COL-DEP-11 | Collections Phase 2 | Engineer A + Engineer B | Validate migrations through `20261010130000` and the Billing/Collections UI flow in non-production. | OPEN; no non-production database available in this task | `supabase/tests/collections_phase1_security_and_audit.sql`; `supabase/tests/collections_phase1_audit_actor.sql` |
+| COL-DEP-11 | Collections Phase 2 | Engineer A + Engineer B | Validate Billing/Collections in non-production. | SQL security/audit/stage tests pass on local Supabase through `20261011100000`; real UI/API/database test remains OPEN | `docs/handoffs/2026-10-11-collections-local-setup.md`; `tools/collections-local/reset.sh`; `tools/collections-local/test.sh` |
+| COL-DEP-12 | TAP Hub repository | Project owner | Review tracked historical credential-bearing migration source and determine credential rotation/history cleanup actions before broader branch sharing. | OWNER ACTION REQUIRED; excluded from local test setup; no credential values copied | `supabase/migrations/007_insert_credentials.sql` |
 
 ## Merge queue
 
@@ -50,4 +52,4 @@ Updated by: Codex (Collections Phase 2 backend)
 
 ## Next coordination event
 
-Complete Phase 1 by integrating the UI branch and recording end-to-end validation evidence. The owner reports migrations through `20261010120000` applied, but the hosted migration state is not independently verified. Retire the exposed shared Supabase Auth credential before release. Phase 2 backend work uses TAP Hub Billing only; QuickBooks is explicitly out of scope. Review and validate migration `20261010130000` only in non-production, obtain Engineer A contract approval, and complete Phase 1 release gates before Phase 2 release. Production email delivery remains disabled pending separate owner/client approval. Do not merge to `main` until all planned phases and their gates are complete.
+Have Engineer A check out `codex/collections-phase2-integration`, reproduce `bash tools/collections-local/reset.sh --local` and `bash tools/collections-local/test.sh --local`, and validate the real UI/API/database flows. Hosted migration state must be confirmed through the approved process before any deployment. Review the historical credential-bearing migration before broader sharing. Retire the previously exposed shared Supabase Auth credential before release. Phase 2 uses TAP Hub Billing only; QuickBooks is out of scope. Production email delivery remains disabled pending separate owner/client approval. Do not merge to `main` until all planned phases and their gates are complete.

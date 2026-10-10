@@ -1,13 +1,13 @@
 # Contract: Collections Phase 2 Backend
 
-State: **Draft for Engineer A review; implementation is owner-authorized on the Phase 2 branch. Production sending/configuration is not authorized.**
+State: **Engineer A approved conditionally on stage-history corrections; implementation updates are prepared on the Phase 2 backend branch. Production sending/configuration is not authorized.**
 
 - Producer: Engineer B (billing/collections backend).
 - Consumer: Engineer A (Collections UI and integrated testing).
 - Owner decision: QuickBooks is **not needed** for this scope; Collections reads TAP Hub Billing as its sole receivables source (2026-10-10).
-- Engineer A approval: pending; record compatibility feedback before the contract is frozen.
+- Engineer A approval: conditional; pending requests must not count as completed stages, and client-level escalation/notice history must not affect invoices that were not yet due on the event's firm-local date. Regression coverage is in `supabase/tests/collections_phase2_stage_regressions.sql`.
 - Prerequisite for release: Phase 1 ledger migration and UI/backend integration verification.
-- Migration order: `20261010110000_billing_audit_and_receivables.sql` → `20261010120000_collections_automation_foundation.sql` → `20261010130000_collections_shared_date_and_stage_model.sql`.
+- Migration order: `20261010110000_billing_audit_and_receivables.sql` → `20261010120000_collections_automation_foundation.sql` → `20261010130000_collections_shared_date_and_stage_model.sql` → `20261010140000_collections_stage_and_api_corrections.sql` → `20261011100000_collections_catch_up_policy.sql`.
 - Prototype source: owner-provided `practiceops_1.html` and `TAP_Client_Hub_Demo_v14.html`; numbers and demo copy are not production-approved defaults.
 
 ## Capability boundary
@@ -40,7 +40,9 @@ The demo provides these values as starting points, not approved live settings:
 | 4 Owner escalation | 21 days past due | Internal request/queue item; pause client-facing automation | Owner/Admin only |
 | 5 Formal notice | 28 days past due | Approval request; no automatic send | Explicit Owner/Admin approval; test-only delivery in this milestone |
 
-Reminder history is invoice-aware. A `reminder_logged` event with explicit `stage` must use stage 1, 2, or 3. If the UI omits it, the database records the highest enabled automatic ladder stage eligible for that invoice on the firm's date at logging time. For legacy reminder events without a stage, the worklist derives the equivalent stage from the event's timestamp in the configured firm timezone. Escalation request/approval events imply stage 4; formal-notice request/approval/sent events imply stage 5. Account-level reminders apply to each eligible invoice at its own due-date age.
+Reminder history is invoice-aware. A `reminder_logged` event with explicit `stage` must use stage 1, 2, or 3. If the UI omits it, the database records the highest enabled automatic ladder stage eligible for that invoice on the firm's date at logging time. For legacy reminder events without a stage, the worklist derives the equivalent stage from the event's timestamp in the configured firm timezone. Only approved/completed escalation (`escalated`) counts as stage 4; only approved/sent formal notice counts as stage 5. An unapproved request is surfaced as `awaiting_approval` and blocks proposing later stages. New escalation/formal-notice requests require an invoice. Legacy client-level escalation/notice events apply only to invoices whose due date was on or before the event's firm-local date. Account-level reminders continue to apply to each eligible invoice at its own due-date age.
+
+The owner approved reminder catch-up: if earlier reminders were missed, the next proposed reminder is the highest enabled automatic stage currently due. The worklist does not skip the Owner escalation or formal-notice approval gates.
 
 Prototype guardrails to expose as configurable settings (not to silently assume as production policy): minimum balance `$50`, direct-owner escalation above `$5,000`, weekdays only, 9:00 a.m.–5:00 p.m. Central time, stop on recorded payment, sender/reply-to, test recipient, and optional assigned-staffer copy. The first-touch body says “due” while its trigger says “1 day past due”; use a neutral editable template until owner/client approves exact copy and timing. Payment links remain off until a Billing-owned payment URL is specified.
 
@@ -54,12 +56,14 @@ All routes are server-authorized. Exact response schemas and stable errors must 
 | --- | --- | --- |
 | `GET /api/collections/receivables` | Implemented: summary, invoice rows, client aggregates, aging, holds, credit-review flags, contact gaps, and priority sort | Billing or Collections module; Owner/Admin always |
 | `POST /api/collections/automation/preview` | Implemented: side-effect-free proposed actions using a supplied/as-of date; scans all accounts in stable pages and paginates the returned actions | Owner/Admin |
-| `GET /api/collections/rules` | Deferred: current ladder and guardrail settings (never secrets) | Owner/Admin read; safe display subset requires Engineer A review |
+| `GET /api/collections/rules` | Current ladder display subset: `stage`, `label`, `days_past_due`, `automatic`, `enabled` (no templates/secrets) | Billing/Collections read access |
 | `PATCH /api/collections/rules` | Deferred: update approved thresholds, wording, and test settings | Owner/Admin only; audited transaction |
 | `POST /api/collections/automation/run` | Deferred: protected scheduled job; no worker/provider send exists in this branch yet | Machine secret, not an app-user cookie |
 | `GET /api/collections/deliveries` | Deferred: delivery attempts and suppression/failure history | Owner/Admin |
 
 Exact TypeScript success/error response contracts are in `lib/collections-api.ts`. Receivables accepts `client_id?`, `as_of_date?`, `limit?` (default 100, 1–200), and `offset?` (default 0, max 100,000); its `pagination` object returns `limit`, `offset`, and `total_accounts`. Preview accepts JSON `{ as_of_date?, limit?, offset? }` (same limit/offset bounds), scans the account set in stable 200-account database pages rather than stopping at the top 200 priority rows, then returns a page of actions and `{ limit, offset, total_actions, has_more }`. Money is decimal strings, responses are `no-store`, and every error has a stable `code`.
+
+Collections event and hold list/write responses include top-level `invoice_number` (null for account-level history). Database exception prefixes are not exposed to callers; API errors retain stable machine-readable `code` values with readable `error` text. `formal_notice_sent` records an already-sent notice; it is not a send operation. A current hold does not prevent recording this historical fact, but the event must reference a matching approval and include a note recording when/how the send occurred.
 
 Error codes: receivables returns `UNAUTHENTICATED` (401), `FORBIDDEN` (403), `INVALID_CLIENT_ID`, `INVALID_AS_OF_DATE`, `INVALID_LIMIT`, or `INVALID_OFFSET` (422), and `COLLECTIONS_READ_MODEL_FAILED` (500). Preview returns `UNAUTHENTICATED` (401), `FORBIDDEN` (403), `INVALID_JSON` (400), `INVALID_INPUT`, `INVALID_AS_OF_DATE`, `INVALID_LIMIT`, or `INVALID_OFFSET` (422), and `PREVIEW_READ_FAILED` (500). Error bodies are `{ "error": string, "code": string }`.
 
@@ -98,4 +102,4 @@ Error codes: receivables returns `UNAUTHENTICATED` (401), `FORBIDDEN` (403), `IN
 - Full UI-to-API-to-database-to-audit-to-reload flow is verified by Engineer A in an approved non-production environment. No live-client email is used as a test.
 - Lint, typecheck, build, access regression, API contract tests, SQL policy tests, and the documented Phase 1 suite pass before release.
 
-This contract remains a draft until Engineer A has reviewed the consumer-facing API and the owner/client has approved operational rules. Production email delivery remains a separately gated change.
+The conditional stage-history correction and the added safe rules display are pending Engineer A re-review before the contract can be treated as fully frozen. Production email delivery remains a separately gated change.
