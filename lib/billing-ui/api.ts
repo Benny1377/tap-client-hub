@@ -1,6 +1,8 @@
-// Browser client for the Phase 1 Billing and Collections routes. Every read and
-// write goes through the server routes, which own authorization and invariants;
-// this module never talks to Supabase directly.
+// Browser client for the Billing and Collections routes (Phase 1 ledger and the
+// Phase 2 worklist and preview). Every read and write goes through the server
+// routes, which own authorization and invariants; this module never talks to
+// Supabase directly.
+import type { CollectionsAutomationPreviewResponse, CollectionsReceivablesResponse } from "@/lib/collections-api";
 import type {
   ClientOption,
   CollectionEvent,
@@ -9,7 +11,7 @@ import type {
   InvoiceLine,
   Payment,
   PaymentAllocation,
-  Receivable,
+  ReceivablesResponse,
   Viewer,
 } from "./types";
 
@@ -17,7 +19,7 @@ export type ApiErrorKind = "unauthorized" | "forbidden" | "not_found" | "conflic
 
 export type ApiResult<T> =
   | { ok: true; status: number; data: T }
-  | { ok: false; status: number; kind: ApiErrorKind; message: string };
+  | { ok: false; status: number; kind: ApiErrorKind; message: string; code?: string };
 
 export type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
 
@@ -48,8 +50,16 @@ async function request<T>(fetchImpl: FetchLike, url: string, init?: RequestInit)
     body = null;
   }
   if (!response.ok) {
-    const serverMessage = body && typeof body === "object" && "error" in body ? String((body as { error: unknown }).error) : "";
-    return { ok: false, status: response.status, kind: kindForStatus(response.status), message: serverMessage || `Request failed (${response.status})` };
+    const payload = body && typeof body === "object" ? (body as { error?: unknown; code?: unknown }) : {};
+    const failure: ApiResult<T> = {
+      ok: false,
+      status: response.status,
+      kind: kindForStatus(response.status),
+      message: payload.error ? String(payload.error) : `Request failed (${response.status})`,
+    };
+    // Stable machine-readable code from the server, when it sends one.
+    if (typeof payload.code === "string") failure.code = payload.code;
+    return failure;
   }
   return { ok: true, status: response.status, data: body as T };
 }
@@ -84,10 +94,27 @@ export function createBillingApi(fetchImpl: FetchLike) {
     },
 
     invoices: (clientId?: string | null) => request<{ invoices: Invoice[] }>(fetchImpl, withClient("/api/billing/invoices", clientId)),
-    receivables: (clientId?: string | null) => request<{ receivables: Receivable[] }>(fetchImpl, withClient("/api/billing/receivables", clientId)),
+    receivables: (clientId?: string | null) => request<ReceivablesResponse>(fetchImpl, withClient("/api/billing/receivables", clientId)),
     payments: (clientId?: string | null) => request<{ payments: Payment[] }>(fetchImpl, withClient("/api/billing/payments", clientId)),
     holds: (clientId?: string | null) => request<{ holds: CollectionHold[] }>(fetchImpl, withClient("/api/collections/holds", clientId)),
     events: (clientId?: string | null) => request<{ events: CollectionEvent[] }>(fetchImpl, withClient("/api/collections/events", clientId)),
+
+    /** Phase 2 worklist: AR summary, priority call list, and invoice stages from the shared Billing read model. */
+    worklist: (params: { clientId?: string | null; limit?: number; offset?: number } = {}) => {
+      const query = new URLSearchParams();
+      if (params.clientId) query.set("client_id", params.clientId);
+      if (params.limit !== undefined) query.set("limit", String(params.limit));
+      if (params.offset !== undefined) query.set("offset", String(params.offset));
+      const suffix = query.toString();
+      return request<CollectionsReceivablesResponse>(fetchImpl, `/api/collections/receivables${suffix ? `?${suffix}` : ""}`);
+    },
+    /** Owner/Admin automation preview. Side-effect free: the server performs no delivery. */
+    preview: (params: { asOfDate?: string | null; limit?: number; offset?: number } = {}) =>
+      post<CollectionsAutomationPreviewResponse>(fetchImpl, "/api/collections/automation/preview", {
+        ...(params.asOfDate ? { as_of_date: params.asOfDate } : {}),
+        ...(params.limit !== undefined ? { limit: params.limit } : {}),
+        ...(params.offset !== undefined ? { offset: params.offset } : {}),
+      }),
 
     createInvoice: (input: { client_id: string; invoice_number: string; issue_date: string; due_date: string; memo?: string | null }) =>
       post<{ invoice: Invoice }>(fetchImpl, "/api/billing/invoices", input),
@@ -115,7 +142,7 @@ export function createBillingApi(fetchImpl: FetchLike) {
     reverseAllocation: (id: string) =>
       post<{ allocation: PaymentAllocation }>(fetchImpl, `/api/billing/allocations/${encodeURIComponent(id)}`, {}),
 
-    logEvent: (input: { client_id: string; event_type: string; invoice_id?: string | null; stage?: string | null; detail?: Record<string, unknown> }) =>
+    logEvent: (input: { client_id: string; event_type: string; invoice_id?: string | null; stage?: number | null; detail?: Record<string, unknown>; approval_event_id?: string | null }) =>
       post<{ event: CollectionEvent }>(fetchImpl, "/api/collections/events", input),
     approveEvent: (eventId: string, eventType: "escalated" | "formal_notice_approved", detail?: Record<string, unknown>) =>
       post<{ event: CollectionEvent }>(fetchImpl, "/api/collections/events/approve", { event_id: eventId, event_type: eventType, detail }),

@@ -54,7 +54,7 @@ check("pages render every section as loading before the API responds", () => {
   const billing = render(h(BillingPage));
   for (const label of ["invoices", "payments", "receivables"]) assert.match(billing, new RegExp(`Loading ${label}…`));
   const collectionsHtml = render(h(CollectionsPage));
-  for (const label of ["receivables", "Collections activity", "holds"]) assert.match(collectionsHtml, new RegExp(`Loading ${label}…`));
+  for (const label of ["AR insights", "call list", "Collections activity", "holds"]) assert.match(collectionsHtml, new RegExp(`Loading ${label}…`));
 });
 
 // --- 403 and other server errors -------------------------------------------
@@ -187,7 +187,8 @@ check("receivables render server-derived totals", () => {
 
 // --- Holds -----------------------------------------------------------------
 const hold = (overrides = {}) => ({ id: "h-1", client_id: "c-1", invoice_id: null, reason: "Disputed fee", placed_by: "u", placed_at: "2026-10-01T00:00:00Z", expires_on: null, released_by: null, released_at: null, ...overrides });
-const holdsPanel = (holds, viewer) => render(h(collections.HoldsPanel, { holds, clientId: "c-1", clientNames: {}, viewer, today: TODAY, onPlace: noop, onRelease: noop }));
+const invoiceOptions = [{ id: "inv-1", invoice_number: "TAP-1", client_id: "c-1" }];
+const holdsPanel = (holds, viewer) => render(h(collections.HoldsPanel, { holds, clientId: "c-1", clientNames: {}, invoiceOptions, viewer, today: TODAY, onPlace: noop, onRelease: noop }));
 const banner = (holds, clientId = "c-1") => render(h(collections.ActiveHoldBanner, { holds, clientId, clientNames: { "c-1": "Acme LLC" }, invoiceNumbers: { "inv-1": "TAP-1" }, today: TODAY }));
 
 check("hold banner appears only while a hold is in force, with its scope", () => {
@@ -224,7 +225,7 @@ check("an unreleased hold past its review date shows as expired and no longer bl
 
 // --- Collections events and approval boundaries ---------------------------
 const request = { id: "e-1", client_id: "c-1", invoice_id: null, event_type: "formal_notice_requested", stage: null, occurred_at: "2026-10-02T09:00:00Z", actor: "u", detail: { note: "Third reminder ignored" }, approves_event_id: null };
-const eventsPanel = (events, holds, viewer) => render(h(collections.EventsPanel, { events, holds, receivables: [receivable], clientId: "c-1", clientNames: {}, viewer, today: TODAY, onLog: noop, onApprove: noop }));
+const eventsPanel = (events, holds, viewer) => render(h(collections.EventsPanel, { events, holds, invoiceOptions, clientId: "c-1", clientNames: {}, viewer, today: TODAY, onLog: noop, onApprove: noop, onRecordNoticeSent: noop }));
 
 check("Owner/Admin get an approve button", () => {
   const html = eventsPanel([request], [], owner);
@@ -269,6 +270,139 @@ check("the activity form offers only loggable activities", () => {
   for (const reserved of ["escalated", "formal_notice_approved", "formal_notice_sent", "hold_placed", "hold_released"]) {
     assert.doesNotMatch(html, new RegExp(`value="${reserved}"`), `${reserved} must not be a free-form activity`);
   }
+});
+
+// --- Phase 1 completion -----------------------------------------------------
+const worklistPanels = loadTs("components/billing/worklist-panels.tsx");
+
+check("payments show the server's unallocated amount, also in the allocation picker", () => {
+  const withRemaining = { ...payment, unallocated_amount: "0.00" };
+  const partly = { ...payment, id: "p-2", amount: "200.00", payment_allocations: [], unallocated_amount: "200.00" };
+  const html = render(h(paymentPanels.PaymentsPanel, {
+    payments: [withRemaining, partly], invoices: [invoice({ status: "issued", invoice_lines: [line] })], receivables: [receivable], clientId: "c-1",
+    clientNames: {}, viewer: staff, handlers: { onRecord: noop, onAllocate: noop, onReversePayment: noop, onReverseAllocation: noop },
+  }));
+  assert.match(html, /data-unallocated="200\.00"[^>]*>\$200\.00</);
+  assert.match(html, /\$200\.00 · \$200\.00 left/);
+});
+
+check("per-client aging totals render the server's buckets", () => {
+  const html = render(h(paymentPanels.ClientAgingSummary, { aging: { client_id: "c-1", current: "0.00", "1_30": "150.00", "31_60": "0.00", "61_90": "0.00", "90_plus": "75.50" } }));
+  assert.match(html, /data-aging-total="1_30"[\s\S]*\$150\.00/);
+  assert.match(html, /data-aging-total="90_plus"[\s\S]*\$75\.50/);
+  assert.equal(render(h(paymentPanels.ClientAgingSummary, { aging: null })), "");
+});
+
+check("holds show their scope and can be placed on one invoice", () => {
+  const html = holdsPanel([hold(), hold({ id: "h-2", invoice_id: "inv-1" })], owner);
+  assert.match(html, /data-hold-row="h-1"[\s\S]*?data-hold-scope[^>]*>Whole client/);
+  assert.match(html, /data-hold-row="h-2"[\s\S]*?data-hold-scope[^>]*>Invoice TAP-1 only/);
+  assert.match(html, /aria-label="Place hold"[\s\S]*name="invoice_id"[\s\S]*Invoice TAP-1 only/);
+});
+
+const approvalEvent = { ...request, id: "a-1", event_type: "formal_notice_approved", invoice_id: "inv-1", approves_event_id: "e-1", detail: {} };
+
+check("Owner/Admin can record an approved notice as sent; staff see the boundary", () => {
+  const ownerHtml = eventsPanel([approvalEvent], [], owner);
+  assert.match(ownerHtml, /data-notice-approval="a-1" data-notice-state="can_record"[\s\S]*>Record notice sent</);
+  assert.match(ownerHtml, /TAP Hub does not send notices/);
+  const staffHtml = eventsPanel([approvalEvent], [], staff);
+  assert.match(staffHtml, /data-notice-state="requires_owner_admin"/);
+  assert.match(staffHtml, /Recording a notice as sent requires Owner\/Admin/);
+  assert.doesNotMatch(staffHtml, />Record notice sent</);
+});
+
+check("a hold on the notice's invoice blocks recording it as sent", () => {
+  const html = eventsPanel([approvalEvent], [hold({ invoice_id: "inv-1" })], owner);
+  assert.match(html, /data-notice-state="blocked_by_hold"/);
+  assert.doesNotMatch(html, />Record notice sent</);
+});
+
+check("notices already recorded as sent leave the list", () => {
+  const sent = { ...approvalEvent, id: "s-1", event_type: "formal_notice_sent", approves_event_id: null, detail: { approval_event_id: "a-1" } };
+  assert.match(eventsPanel([approvalEvent, sent], [], owner), /No approved notices waiting/);
+});
+
+check("history shows the invoice for each event", () => {
+  const html = eventsPanel([{ ...request, invoice_id: "inv-1" }], [], staff);
+  assert.match(html, /data-event-row="e-1"[\s\S]*?>TAP-1</);
+});
+
+// --- Phase 2: worklist and preview ---------------------------------------
+const component = (balance, weight, weighted) => ({ balance, weight, weighted_amount: weighted });
+const worklistAccount = {
+  client_id: "c-1", client_name: "Acme LLC", contact_name: "Pat Lee", contact_email: null, contact_phone: "555-0100", primary_contact_count: 1,
+  gross_open_balance: "1500.00", unallocated_credit: "200.00", net_ar_estimate: "1300.00", open_invoice_count: 2, oldest_days_past_due: 45,
+  aging: { current: "0.00", days_1_30: "500.00", days_31_60: "1000.00", days_61_90: "0.00", days_over_90: "0.00" },
+  call_priority_score: "1800.00",
+  priority_score_components: {
+    "21_30": component("500.00", "1.0", "500.00"), "31_60": component("1000.00", "1.3", "1300.00"), "61_90": component("0.00", "1.6", "0.00"),
+    "91_180": component("0.00", "2.0", "0.00"), over_180: component("0.00", "2.4", "0.00"), score_zero_before_days_past_due: 21,
+  },
+  on_hold: true, credit_review_required: true, contact_review_required: true, largest_high_balance_invoice: "0.00",
+  invoices: [
+    { invoice_id: "inv-1", invoice_number: "TAP-1", issue_date: "2026-08-01", due_date: "2026-08-25", invoice_total: "1000.00", allocated: "0.00", balance: "1000.00", days_past_due: 45, current_stage: 5, next_stage: 4, on_hold: true, credit_review_required: true, contact_review_required: true, below_minimum: false },
+    { invoice_id: "inv-2", invoice_number: "TAP-2", issue_date: "2026-09-01", due_date: "2026-09-14", invoice_total: "500.00", allocated: "0.00", balance: "500.00", days_past_due: 25, current_stage: 4, next_stage: null, on_hold: false, credit_review_required: true, contact_review_required: true, below_minimum: false },
+  ],
+};
+const worklist = (overrides = {}) => ({
+  as_of_date: TODAY, currency: "USD",
+  summary: { gross_open_balance: "1500.00", unallocated_credit: "200.00", net_ar_estimate: "1300.00", aging: worklistAccount.aging, open_invoice_count: 2, owing_accounts: 1, credit_review_accounts: 1, chronic_accounts: 0, oldest_days_past_due: 45 },
+  accounts: [worklistAccount], pagination: { limit: 50, offset: 0, total_accounts: 1 }, ...overrides,
+});
+
+check("AR summary shows server totals, aging, and the firm date", () => {
+  const html = render(h(worklistPanels.WorklistSummary, { worklist: worklist() }));
+  assert.match(html, /As of 2026-10-09 \(firm date\)/);
+  assert.match(html, /data-summary="gross"[\s\S]*?\$1,500\.00/);
+  assert.match(html, /data-summary="net"[\s\S]*?\$1,300\.00/);
+  assert.match(html, /data-summary="aging-31-60"[\s\S]*?\$1,000\.00/);
+  assert.match(html, /data-credit-review-count[^>]*>1 account has unallocated payments/);
+});
+
+check("call list shows flags, contact, score breakdown, and invoice next steps", () => {
+  const html = render(h(worklistPanels.WorklistTable, { worklist: worklist(), onSelectClient: () => {}, onPage: () => {} }));
+  assert.match(html, /data-worklist-account="c-1"[\s\S]*Acme LLC/);
+  for (const flag of ["hold", "credit", "contact"]) assert.match(html, new RegExp(`data-flag="${flag}"`));
+  assert.match(html, /555-0100/);
+  assert.match(html, /data-score-band="31_60"[\s\S]*?\$1,000\.00[\s\S]*?× 1\.3[\s\S]*?= 1,300\.00/);
+  assert.match(html, /under 21 days past due add nothing/);
+  assert.match(html, /data-worklist-invoice="inv-1" data-next-stage="4"[\s\S]*?4 · Owner escalation[\s\S]*?On hold/);
+  assert.match(html, /data-worklist-invoice="inv-2" data-next-stage=""[\s\S]*?Up to date/);
+});
+
+check("call list pagination reflects the server's page", () => {
+  const firstPage = render(h(worklistPanels.WorklistTable, { worklist: worklist({ pagination: { limit: 1, offset: 0, total_accounts: 3 } }), onSelectClient: () => {}, onPage: () => {} }));
+  assert.match(firstPage, /Showing 1–1 of 3/);
+  assert.match(firstPage, /<button type="button"[^>]*disabled=""[^>]*>Previous<\/button>/);
+  assert.doesNotMatch(firstPage, /disabled=""[^>]*>Next</);
+  assert.match(render(h(worklistPanels.WorklistTable, { worklist: worklist({ accounts: [] }), onSelectClient: () => {}, onPage: () => {} })), /No accounts owe money/);
+});
+
+check("automation preview is Owner/Admin only", () => {
+  for (const viewer of [staff, manager, null]) {
+    const html = render(h(worklistPanels.AutomationPreviewPanel, { viewer, runPreview: noop }));
+    assert.match(html, /The automation preview requires Owner\/Admin/);
+    assert.doesNotMatch(html, /Run preview/);
+  }
+  assert.match(render(h(worklistPanels.AutomationPreviewPanel, { viewer: owner, runPreview: noop })), />Run preview</);
+});
+
+check("preview results say nothing was sent and explain each outcome", () => {
+  const preview = {
+    as_of_date: TODAY, automation_enabled: false, delivery_mode: "disabled",
+    actions: [
+      { client_id: "c-1", client_name: "Acme LLC", contact_phone: "555-0100", invoice_id: "inv-1", invoice_number: "TAP-1", balance: "1000.00", days_past_due: 45, stage: 4, action_type: "owner_escalation_review", disposition: "approval_required", suppression_reasons: [], review_warnings: ["email_contact_missing"], delivery_performed: false },
+      { client_id: "c-2", client_name: "Beta Co", contact_phone: null, invoice_id: "inv-7", invoice_number: "TAP-7", balance: "40.00", days_past_due: 6, stage: 2, action_type: "reminder_candidate", disposition: "suppressed", suppression_reasons: ["below_minimum_balance", "active_hold"], review_warnings: [], delivery_performed: false },
+    ],
+    pagination: { limit: 50, offset: 0, total_actions: 2, has_more: false },
+  };
+  const html = render(h(worklistPanels.PreviewResults, { preview, onPage: () => {} }));
+  assert.match(html, /data-preview-safety[\s\S]*Automation is off and delivery is disabled\. Nothing was sent\./);
+  assert.match(html, /data-preview-action="inv-1" data-disposition="approval_required"[\s\S]*?4 · Owner escalation[\s\S]*?Needs Owner\/Admin review[\s\S]*?data-warning="email_contact_missing"/);
+  assert.match(html, /data-preview-action="inv-7" data-disposition="suppressed"[\s\S]*?data-suppression="below_minimum_balance"[\s\S]*?data-suppression="active_hold"/);
+  assert.match(html, /2 actions in total/);
+  assert.match(html, /disabled=""[^>]*>Next</);
 });
 
 console.log(`billing UI render checks passed (${passed})`);

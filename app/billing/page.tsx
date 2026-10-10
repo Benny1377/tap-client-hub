@@ -6,7 +6,7 @@ import { receivableFor } from "@/lib/billing-ui/view-model";
 import { useLedger } from "@/components/billing/use-ledger";
 import { ClientPicker, headingStyle, hintStyle, panelStyle, SectionView } from "@/components/billing/ui";
 import { InvoiceDetail, InvoiceList, NewInvoiceForm } from "@/components/billing/invoice-panels";
-import { PaymentsPanel, ReceivablesTable } from "@/components/billing/payment-panels";
+import { ClientAgingSummary, PaymentsPanel, ReceivablesTable } from "@/components/billing/payment-panels";
 
 export default function BillingPage() {
   const [clientId, setClientId] = useState<string | null>(null);
@@ -14,7 +14,7 @@ export default function BillingPage() {
   const { api, viewer, clients, state, mutate } = useLedger(clientId, ["invoices", "receivables", "payments"]);
   const clientNames = useMemo(() => Object.fromEntries(clients.map((client) => [client.id, client.name])), [clients]);
   const invoices = readyData(state.invoices, []);
-  const receivables = readyData(state.receivables, []);
+  const receivables = readyData(state.receivables, { receivables: [] }).receivables;
   const selectedInvoice = invoices.find((invoice) => invoice.id === selectedInvoiceId) || null;
 
   return (
@@ -101,7 +101,13 @@ export default function BillingPage() {
       <section style={{ ...panelStyle, marginTop: 16 }} aria-label="Receivables">
         <h2 style={headingStyle}>Receivables</h2>
         <SectionView state={state.receivables} label="receivables">
-          {(rows) => <ReceivablesTable receivables={rows} clientNames={clientNames} />}
+          {(data) => (
+            <>
+              {data.as_of_date ? <p style={hintStyle}>As of {data.as_of_date} (firm date).</p> : null}
+              {clientId ? <ClientAgingSummary aging={(data.client_aging || []).find((row) => row.client_id === clientId) || null} /> : null}
+              <ReceivablesTable receivables={data.receivables} clientNames={clientNames} />
+            </>
+          )}
         </SectionView>
       </section>
     </div>

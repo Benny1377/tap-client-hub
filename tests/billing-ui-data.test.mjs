@@ -136,10 +136,10 @@ await check("after a successful mutation the refreshed balance comes from the se
     "GET /api/billing/receivables": () => [200, { receivables: [{ id: "inv-1", balance }] }],
   });
   const client = api.createBillingApi(fetchImpl);
-  let shown = (await ledger.loadLedger(client, null, ["receivables"])).receivables.data[0].balance;
+  let shown = (await ledger.loadLedger(client, null, ["receivables"])).receivables.data.receivables[0].balance;
   assert.equal(shown, "250.00");
   await api.mutateThenRefresh(() => client.allocate({ payment_id: "p", invoice_id: "inv-1", amount: "100.00" }), async () => {
-    shown = (await ledger.loadLedger(client, null, ["receivables"])).receivables.data[0].balance;
+    shown = (await ledger.loadLedger(client, null, ["receivables"])).receivables.data.receivables[0].balance;
   });
   assert.equal(shown, "150.00");
 });
@@ -183,7 +183,23 @@ await check("payment, allocation, hold, and event validation", () => {
   assert.ok(validation.validateHold({ client_id: "c", reason: " " }).reason);
   assert.ok(validation.validateEvent({ client_id: "c", event_type: "hold_placed" }).event_type, "holds are not logged as free-form events");
   assert.ok(validation.validateEvent({ client_id: "c", event_type: "escalated" }).event_type, "approvals are not logged as free-form events");
-  assert.deepEqual(validation.validateEvent({ client_id: "c", event_type: "escalation_requested" }), {});
+  assert.deepEqual(validation.validateEvent({ client_id: "c", event_type: "escalation_requested", invoice_id: "inv-1" }), {});
+  assert.deepEqual(validation.validateEvent({ client_id: "c", event_type: "note" }), {}, "notes can be client-level");
+});
+
+await check("escalation and formal-notice requests must name the invoice", () => {
+  for (const type of ["escalation_requested", "formal_notice_requested"]) {
+    assert.match(validation.validateEvent({ client_id: "c", event_type: type }).invoice_id, /Choose the invoice/);
+  }
+  for (const type of ["note", "reminder_logged", "call_logged", "promise_to_pay"]) {
+    assert.deepEqual(validation.validateEvent({ client_id: "c", event_type: type }), {}, `${type} may be client-level`);
+  }
+});
+
+await check("hold review dates cannot be before the server's firm date", () => {
+  assert.match(validation.validateHold({ client_id: "c", reason: "Dispute", expires_on: "2026-10-08" }, "2026-10-09").expires_on, /can't be before 2026-10-09/);
+  assert.deepEqual(validation.validateHold({ client_id: "c", reason: "Dispute", expires_on: "2026-10-09" }, "2026-10-09"), {});
+  assert.deepEqual(validation.validateHold({ client_id: "c", reason: "Dispute", expires_on: "" }, "2026-10-09"), {});
 });
 
 // --- Lifecycle states ------------------------------------------------------
@@ -286,6 +302,73 @@ await check("UI code goes through the API only", () => {
     assert.doesNotMatch(source, /@supabase|lib\/supabase|createAdminClient|SERVICE_ROLE/, `${file} must not access Supabase directly`);
     assert.doesNotMatch(source, /quickbooks|intuit|oauth|resend|send-email|nodemailer/i, `${file} must not contain QuickBooks, OAuth, or email delivery`);
   }
+});
+
+// --- Phase 1 completion: stable codes, notices, server read model ------------
+await check("failures carry the server's stable error code", async () => {
+  const { fetchImpl } = fakeFetch({ "DELETE /api/billing/invoices/inv-1": [409, { error: "Invoice is referenced by Collections history and cannot be deleted", code: "INVOICE_REFERENCED" }] });
+  const result = await api.createBillingApi(fetchImpl).deleteDraftInvoice("inv-1");
+  assert.equal(result.kind, "conflict");
+  assert.equal(result.code, "INVOICE_REFERENCED");
+});
+
+await check("recording a notice as sent posts formal_notice_sent with its approval", async () => {
+  const { fetchImpl, calls } = fakeFetch({ "POST /api/collections/events": [201, { event: {} }] });
+  await api.createBillingApi(fetchImpl).logEvent({ client_id: "c-1", invoice_id: "inv-1", event_type: "formal_notice_sent", approval_event_id: "e-9", detail: { note: "Mailed" } });
+  assert.deepEqual(calls[0].body, { client_id: "c-1", invoice_id: "inv-1", event_type: "formal_notice_sent", approval_event_id: "e-9", detail: { note: "Mailed" } });
+});
+
+await check("receivables keep the server's firm date and per-client aging", async () => {
+  const { fetchImpl } = fakeFetch({ "GET /api/billing/receivables": [200, { as_of_date: "2026-10-09", receivables: [], client_aging: [{ client_id: "c-1", current: "0.00", "1_30": "150.00", "31_60": "0.00", "61_90": "0.00", "90_plus": "0.00" }] }] });
+  const state = await ledger.loadLedger(api.createBillingApi(fetchImpl), null, ["receivables"]);
+  assert.equal(state.receivables.data.as_of_date, "2026-10-09");
+  assert.equal(state.receivables.data.client_aging[0]["1_30"], "150.00");
+});
+
+await check("notices awaiting send: Owner/Admin can record, others see the boundary, holds block, sent ones drop out", () => {
+  const approval = event({ id: "a-1", event_type: "formal_notice_approved", invoice_id: "inv-1", approves_event_id: "e-1" });
+  assert.equal(vm.noticesAwaitingSend([approval], [], owner, TODAY)[0].state, "can_record");
+  assert.equal(vm.noticesAwaitingSend([approval], [], staff, TODAY)[0].state, "requires_owner_admin");
+  assert.equal(vm.noticesAwaitingSend([approval], [hold({ invoice_id: "inv-1" })], owner, TODAY)[0].state, "blocked_by_hold");
+  const sent = event({ id: "s-1", event_type: "formal_notice_sent", invoice_id: "inv-1", detail: { approval_event_id: "a-1" } });
+  assert.equal(vm.noticesAwaitingSend([approval, sent], [], owner, TODAY).length, 0);
+});
+
+// --- Phase 2: worklist and preview ---------------------------------------
+await check("worklist passes client, limit, and offset to the Phase 2 route", async () => {
+  const { fetchImpl, calls } = fakeFetch({ "GET /api/collections/receivables": [200, { accounts: [] }] });
+  const client = api.createBillingApi(fetchImpl);
+  await client.worklist({ clientId: "c-1", limit: 50, offset: 100 });
+  await client.worklist();
+  assert.equal(calls[0].url, "/api/collections/receivables?client_id=c-1&limit=50&offset=100");
+  assert.equal(calls[1].url, "/api/collections/receivables");
+});
+
+await check("worklist loads as its own section and reports 403 per section", async () => {
+  const { fetchImpl } = fakeFetch({
+    "GET /api/collections/receivables": [403, { error: "Forbidden", code: "FORBIDDEN" }],
+    "GET /api/collections/holds": [200, { holds: [] }],
+  });
+  const state = await ledger.loadLedger(api.createBillingApi(fetchImpl), null, ["worklist", "holds"], { worklistLimit: 50, worklistOffset: 0 });
+  assert.equal(state.worklist.status, "error");
+  assert.equal(state.worklist.kind, "forbidden");
+  assert.equal(state.holds.status, "ready");
+});
+
+await check("preview posts only the supplied options and never sends anything itself", async () => {
+  const { fetchImpl, calls } = fakeFetch({ "POST /api/collections/automation/preview": [200, { actions: [], delivery_mode: "disabled", automation_enabled: false }] });
+  const client = api.createBillingApi(fetchImpl);
+  await client.preview({ asOfDate: "2026-10-09", limit: 50, offset: 50 });
+  await client.preview();
+  assert.deepEqual(calls[0].body, { as_of_date: "2026-10-09", limit: 50, offset: 50 });
+  assert.deepEqual(calls[1].body, {});
+  assert.equal(calls.length, 2, "one request per preview; no follow-up delivery calls");
+});
+
+await check("stage labels cover the five ladder steps", () => {
+  assert.equal(vm.stageLabel(1), "1 · Friendly reminder");
+  assert.equal(vm.stageLabel(5), "5 · Formal notice");
+  assert.equal(vm.stageLabel(null), "—");
 });
 
 console.log(`billing UI data checks passed (${passed})`);

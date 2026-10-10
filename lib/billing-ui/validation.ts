@@ -69,19 +69,28 @@ export function validateAllocation(input: { payment_id?: string; invoice_id?: st
   return errors;
 }
 
-export function validateHold(input: { client_id?: string; reason?: string; expires_on?: string }): FieldErrors {
+/** `today` is the server's firm date (as_of_date); the server rejects review dates before it. */
+export function validateHold(input: { client_id?: string; reason?: string; expires_on?: string }, today?: string): FieldErrors {
   const errors: FieldErrors = {};
   if (blank(input.client_id)) errors.client_id = "Choose a client.";
   if (blank(input.reason)) errors.reason = "A reason is required.";
-  if (!blank(input.expires_on) && !DATE.test(String(input.expires_on))) errors.expires_on = "Use the YYYY-MM-DD format.";
+  if (!blank(input.expires_on)) {
+    if (!DATE.test(String(input.expires_on))) errors.expires_on = "Use the YYYY-MM-DD format.";
+    else if (today && String(input.expires_on) < today) errors.expires_on = `The review date can't be before ${today}.`;
+  }
   return errors;
 }
 
-export function validateEvent(input: { client_id?: string; event_type?: string }): FieldErrors {
+/** Requests that move an invoice up the Collections ladder must name the invoice. */
+export const INVOICE_REQUIRED_EVENT_TYPES = ["escalation_requested", "formal_notice_requested"] as const;
+
+export function validateEvent(input: { client_id?: string; event_type?: string; invoice_id?: string }): FieldErrors {
   const errors: FieldErrors = {};
   if (blank(input.client_id)) errors.client_id = "Choose a client.";
   if (!LOGGABLE_EVENT_TYPES.includes(String(input.event_type) as (typeof LOGGABLE_EVENT_TYPES)[number])) {
     errors.event_type = "Choose an activity type.";
+  } else if (INVOICE_REQUIRED_EVENT_TYPES.includes(String(input.event_type) as (typeof INVOICE_REQUIRED_EVENT_TYPES)[number]) && blank(input.invoice_id)) {
+    errors.invoice_id = "Choose the invoice this request is about.";
   }
   return errors;
 }
