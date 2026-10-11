@@ -92,10 +92,74 @@ The PASS above was run against backend `3bec72a`. After it, producer changes wer
 
 Current follow-up verification: UI data/render suites (42 and 52 checks), backend contract test, typecheck, targeted ESLint, and production build pass on the merged local UI worktree. Backend SQL suites (including configuration/contact audit), contract test, typecheck, targeted ESLint, and production build pass through backend `9dec973`; the final preview-specific route follow-up at `53324a7` passes its backend contract test, typecheck, and targeted lint. These checks used the local synthetic Supabase only. The full login/browser result still refers to `3bec72a`; Engineer A must rerun on the newly pushed integration and UI branches before sign-off.
 
+## Integrated rerun on backend `53324a7` (Engineer A)
+
+Branch `codex/collections-phase2-ui-validation` at `64f1c1e` (contains integration `53324a7`), plus the two UI fixes below. Firm date 2026-10-11. Same local-only environment and synthetic data; automation off, delivery disabled, no hosted services.
+
+**Verdict: PASS.** The new rules, progression, timezone, and contact-selection contract works end to end. Two harness gaps (H4, H5) and one misleading preview warning (A3) remain for the producer, and one pre-existing security gap (S1) on `main` is outside Phase 2.
+
+| # | Command (repository root) | Result |
+| --- | --- | --- |
+| R1 | `bash tools/collections-local/reset.sh --local` | PASS, exit 0 (73 s). Migrations through `20261011120000`. |
+| R2 | `bash tools/collections-local/test.sh --local` | PASS, exit 0: harness schema, Phase 1 security/audit, audit actor, Phase 2 stage regressions, Phase 2 configuration. |
+| R3 | `node tools/collections-local/create-test-users.mjs` | PASS. All five roles ready; no overlay needed (H1 resolved). |
+| R4 | `psql … -c "alter table tap_hub_project.contacts add column if not exists updated_at timestamptz not null default now(); notify pgrst, 'reload schema';"` | Local-only workaround for H4; not committed. |
+| R5 | `npm run dev`, then `PSQL=psql node tools/collections-local/validate-phase2.mjs` | **PASS 68/68** from a clean reset (48 original checks updated to the new contract, plus 20 new ones below). |
+| R6 | Browser pass (Owner, Collections staff) | PASS, with UI-C and UI-D found and fixed. |
+| R7 | `npx tsc --noEmit` / targeted ESLint / `npm run build` | PASS / PASS / PASS |
+| R8 | `node tests/billing-ui-data.test.mjs` / `node tests/billing-ui-render.test.mjs` | PASS 42 / PASS 53 |
+| R9 | `collections-phase-2-backend-contract`, `collections-phase1-review`, `collections-phase1-contract`, `npm run test:support`; with `node --experimental-strip-types`: `collections-route-access`, `contacts-route-access`, `regression-access-policy` | PASS |
+| R10 | Full ESLint | 585 problems: 3 in the local-only `dev-mock/`, so 582 in the repo (baseline 583); none in changed files. |
+
+New checks in `validate-phase2.mjs`:
+
+| ID | Check | Evidence |
+| --- | --- | --- |
+| R1 | Rules response | Rules carry `subject_template` and `body_template`; `firm_timezone` equals `collection_settings.timezone`; settings hold only the five guardrails, with no sender or test-recipient fields. |
+| PG1 | Server progression | LOCAL-002 at 15 days: `completed_stage` 0 → 3 after the catch-up reminder, `upcoming_stage` 4, `next_stage` null. |
+| PV2 | Forward preview | Jumps to the day the upcoming stage falls due (as of 2026-10-17, 21 days). Stage 4 shows `owner_escalation_review` / `approval_required` and nothing is delivered. |
+| CT1–CT4 | Contact selection | Two primary contacts suppress the reminder (`contact_review_required`). Collections staff get 403 when choosing. The Owner's choice returns 200 and leaves exactly one primary, with audit rows by the Owner for both contacts. The reminder is then `preview_only` again. |
+| ES0–ES3 | Early higher stage | LOCAL-003 is created, given a line, and issued through the Billing API ($40.00 at 2 days, next 1). The Owner logs explicit stage 3 early, which gives `completed_stage` 3, `upcoming_stage` 4, `next_stage` null. When stage 3 would normally fall due, the preview proposes nothing. |
+| CF1–CF6 | Rules configuration | Automatic stage 4 → 422 `INVALID_CONFIGURATION`. Invalid timezone → 422; unsupported sender field → 422. An Admin label, guardrail, and timezone edit → 200, persisted, with Admin audit rows on `collection_ladder_rules` and `collection_settings`. Staff see the new label and timezone. Direct threshold 50 proposes stage 4 Owner/Admin review. Restoring the original values round-trips exactly. |
+| PV3 | No delivery | `collection_delivery_attempts` stays 0; `automation_enabled` stays false with `delivery_mode` disabled. |
+| AC3 | Access matrix | `PATCH /api/collections/rules`: Collections, Billing, and unassigned staff get 403; anonymous gets 401. |
+
+Browser evidence:
+
+- **Rules editor:**
+  - Owner sees "Owner/Admin · Configure Collections rules"; Collections staff see no editor and no preview, and their PATCH returns 403.
+  - A stage 2 label edit saves and the ladder line updates.
+  - An invalid timezone shows "Configuration values are invalid" and the editor stays open.
+- **Next step:**
+  - LOCAL-003 (2 days, stage 3 logged early) and LOCAL-002 (15 days) show "Next: 4 · Owner escalation at 21 days".
+  - LOCAL-001 (stage 5 done) shows "Ladder complete — follow up manually".
+- **Firm timezone:** with the timezone temporarily set to `Pacific/Kiritimati` (UTC+14), the firm date, days past due, and history all moved to 10/12 together (history shows "GMT+14"); restored to `America/Chicago` afterward.
+- **Contact review:**
+  - The worklist row shows "Contact needs review" while two primaries exist.
+  - The preview for 2026-10-17 shows LOCAL-002 "Needs Owner/Admin review" with "Nothing was sent", but the note reads "No client email on file" (A3).
+- **Network:** every Billing and Collections request returned 200 or the expected 403/422. The only 500s were from `/api/contacts` (H5) and the Timesheet APIs (H3).
+
+UI fixes from this rerun:
+
+- **UI-C**: hold "placed" and "released" dates used the UTC date (`slice(0, 10)`). They now use `formatFirmDate` with the firm timezone. Browser check: shown as 10/12 under UTC+14 and 10/11 under Chicago. A new render test covers a late-evening Chicago hold.
+- **UI-D**: after saving, the rules editor was remounted by `key={JSON.stringify(ruleSettings)}`, which collapsed it and dropped the "Rules saved" message. The editor now re-syncs from new server values without remounting. Browser check: it stays open and shows "Rules saved. Email delivery remains disabled."
+
+New findings:
+
+| ID | Area | Finding | Proposed fix |
+| --- | --- | --- | --- |
+| H4 | Harness (producer) | `contacts` has no `updated_at`. `PATCH /api/contacts` always writes it, so choosing a primary contact returns 500 locally. With the column added (R4), the route returns 200 and the audit is correct. | Add `updated_at timestamptz not null default now()` to the bootstrap `contacts` table. |
+| H5 | Harness (producer) | `clients` lacks `client_code`, `group_name`, and address columns that `GET /api/contacts` selects, so the Contacts page shows "Unable to load contacts" locally. The browser path for choosing a contact cannot be exercised; the API path was validated (CT3). | Add the selected `clients` columns to the bootstrap. |
+| H6 | Harness (low) | The seed uses the database `current_date` (UTC) while the app uses the firm date, so fixture ages shift by one day depending on the time of day (LOCAL-002 is 14 or 15 days). The validation script no longer depends on exact ages. | Seed due dates from `tap_hub_project.collections_firm_today()`. |
+| A3 | API (low) | For stage 4 and 5 actions, an ambiguous primary contact is reported as `email_contact_missing`, so the UI says "No client email on file" even when both contacts have emails. | Return `contact_review_required` as the stage 4 and 5 warning when the contact is ambiguous. The UI now labels it "Needs one primary contact with an email". |
+| A4 | API (info) | Money in `settings` comes back as plain numeric strings (`"50"`, `"60"`) rather than the two-decimal format used elsewhere (`"125.00"`). | Format as fixed two decimals, or document it. |
+| S1 | Security (pre-existing on `main`, outside Phase 2) | `GET /api/contacts` has no access check, and `proxy.ts` treats `/api/*` as public. An anonymous request reaches the service-role query; locally it returns 500 only because of H5, while other routes return 401. With the full schema it would return all contacts and client addresses. | Owner/producer decision; fix on its own branch with a regression test. |
+
 ## Remaining blockers before release
 
-1. Push the merged UI branch, then Engineer A reviews and reruns UI/API/database/browser suites on the updated integration branch (`53324a7`) and UI branch.
-2. Hosted migration application is intentionally deferred until after local integrated testing and release approval; migrations `20261010140000`, `20261011100000`, `20261011110000`, and `20261011120000` are confirmed only in the local harness.
-3. COL-DEP-10: the owner rotates the exposed shared Supabase Auth password.
-4. COL-DEP-12: the owner reviews the credential-bearing historical migration (not inspected here).
-5. Joint review of this branch, then the merge order: integration backend first, then this UI. Nothing goes to `main` until all phases are approved.
+1. Producer review of H4 and H5, and preferably H6 and A3.
+2. S1 is decided by the owner/producer, independent of Phase 2 but before any release.
+3. Hosted migration application is intentionally deferred until after local integrated testing and release approval; migrations `20261010140000`, `20261011100000`, `20261011110000`, and `20261011120000` are confirmed only in the local harness.
+4. COL-DEP-10: the owner rotates the exposed shared Supabase Auth password.
+5. COL-DEP-12: the owner reviews the credential-bearing historical migration (not inspected here).
+6. Joint review of this branch, then the merge order: integration backend first, then this UI. Nothing goes to `main` until all phases are approved.
