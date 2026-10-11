@@ -25,6 +25,40 @@ export function formatMoney(value: Numeric | null | undefined) {
   return `${sign ? "-" : ""}$${grouped}.${fraction.padEnd(2, "0").slice(0, 2)}`;
 }
 
+export function formatFirmDate(value: string, timezone = "America/Chicago") {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value.slice(0, 10);
+  try {
+    return new Intl.DateTimeFormat("en-CA", {
+      timeZone: timezone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(date);
+  } catch {
+    return value.slice(0, 10);
+  }
+}
+
+export function formatFirmDateTime(value: string, timezone = "America/Chicago") {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value.slice(0, 16).replace("T", " ");
+  try {
+    return new Intl.DateTimeFormat("en-US", {
+      timeZone: timezone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: true,
+      timeZoneName: "short",
+    }).format(date);
+  } catch {
+    return value.slice(0, 16).replace("T", " ");
+  }
+}
+
 export const EVENT_LABELS: Record<string, string> = {
   note: "Note",
   reminder_logged: "Reminder logged",
@@ -187,20 +221,28 @@ export function upcomingStage(rules: CollectionRule[] | null | undefined, daysPa
 
 /** What the call list shows for an invoice's next step. */
 export function nextStepText(
-  invoice: { next_stage: number | null; days_past_due: number; awaiting_approval?: AwaitingApproval | null },
+  invoice: { next_stage: number | null; upcoming_stage?: number | null; days_past_due: number; awaiting_approval?: AwaitingApproval | null },
   rules: CollectionRule[] | null | undefined,
   labels: StageLabels = STAGE_LABELS,
+  firmTimezone = "America/Chicago",
 ) {
-  if (invoice.awaiting_approval) return awaitingApprovalLabel(invoice.awaiting_approval, labels);
+  if (invoice.awaiting_approval) return awaitingApprovalLabel(invoice.awaiting_approval, labels, firmTimezone);
   if (invoice.next_stage) return stageLabel(invoice.next_stage, labels);
   if (invoice.days_past_due <= 0) return "Not due yet";
+  if (invoice.upcoming_stage) {
+    const rule = (rules || []).find((candidate) => candidate.stage === invoice.upcoming_stage && candidate.enabled);
+    return rule
+      ? `Next: ${stageLabel(invoice.upcoming_stage, labels)} at ${rule.days_past_due} days`
+      : `Next: ${stageLabel(invoice.upcoming_stage, labels)}`;
+  }
+  if (invoice.upcoming_stage === null) return "Ladder complete — follow up manually";
   const upcoming = upcomingStage(rules, invoice.days_past_due);
   return upcoming ? `Next: ${stageLabel(upcoming.stage, labels)} at ${upcoming.days_past_due} days` : "Ladder complete — follow up manually";
 }
 
 /** "Awaiting Owner/Admin approval: 4 · Owner escalation (requested 2026-10-01)". */
-export function awaitingApprovalLabel(pending: AwaitingApproval, labels: StageLabels = STAGE_LABELS) {
-  return `Awaiting Owner/Admin approval: ${stageLabel(pending.stage, labels)} (requested ${pending.requested_at.slice(0, 10)})`;
+export function awaitingApprovalLabel(pending: AwaitingApproval, labels: StageLabels = STAGE_LABELS, firmTimezone = "America/Chicago") {
+  return `Awaiting Owner/Admin approval: ${stageLabel(pending.stage, labels)} (requested ${formatFirmDate(pending.requested_at, firmTimezone)})`;
 }
 
 export const PREVIEW_REASON_LABELS: Record<string, string> = {

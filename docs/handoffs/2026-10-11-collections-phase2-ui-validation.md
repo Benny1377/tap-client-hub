@@ -4,7 +4,7 @@
 | --- | --- |
 | Date | 2026-10-11 (firm date 2026-10-10, America/Chicago) |
 | Backend under test | `codex/collections-phase2-integration` at `3bec72a` (not modified) |
-| Validation branch | `codex/collections-phase2-ui-validation`, local only (not pushed): `3bec72a` plus the UI commits from `codex/collections-phase-2-ui` plus the fixes below |
+| Validation branch | `codex/collections-phase2-ui-validation` at pushed commit `3013b12`: `3bec72a` plus the Phase 1/2 UI, browser fixes, and local validation tools |
 | Environment | Disposable local Supabase from `tools/collections-local` (Docker Desktop 4.94.0, Supabase CLI 2.120.0, PostgreSQL 17 container, `psql` 18.4). App: `next dev` on `localhost:3000` with a git-ignored `.env.local` pointing only at `http://127.0.0.1:55321`. |
 | Data | Synthetic fixtures only (Example Orchard LLC, Sample Harbor Inc, `.invalid` emails), plus three extra fictional profiles. No hosted, Preview, or production services; no real client data; no email. |
 | Verdict | **PASS** for the in-scope UI → API → database → audit → reload flows, with the conditions and blockers listed below. |
@@ -76,10 +76,24 @@ UI audit evidence from the browser pass (`audit_log` rows 5–12):
 
   It also adds the local harness tools and this handoff.
 
+## Producer follow-up after this validation run
+
+The PASS above was run against backend `3bec72a`. After it, producer changes were prepared locally in separate backend and UI worktrees; they are not yet committed or pushed and have not had a new integrated browser pass.
+
+| ID | Follow-up | Local implementation status | Required confirmation |
+| --- | --- | --- | --- |
+| H1 | Add `location`, `allow_edit_client_data`, and `email_2fa_enabled` to the local profile subset; seed all five synthetic roles. | Implemented in the backend worktree; the local harness schema test checks the required fields and `.invalid` profiles. | Rerun local setup and browser login from a clean reset. |
+| H2 | Provision matching local Supabase Auth users with random passwords stored only in ignored `.env.local`. | Added `tools/collections-local/create-test-users.mjs`, hard-pinned to `127.0.0.1:55321`. | Run it on each developer's machine and validate five role logins. |
+| T1 | Share `awaiting_approval` in the invoice API type. | Added along with the other server progression fields to `lib/collections-api.ts`. | Typecheck integrated backend + UI. |
+| A1 | Return server-derived `completed_stage` and `upcoming_stage`. | Added in forward-only migration `20261011110000_collections_stage_context_and_timezone.sql`; UI now prefers the server's `upcoming_stage`. | SQL regression passes locally; rerun API/database/browser suite for an explicitly early higher reminder stage. |
+| A2 | Return firm timezone and display approval/history timestamps in it. | Rules API returns `firm_timezone`; UI formatting accepts and uses it. | UI date-boundary unit/render checks pass; rerun browser check around midnight UTC. |
+
+UI data/render suites (42 and 51 checks), typecheck, targeted ESLint, and production build pass in the updated UI worktree. Backend SQL suites, contract test, typecheck, targeted ESLint, and production build pass in the updated backend worktree. The integrated runtime/browser result still refers to `3bec72a` until Engineer A reruns against the updated producer branch.
+
 ## Remaining blockers before release
 
-1. Producer review of H1, H2, and T1. Fold the overlay and test-user step into the shared harness, or confirm the current approach.
-2. Hosted migration state is still unverified; `20261010140000` and `20261011100000` are local only.
+1. Publish and jointly review the producer updates, then rerun the UI/API/database/browser suites on the updated integration branch.
+2. Hosted migration state is still unverified; `20261010140000`, `20261011100000`, and `20261011110000` are only confirmed in the local harness.
 3. COL-DEP-10: the owner rotates the exposed shared Supabase Auth password.
 4. COL-DEP-12: the owner reviews the credential-bearing historical migration (not inspected here).
 5. Joint review of this branch, then the merge order: integration backend first, then this UI. Nothing goes to `main` until all phases are approved.

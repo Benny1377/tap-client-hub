@@ -11,6 +11,8 @@ import {
   holdExpiryPassed,
   holdInForce,
   noticesAwaitingSend,
+  formatFirmDate,
+  formatFirmDateTime,
   stageLabel,
   STAGE_LABELS,
   viewerIsPowerUser,
@@ -134,7 +136,7 @@ export function HoldsPanel({ holds, clientId, clientNames, invoiceOptions, viewe
 
 const APPROVAL_LABELS: Record<string, string> = { escalated: "Approve escalation", formal_notice_approved: "Approve formal notice" };
 
-export function EventsPanel({ events, holds, invoiceOptions, clientId, clientNames, viewer, today, onLog, onApprove, onRecordNoticeSent, stageLabels = STAGE_LABELS }: {
+export function EventsPanel({ events, holds, invoiceOptions, clientId, clientNames, viewer, today, firmTimezone = "America/Chicago", onLog, onApprove, onRecordNoticeSent, stageLabels = STAGE_LABELS }: {
   events: CollectionEvent[];
   holds: CollectionHold[];
   invoiceOptions: InvoiceOption[];
@@ -142,6 +144,7 @@ export function EventsPanel({ events, holds, invoiceOptions, clientId, clientNam
   clientNames: Record<string, string>;
   viewer: Viewer | null;
   today: string;
+  firmTimezone?: string;
   onLog: (values: FormValues) => Mutation;
   onApprove: (eventId: string, approvalType: "escalated" | "formal_notice_approved") => Mutation;
   onRecordNoticeSent: (approval: CollectionEvent, note: string) => Mutation;
@@ -157,7 +160,7 @@ export function EventsPanel({ events, holds, invoiceOptions, clientId, clientNam
   )];
   const invoiceLabel = (event: CollectionEvent) => event.invoice_number || (event.invoice_id ? invoiceNumbers[event.invoice_id] || event.invoice_id : null);
   const describe = (event: CollectionEvent) =>
-    `${clientNames[event.client_id] || event.client_id}${event.invoice_id ? ` · invoice ${invoiceLabel(event)}` : ""} · ${event.occurred_at.slice(0, 10)}`;
+    `${clientNames[event.client_id] || event.client_id}${event.invoice_id ? ` · invoice ${invoiceLabel(event)}` : ""} · ${formatFirmDate(event.occurred_at, firmTimezone)}`;
 
   return (
     <div>
@@ -241,7 +244,7 @@ export function EventsPanel({ events, holds, invoiceOptions, clientId, clientNam
             <tbody>
               {events.map((event) => (
                 <tr key={event.id} data-event-row={event.id}>
-                  <td style={cellStyle}>{event.occurred_at.slice(0, 16).replace("T", " ")}</td>
+                  <td style={cellStyle}>{formatFirmDateTime(event.occurred_at, firmTimezone)}</td>
                   <td style={cellStyle}>{clientNames[event.client_id] || event.client_id}</td>
                   <td style={cellStyle}>{event.invoice_id ? invoiceLabel(event) || "—" : "All"}</td>
                   <td style={cellStyle}>

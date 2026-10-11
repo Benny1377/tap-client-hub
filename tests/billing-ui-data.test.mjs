@@ -416,11 +416,12 @@ await check("rules load from GET /api/collections/rules and drive stage labels",
     { stage: 1, label: "Courtesy", days_past_due: 1, automatic: true, enabled: true },
     { stage: 4, label: "Partner review", days_past_due: 21, automatic: false, enabled: true },
   ];
-  const { fetchImpl, calls } = fakeFetch({ "GET /api/collections/rules": [200, { rules }] });
+  const { fetchImpl, calls } = fakeFetch({ "GET /api/collections/rules": [200, { rules, firm_timezone: "America/Chicago" }] });
   const state = await ledger.loadLedger(api.createBillingApi(fetchImpl), null, ["rules"]);
   assert.equal(calls[0].url, "/api/collections/rules");
-  assert.equal(state.rules.data.length, 2);
-  const labels = vm.stageLabelsFrom(state.rules.data);
+  assert.equal(state.rules.data.rules.length, 2);
+  assert.equal(state.rules.data.firm_timezone, "America/Chicago");
+  const labels = vm.stageLabelsFrom(state.rules.data.rules);
   assert.equal(vm.stageLabel(1, labels), "1 · Courtesy");
   assert.equal(vm.stageLabel(4, labels), "4 · Partner review");
   assert.equal(vm.stageLabel(5, labels), "5 · Formal notice", "missing stages fall back to the defaults");
@@ -451,6 +452,9 @@ await check("next step: due now, awaiting approval, upcoming, complete, or not d
   const withDisabledFirm = ladder.map((rule) => (rule.stage === 3 ? { ...rule, enabled: false } : rule));
   assert.equal(vm.nextStepText({ next_stage: null, days_past_due: 14 }, withDisabledFirm, labels), "Next: 4 · Owner escalation at 21 days", "disabled steps are skipped");
   assert.equal(vm.nextStepText({ next_stage: null, days_past_due: 14 }, [], labels), "Ladder complete — follow up manually", "without rules the UI cannot promise a next step");
+  assert.equal(vm.nextStepText({ next_stage: null, upcoming_stage: 4, days_past_due: 4 }, ladder, labels), "Next: 4 · Owner escalation at 21 days", "server progression prevents repeating an explicitly completed higher stage");
+  assert.equal(vm.formatFirmDate("2026-10-01T00:00:00Z", "America/Chicago"), "2026-09-30");
+  assert.match(vm.formatFirmDateTime("2026-10-01T00:00:00Z", "America/Chicago"), /09\/30\/2026/);
 });
 
 await check("a duplicate Collections event gets a plain-language headline", () => {

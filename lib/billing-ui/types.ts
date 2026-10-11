@@ -2,6 +2,12 @@
 // codex/collections-phase-1-billing-ledger. Numeric columns arrive from PostgREST
 // as numbers or strings; the UI only formats them and never does balance math.
 
+import type {
+  CollectionsAwaitingApproval,
+  CollectionsRule as ApiCollectionsRule,
+  CollectionsRulesResponse,
+} from "@/lib/collections-api";
+
 export type Numeric = string | number;
 
 export type InvoiceStatus = "draft" | "issued" | "void";
@@ -141,26 +147,16 @@ export interface CollectionEvent {
   invoice_number?: string | null;
 }
 
-/** One ladder step from GET /api/collections/rules (display subset only). */
-export interface CollectionRule {
-  stage: number;
-  label: string;
-  days_past_due: number;
-  automatic: boolean;
-  enabled: boolean;
-}
+/** Shared response types for the safe Collections rules display endpoint. */
+export type CollectionRule = ApiCollectionsRule;
+export type CollectionRuleSettings = CollectionsRulesResponse;
 
 /**
  * A pending escalation or formal-notice request on a worklist invoice. The
  * worklist proposes no later stage until it is approved. Returned by the
- * 20261010140000 migration; not yet in lib/collections-api.ts.
+ * Returned by the Collections worklist and shared API contract.
  */
-export interface AwaitingApproval {
-  event_id: string;
-  event_type: "escalation_requested" | "formal_notice_requested";
-  stage: 4 | 5;
-  requested_at: string;
-}
+export type AwaitingApproval = CollectionsAwaitingApproval;
 
 export interface ClientOption {
   id: string;
