@@ -9,6 +9,7 @@ declare
   v_later_invoice uuid := gen_random_uuid();
   v_pending_invoice uuid := gen_random_uuid();
   v_catchup_invoice uuid := gen_random_uuid();
+  v_early_invoice uuid := gen_random_uuid();
   v_approval uuid := gen_random_uuid();
   v_hold uuid;
   v_sent uuid;
@@ -24,15 +25,26 @@ begin
     (v_old_invoice,v_client,'TST-'||substr(v_old_invoice::text,1,8),'issued',v_today-100,v_today-90,v_actor),
     (v_later_invoice,v_client,'TST-'||substr(v_later_invoice::text,1,8),'issued',v_today-40,v_today-30,v_actor),
     (v_pending_invoice,v_client,'TST-'||substr(v_pending_invoice::text,1,8),'issued',v_today-56,v_today-46,v_actor),
-    (v_catchup_invoice,v_client,'TST-'||substr(v_catchup_invoice::text,1,8),'issued',v_today-50,v_today-20,v_actor);
+    (v_catchup_invoice,v_client,'TST-'||substr(v_catchup_invoice::text,1,8),'issued',v_today-50,v_today-20,v_actor),
+    (v_early_invoice,v_client,'TST-'||substr(v_early_invoice::text,1,8),'issued',v_today-20,v_today-4,v_actor);
   insert into tap_hub_project.invoice_lines(invoice_id,description,quantity,unit_amount,amount)
   values (v_old_invoice,'Fixture',1,100,100),(v_later_invoice,'Fixture',1,100,100),
-    (v_pending_invoice,'Fixture',1,100,100),(v_catchup_invoice,'Fixture',1,100,100);
+    (v_pending_invoice,'Fixture',1,100,100),(v_catchup_invoice,'Fixture',1,100,100),
+    (v_early_invoice,'Fixture',1,100,100);
 
   v_ctx := tap_hub_project.collections_invoice_stage_context(v_client,v_catchup_invoice,v_today-20,v_today-14);
   if (v_ctx->>'next_stage')::integer is distinct from 2 then raise exception 'Missed day-1 reminder did not catch up to stage 2'; end if;
   v_ctx := tap_hub_project.collections_invoice_stage_context(v_client,v_catchup_invoice,v_today-20,v_today);
   if (v_ctx->>'next_stage')::integer is distinct from 3 then raise exception 'Missed reminders did not catch up to stage 3'; end if;
+
+  -- An explicit higher stage logged early must be reflected as server truth;
+  -- threshold-only UI inference would incorrectly offer an already completed step.
+  insert into tap_hub_project.collection_events(client_id,invoice_id,event_type,stage,actor)
+  values(v_client,v_early_invoice,'reminder_logged',3,v_actor);
+  v_ctx := tap_hub_project.collections_invoice_stage_context(v_client,v_early_invoice,v_today-4,v_today);
+  if (v_ctx->>'completed_stage')::integer is distinct from 3 then raise exception 'Completed stage was not returned'; end if;
+  if (v_ctx->>'upcoming_stage')::integer is distinct from 4 then raise exception 'Upcoming stage did not skip the explicitly completed early stage'; end if;
+  if v_ctx->'next_stage' is distinct from 'null'::jsonb then raise exception 'A not-yet-due approval stage was proposed'; end if;
 
   -- Legacy account-level escalation applies only to invoices already due on its firm date.
   insert into tap_hub_project.collection_events(client_id,invoice_id,event_type,actor,occurred_at)

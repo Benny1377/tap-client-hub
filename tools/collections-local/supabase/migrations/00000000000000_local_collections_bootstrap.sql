@@ -9,8 +9,11 @@ create table tap_hub_project.profiles (
   email text,
   role text not null,
   active boolean not null default true,
+  location text,
   modules text[] not null default '{}',
-  can_manage_users boolean not null default false
+  can_manage_users boolean not null default false,
+  allow_edit_client_data boolean not null default false,
+  email_2fa_enabled boolean not null default false
 );
 
 create table tap_hub_project.clients (

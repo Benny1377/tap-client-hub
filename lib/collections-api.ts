@@ -14,6 +14,41 @@ export type CollectionsScoreComponent = {
   weighted_amount: Money;
 };
 
+export type CollectionsAwaitingApproval = {
+  event_id: string;
+  event_type: "escalation_requested" | "formal_notice_requested";
+  stage: 4 | 5;
+  requested_at: string;
+};
+
+export type CollectionsRule = {
+  stage: number;
+  label: string;
+  days_past_due: number;
+  automatic: boolean;
+  enabled: boolean;
+  subject_template: string;
+  body_template: string;
+};
+
+export type CollectionsRulesResponse = {
+  rules: CollectionsRule[];
+  firm_timezone: string;
+  settings: CollectionsRuleSettingsData;
+};
+
+export type CollectionsRuleSettingsData = {
+  minimum_balance: Money;
+  direct_escalation_threshold: Money;
+  send_start: string;
+  send_end: string;
+  weekdays_only: boolean;
+};
+
+export type CollectionsRuleUpdate = Partial<Pick<CollectionsRule, "label" | "days_past_due" | "automatic" | "enabled" | "subject_template" | "body_template">> & { stage: number };
+
+export type CollectionsSettingsUpdate = Partial<CollectionsRuleSettingsData> & { timezone?: string };
+
 export type CollectionsInvoice = {
   invoice_id: string;
   invoice_number: string;
@@ -24,7 +59,10 @@ export type CollectionsInvoice = {
   balance: Money;
   days_past_due: number;
   current_stage: number;
+  completed_stage: number;
+  upcoming_stage: number | null;
   next_stage: number | null;
+  awaiting_approval: CollectionsAwaitingApproval | null;
   on_hold: boolean;
   credit_review_required: boolean;
   contact_review_required: boolean;
