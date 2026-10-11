@@ -51,7 +51,7 @@ export async function loadLedger(api: BillingApi, clientId: string | null, secti
     wanted.has("events") && api.events(clientId).then((r) => { state.events = toSection(r, (d) => d.events || []); }),
     wanted.has("worklist") && api.worklist({ clientId, limit: options.worklistLimit, offset: options.worklistOffset })
       .then((r) => { state.worklist = toSection(r, (d) => d); }),
-    wanted.has("rules") && api.rules().then((r) => { state.rules = toSection(r, (d) => ({ rules: d.rules || [], firm_timezone: d.firm_timezone || "America/Chicago" })); }),
+    wanted.has("rules") && api.rules().then((r) => { state.rules = toSection(r, (d) => ({ ...d, rules: d.rules || [], firm_timezone: d.firm_timezone || "America/Chicago" })); }),
   ]);
   return state;
 }

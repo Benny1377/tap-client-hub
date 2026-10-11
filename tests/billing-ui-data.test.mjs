@@ -83,6 +83,7 @@ await check("mutations call the contract routes with the contract bodies", async
     "POST /api/billing/allocations": [201, { allocation_id: "a-1" }],
     "POST /api/collections/events/approve": [201, { event: {} }],
     "PATCH /api/collections/holds": [200, { hold: {} }],
+    "PATCH /api/collections/rules": [200, { rules: [], firm_timezone: "America/Chicago", settings: {} }],
     "DELETE /api/billing/invoice-lines": [200, { deleted: true }],
     "DELETE /api/billing/invoices/inv-1": [200, { deleted: true }],
   });
@@ -92,6 +93,7 @@ await check("mutations call the contract routes with the contract bodies", async
   await client.allocate({ payment_id: "p-1", invoice_id: "inv-1", amount: "10.00" });
   await client.approveEvent("e-1", "escalated");
   await client.releaseHold("h-1");
+  await client.updateRules({ rules: [{ stage: 1, days_past_due: 2 }], settings: { minimum_balance: 80 } });
   await client.deleteLine("l-1");
   await client.deleteDraftInvoice("inv-1");
   assert.deepEqual(calls.map((c) => `${c.method} ${c.url}`), [
@@ -100,6 +102,7 @@ await check("mutations call the contract routes with the contract bodies", async
     "POST /api/billing/allocations",
     "POST /api/collections/events/approve",
     "PATCH /api/collections/holds",
+    "PATCH /api/collections/rules",
     "DELETE /api/billing/invoice-lines?id=l-1",
     "DELETE /api/billing/invoices/inv-1",
   ]);
@@ -108,6 +111,7 @@ await check("mutations call the contract routes with the contract bodies", async
   assert.deepEqual(calls[2].body, { payment_id: "p-1", invoice_id: "inv-1", amount: "10.00" });
   assert.deepEqual(calls[3].body, { event_id: "e-1", event_type: "escalated" });
   assert.deepEqual(calls[4].body, { id: "h-1" });
+  assert.deepEqual(calls[5].body, { rules: [{ stage: 1, days_past_due: 2 }], settings: { minimum_balance: 80 } });
 });
 
 // --- Refresh after mutation ------------------------------------------------

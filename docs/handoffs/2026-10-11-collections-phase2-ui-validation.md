@@ -3,11 +3,11 @@
 | Field | Value |
 | --- | --- |
 | Date | 2026-10-11 (firm date 2026-10-10, America/Chicago) |
-| Backend under test | `codex/collections-phase2-integration` at `3bec72a` (not modified) |
-| Validation branch | `codex/collections-phase2-ui-validation` at pushed commit `3013b12`: `3bec72a` plus the Phase 1/2 UI, browser fixes, and local validation tools |
+| Backend under original validation | `codex/collections-phase2-integration` at `3bec72a` (the pass recorded below predates producer follow-ups) |
+| Original validation branch | `codex/collections-phase2-ui-validation` at `3013b12`: `3bec72a` plus the Phase 1/2 UI, browser fixes, and local validation tools |
 | Environment | Disposable local Supabase from `tools/collections-local` (Docker Desktop 4.94.0, Supabase CLI 2.120.0, PostgreSQL 17 container, `psql` 18.4). App: `next dev` on `localhost:3000` with a git-ignored `.env.local` pointing only at `http://127.0.0.1:55321`. |
 | Data | Synthetic fixtures only (Example Orchard LLC, Sample Harbor Inc, `.invalid` emails), plus three extra fictional profiles. No hosted, Preview, or production services; no real client data; no email. |
-| Verdict | **PASS** for the in-scope UI → API → database → audit → reload flows, with the conditions and blockers listed below. |
+| Original verdict | **PASS** for the in-scope UI → API → database → audit → reload flows on the older backend, with the follow-up rerun still required below. |
 
 ## Commands and results
 
@@ -55,12 +55,12 @@ UI audit evidence from the browser pass (`audit_log` rows 5–12):
 
 | ID | Area | Finding | Status |
 | --- | --- | --- | --- |
-| H1 | Harness (producer) | The `profiles` subset lacks `location` and `allow_edit_client_data`, which `lib/access-server.ts:34` selects, and `email_2fa_enabled`, which the 2FA check reads. Every signed-in request returned 401 (`ERROR: column "location" does not exist`). | Worked around with `tools/collections-local/ui-overlay.sql` (local only). The producer should fold it into the bootstrap. |
+| H1 | Harness (producer) | The original `profiles` subset lacked fields used by identity/2FA checks. | Addressed in follow-up bootstrap; no overlay is needed on the updated branch. |
 | H2 | Harness (producer) | No local Auth users for the fixture profiles. | `tools/collections-local/create-test-users.mjs` (refuses non-local URLs). |
 | H3 | Harness (info) | Sign-in lands on `/time`. Its APIs (`/api/time-entries`, `/api/profile-directory`) return 500 locally because Operations tables are not in the subset. Billing and Collections are unaffected. | Accepted harness limit. |
-| T1 | Types (producer) | `lib/collections-api.ts` has no `awaiting_approval` on `CollectionsInvoice`. | UI types it locally; the producer should add it to the shared type. |
-| A1 | API (low) | The worklist does not expose the completed stage, so the UI derives the upcoming step from rules thresholds. That is accurate for stage-less reminders, but not if an API caller logs an explicit higher stage early. | Request: return `completed_stage` or `upcoming_stage` in the stage context. |
-| A2 | API (low) | The firm timezone is not exposed, so the request date in "Awaiting approval" and history times show UTC (for example 2026-10-11 while the firm date is 2026-10-10). | Request: expose the timezone (rules or a settings subset), or return firm-local timestamps. |
+| T1 | Types (producer) | The original shared invoice type omitted `awaiting_approval`. | Addressed in shared types along with server progression fields. |
+| A1 | API (low) | The original worklist did not expose server-computed progression. | Addressed by migration `20261011110000`; the UI consumes server `upcoming_stage`. |
+| A2 | API (low) | The original rules response omitted the firm timezone. | Addressed by rules API and firm-timezone UI formatters. |
 
 ## UI changes on the validation branch
 
@@ -82,18 +82,20 @@ The PASS above was run against backend `3bec72a`. After it, producer changes wer
 
 | ID | Follow-up | Local implementation status | Required confirmation |
 | --- | --- | --- | --- |
-| H1 | Add `location`, `allow_edit_client_data`, and `email_2fa_enabled` to the local profile subset; seed all five synthetic roles. | Implemented in the backend worktree; the local harness schema test checks the required fields and `.invalid` profiles. | Rerun local setup and browser login from a clean reset. |
-| H2 | Provision matching local Supabase Auth users with random passwords stored only in ignored `.env.local`. | Added `tools/collections-local/create-test-users.mjs`, hard-pinned to `127.0.0.1:55321`. | Run it on each developer's machine and validate five role logins. |
-| T1 | Share `awaiting_approval` in the invoice API type. | Added along with the other server progression fields to `lib/collections-api.ts`. | Typecheck integrated backend + UI. |
-| A1 | Return server-derived `completed_stage` and `upcoming_stage`. | Added in forward-only migration `20261011110000_collections_stage_context_and_timezone.sql`; UI now prefers the server's `upcoming_stage`. | SQL regression passes locally; rerun API/database/browser suite for an explicitly early higher reminder stage. |
-| A2 | Return firm timezone and display approval/history timestamps in it. | Rules API returns `firm_timezone`; UI formatting accepts and uses it. | UI date-boundary unit/render checks pass; rerun browser check around midnight UTC. |
+| H1 | Add required profile fields and seed all five synthetic roles. | Implemented in backend commit `9dec973`; local harness schema test covers fields and `.invalid` profiles. | Included in integrated clean-reset rerun. |
+| H2 | Provision local Auth users with random passwords stored only in ignored `.env.local`. | `tools/collections-local/create-test-users.mjs` is hard-pinned to `127.0.0.1:55321`. | Aanan: run on his machine and validate all five role logins. |
+| T1 | Share approval and progression types. | Added in shared `lib/collections-api.ts`. | Typecheck passes on integrated branch. |
+| A1 | Return server-derived completed/upcoming stage. | Forward-only migration `20261011110000_collections_stage_context_and_timezone.sql`; the UI consumes `upcoming_stage`. | SQL regression passes locally; integrated browser rerun needed for explicitly early higher reminder stage. |
+| A2 | Return firm timezone and display approval/history times in it. | Rules API and date formatters consume `firm_timezone`. | Unit/render tests pass; integrated browser rerun needed around midnight UTC. |
+| O1 | Make the demo's dynamic ladder and guardrails real, while preserving Owner/Admin approval and deferring delivery integration. | Owner/Admin-only `PATCH /api/collections/rules`, audited migration `20261011120000`, and a UI rules editor now cover thresholds, copy, enabled/automatic settings, balance/escalation limits, schedule, weekdays, and timezone. Stages 4–5 cannot be automatic; high balances and manually held early reminders surface as Owner/Admin review. Email delivery remains disabled; sender/test recipient are not configured. | Local SQL/API-contract/type/lint/build checks pass; Engineer A should exercise save/reload, direct-threshold preview, and approval-only stages in integrated browser rerun. |
+| O2 | Default to primary client contact; pause on ambiguity; remember an explicit selection. | Client contact selection transaction clears competing primary flags and writes actor-attributed audit rows; existing worklist remains fail-closed until a unique primary email exists. | Local SQL regression passes; Engineer A should verify contact selection and blocked preview in browser. |
 
-UI data/render suites (42 and 51 checks), typecheck, targeted ESLint, and production build pass in the updated UI worktree. Backend SQL suites, contract test, typecheck, targeted ESLint, and production build pass in the updated backend worktree. The integrated runtime/browser result still refers to `3bec72a` until Engineer A reruns against the updated producer branch.
+Current follow-up verification: UI data/render suites (42 and 52 checks), backend contract test, typecheck, targeted ESLint, and production build pass on the merged local UI worktree. Backend SQL suites (including configuration/contact audit), contract test, typecheck, targeted ESLint, and production build pass on backend `9dec973`. These checks used the local synthetic Supabase only. The full login/browser result still refers to `3bec72a`; Engineer A must rerun on the newly pushed integration and UI branches before sign-off.
 
 ## Remaining blockers before release
 
-1. Publish and jointly review the producer updates, then rerun the UI/API/database/browser suites on the updated integration branch.
-2. Hosted migration state is still unverified; `20261010140000`, `20261011100000`, and `20261011110000` are only confirmed in the local harness.
+1. Push the merged UI branch, then Engineer A reviews and reruns UI/API/database/browser suites on the updated integration branch (`9dec973`) and UI branch.
+2. Hosted migration application is intentionally deferred until after local integrated testing and release approval; migrations `20261010140000`, `20261011100000`, `20261011110000`, and `20261011120000` are confirmed only in the local harness.
 3. COL-DEP-10: the owner rotates the exposed shared Supabase Auth password.
 4. COL-DEP-12: the owner reviews the credential-bearing historical migration (not inspected here).
 5. Joint review of this branch, then the merge order: integration backend first, then this UI. Nothing goes to `main` until all phases are approved.

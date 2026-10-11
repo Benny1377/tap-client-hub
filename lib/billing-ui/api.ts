@@ -2,7 +2,13 @@
 // Phase 2 worklist and preview). Every read and write goes through the server
 // routes, which own authorization and invariants; this module never talks to
 // Supabase directly.
-import type { CollectionsAutomationPreviewResponse, CollectionsReceivablesResponse } from "@/lib/collections-api";
+import type {
+  CollectionsAutomationPreviewResponse,
+  CollectionsReceivablesResponse,
+  CollectionsRuleUpdate,
+  CollectionsRulesResponse,
+  CollectionsSettingsUpdate,
+} from "@/lib/collections-api";
 import type {
   ClientOption,
   CollectionEvent,
@@ -100,8 +106,10 @@ export function createBillingApi(fetchImpl: FetchLike) {
     holds: (clientId?: string | null) => request<{ holds: CollectionHold[] }>(fetchImpl, withClient("/api/collections/holds", clientId)),
     events: (clientId?: string | null) => request<{ events: CollectionEvent[] }>(fetchImpl, withClient("/api/collections/events", clientId)),
 
-    /** Ladder display settings (no templates or secrets). */
+    /** Dynamic rule settings. Sender and test-recipient secrets are excluded. */
     rules: () => request<CollectionRuleSettings>(fetchImpl, "/api/collections/rules"),
+    updateRules: (input: { rules?: CollectionsRuleUpdate[]; settings?: CollectionsSettingsUpdate }) =>
+      patch<CollectionsRulesResponse>(fetchImpl, "/api/collections/rules", input),
 
     /** Phase 2 worklist: AR summary, priority call list, and invoice stages from the shared Billing read model. */
     worklist: (params: { clientId?: string | null; limit?: number; offset?: number } = {}) => {

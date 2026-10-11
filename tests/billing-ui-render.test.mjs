@@ -14,6 +14,7 @@ const ui = loadTs("components/billing/ui.tsx");
 const invoicePanels = loadTs("components/billing/invoice-panels.tsx");
 const paymentPanels = loadTs("components/billing/payment-panels.tsx");
 const collections = loadTs("components/billing/collections-panels.tsx");
+const rulesEditor = loadTs("components/billing/collections-rules-editor.tsx");
 const BillingPage = loadTs("app/billing/page.tsx").default;
 const CollectionsPage = loadTs("app/collections/page.tsx").default;
 
@@ -55,6 +56,21 @@ check("pages render every section as loading before the API responds", () => {
   for (const label of ["invoices", "payments", "receivables"]) assert.match(billing, new RegExp(`Loading ${label}…`));
   const collectionsHtml = render(h(CollectionsPage));
   for (const label of ["AR insights", "call list", "Collections activity", "holds"]) assert.match(collectionsHtml, new RegExp(`Loading ${label}…`));
+});
+
+check("Collections rule controls are Owner/Admin-only and explicitly delivery-disabled", () => {
+  const value = {
+    rules: [{ stage: 1, label: "Friendly", days_past_due: 1, automatic: true, enabled: true, subject_template: "Reminder {invoice_number}", body_template: "Hello {contact_name}" }],
+    firm_timezone: "America/Chicago",
+    settings: { minimum_balance: "50.00", direct_escalation_threshold: "5000.00", send_start: "09:00", send_end: "17:00", weekdays_only: true },
+  };
+  const html = render(h(rulesEditor.CollectionsRulesEditor, { value, canEdit: true, onSave: noop }));
+  assert.match(html, /Configure Collections rules/);
+  assert.match(html, /Delivery is not active|Email delivery remains disabled|Automated sending is not active/);
+  assert.match(html, /Direct-owner escalation above/);
+  assert.match(html, /Firm timezone/);
+  assert.match(html, /Review client contacts/);
+  assert.equal(render(h(rulesEditor.CollectionsRulesEditor, { value, canEdit: false, onSave: noop })), "");
 });
 
 // --- 403 and other server errors -------------------------------------------

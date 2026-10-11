@@ -8,6 +8,7 @@ import { useLedger } from "@/components/billing/use-ledger";
 import { ClientPicker, headingStyle, hintStyle, panelStyle, SectionView } from "@/components/billing/ui";
 import { ActiveHoldBanner, EventsPanel, HoldsPanel, type InvoiceOption } from "@/components/billing/collections-panels";
 import { AutomationPreviewPanel, LadderSummary, WorklistSummary, WorklistTable } from "@/components/billing/worklist-panels";
+import { CollectionsRulesEditor } from "@/components/billing/collections-rules-editor";
 
 const WORKLIST_PAGE = 50;
 
@@ -27,9 +28,12 @@ export default function CollectionsPage() {
   const worklist = readyData(worklistState, null);
   const holds = readyData(state.holds, []);
   const receivables = readyData(state.receivables, { receivables: [] });
-  const ruleSettings = readyData(state.rules, { rules: [], firm_timezone: "America/Chicago" });
+  const ruleSettings = readyData(state.rules, {
+    rules: [], firm_timezone: "America/Chicago",
+    settings: { minimum_balance: "50", direct_escalation_threshold: "5000", send_start: "09:00", send_end: "17:00", weekdays_only: true },
+  });
   const { rules, firm_timezone: firmTimezone } = ruleSettings;
-  const stageLabels = useMemo(() => stageLabelsFrom(rules), [rules]);
+  const stageLabels = stageLabelsFrom(rules);
   // The server's firm date drives hold and ladder rules; fall back to the browser
   // date only while neither read model has loaded.
   const today = worklist?.as_of_date || receivables.as_of_date || todayIso();
@@ -60,6 +64,12 @@ export default function CollectionsPage() {
         <h2 style={headingStyle}>Call list</h2>
         <p style={hintStyle}>Accounts ranked by the server&rsquo;s priority score. Open a score to see how it was built.</p>
         <LadderSummary rules={rules} />
+        {state.rules.status === "ready" ? <CollectionsRulesEditor
+          key={JSON.stringify(ruleSettings)}
+          value={ruleSettings}
+          canEdit={viewer?.role === "owner" || viewer?.role === "admin"}
+          onSave={(input) => mutate(() => api.updateRules(input))}
+        /> : null}
         <SectionView state={worklistState} label="call list">
           {(data) => <WorklistTable worklist={data} onSelectClient={selectClient} onPage={setWorklistOffset} stageLabels={stageLabels} rules={rules} firmTimezone={firmTimezone} />}
         </SectionView>
