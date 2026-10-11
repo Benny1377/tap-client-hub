@@ -4,7 +4,7 @@ import { useState, type CSSProperties } from "react";
 import type { ApiResult } from "@/lib/billing-ui/api";
 import type { CollectionsAccount, CollectionsAutomationPreviewResponse, CollectionsReceivablesResponse } from "@/lib/collections-api";
 import type { AwaitingApproval, CollectionRule, Viewer } from "@/lib/billing-ui/types";
-import { awaitingApprovalLabel, DISPOSITION_LABELS, formatMoney, PREVIEW_REASON_LABELS, stageLabel, STAGE_LABELS, viewerIsPowerUser, type StageLabels } from "@/lib/billing-ui/view-model";
+import { DISPOSITION_LABELS, formatMoney, nextStepText, PREVIEW_REASON_LABELS, stageLabel, STAGE_LABELS, viewerIsPowerUser, type StageLabels } from "@/lib/billing-ui/view-model";
 import { buttonStyle, cellStyle, ErrorBanner, hintStyle, OwnerAdminOnly, quietButtonStyle, tableStyle } from "./ui";
 
 const cardStyle: CSSProperties = { border: "1px solid var(--line)", borderRadius: 12, padding: "10px 12px", minWidth: 0 };
@@ -112,11 +112,12 @@ export function LadderSummary({ rules }: { rules: CollectionRule[] }) {
 /** Worklist invoices may carry a pending approval (not yet in lib/collections-api.ts). */
 type WorklistInvoice = CollectionsAccount["invoices"][number] & { awaiting_approval?: AwaitingApproval | null };
 
-export function WorklistTable({ worklist, onSelectClient, onPage, stageLabels = STAGE_LABELS }: {
+export function WorklistTable({ worklist, onSelectClient, onPage, stageLabels = STAGE_LABELS, rules = [] }: {
   worklist: CollectionsReceivablesResponse;
   onSelectClient: (clientId: string) => void;
   onPage: (offset: number) => void;
   stageLabels?: StageLabels;
+  rules?: CollectionRule[];
 }) {
   const { accounts, pagination } = worklist;
   if (accounts.length === 0) return <p style={hintStyle}>No accounts owe money or have credit to review.</p>;
@@ -176,9 +177,7 @@ export function WorklistTable({ worklist, onSelectClient, onPage, stageLabels = 
                             <td style={cellStyle}>{formatMoney(invoice.balance)}</td>
                             <td style={cellStyle}>{invoice.days_past_due}</td>
                             <td style={cellStyle}>
-                              {invoice.awaiting_approval
-                                ? <span style={{ color: "#7a5210" }}>{awaitingApprovalLabel(invoice.awaiting_approval, stageLabels)}</span>
-                                : invoice.next_stage ? stageLabel(invoice.next_stage, stageLabels) : invoice.days_past_due > 0 ? "Ladder complete — follow up manually" : "Not due yet"}
+                              <span style={invoice.awaiting_approval ? { color: "#7a5210" } : undefined}>{nextStepText(invoice, rules, stageLabels)}</span>
                               {invoice.on_hold ? <div style={{ color: "#7a5210" }}>On hold</div> : null}
                               {invoice.below_minimum ? <div style={{ color: "var(--muted)" }}>Below minimum</div> : null}
                             </td>

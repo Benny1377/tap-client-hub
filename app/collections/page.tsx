@@ -60,7 +60,7 @@ export default function CollectionsPage() {
         <p style={hintStyle}>Accounts ranked by the server&rsquo;s priority score. Open a score to see how it was built.</p>
         <LadderSummary rules={rules} />
         <SectionView state={worklistState} label="call list">
-          {(data) => <WorklistTable worklist={data} onSelectClient={selectClient} onPage={setWorklistOffset} stageLabels={stageLabels} />}
+          {(data) => <WorklistTable worklist={data} onSelectClient={selectClient} onPage={setWorklistOffset} stageLabels={stageLabels} rules={rules} />}
         </SectionView>
       </section>
 
@@ -77,6 +77,7 @@ export default function CollectionsPage() {
                 clientNames={clientNames}
                 viewer={viewer}
                 today={today}
+                stageLabels={stageLabels}
                 onLog={(values) => mutate(() => api.logEvent({ client_id: values.client_id, event_type: values.event_type, invoice_id: values.invoice_id || null, detail: values.note.trim() ? { note: values.note.trim() } : {} }))}
                 onApprove={(eventId, approvalType) => mutate(() => api.approveEvent(eventId, approvalType))}
                 onRecordNoticeSent={(approval, note) => mutate(() => api.logEvent({

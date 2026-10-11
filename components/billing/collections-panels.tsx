@@ -12,7 +12,9 @@ import {
   holdInForce,
   noticesAwaitingSend,
   stageLabel,
+  STAGE_LABELS,
   viewerIsPowerUser,
+  type StageLabels,
 } from "@/lib/billing-ui/view-model";
 import { ActionButton, cellStyle, hintStyle, LedgerForm, OwnerAdminOnly, tableStyle, type FormValues } from "./ui";
 
@@ -132,7 +134,7 @@ export function HoldsPanel({ holds, clientId, clientNames, invoiceOptions, viewe
 
 const APPROVAL_LABELS: Record<string, string> = { escalated: "Approve escalation", formal_notice_approved: "Approve formal notice" };
 
-export function EventsPanel({ events, holds, invoiceOptions, clientId, clientNames, viewer, today, onLog, onApprove, onRecordNoticeSent }: {
+export function EventsPanel({ events, holds, invoiceOptions, clientId, clientNames, viewer, today, onLog, onApprove, onRecordNoticeSent, stageLabels = STAGE_LABELS }: {
   events: CollectionEvent[];
   holds: CollectionHold[];
   invoiceOptions: InvoiceOption[];
@@ -143,6 +145,7 @@ export function EventsPanel({ events, holds, invoiceOptions, clientId, clientNam
   onLog: (values: FormValues) => Mutation;
   onApprove: (eventId: string, approvalType: "escalated" | "formal_notice_approved") => Mutation;
   onRecordNoticeSent: (approval: CollectionEvent, note: string) => Mutation;
+  stageLabels?: StageLabels;
 }) {
   const requests = approvalRequests(events, holds, viewer, today).filter((item) => item.state !== "approved");
   const notices = noticesAwaitingSend(events, holds, viewer, today);
@@ -243,7 +246,7 @@ export function EventsPanel({ events, holds, invoiceOptions, clientId, clientNam
                   <td style={cellStyle}>{event.invoice_id ? invoiceLabel(event) || "—" : "All"}</td>
                   <td style={cellStyle}>
                     {EVENT_LABELS[event.event_type] || event.event_type}
-                    {event.event_type === "reminder_logged" && event.stage ? <div style={{ fontSize: 12, color: "var(--muted)" }}>Ladder {stageLabel(event.stage)}</div> : null}
+                    {event.event_type === "reminder_logged" && event.stage ? <div style={{ fontSize: 12, color: "var(--muted)" }}>Ladder {stageLabel(event.stage, stageLabels)}</div> : null}
                   </td>
                   <td style={cellStyle}>{typeof event.detail?.note === "string" ? event.detail.note : "—"}</td>
                 </tr>

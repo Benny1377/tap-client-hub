@@ -172,6 +172,32 @@ export function stageLabel(stage: number | null | undefined, labels: StageLabels
   return `${stage} · ${labels[stage] || STAGE_LABELS[stage] || "Stage"}`;
 }
 
+/**
+ * The next enabled ladder step that is not yet due, from the configured rules.
+ * The worklist returns next_stage only when a step is due now; when it is null and
+ * nothing awaits approval, this says what comes next instead of "complete".
+ * Reminders logged without a stage are stored at or below the stage due that day,
+ * so a rule beyond today's days past due has not been completed.
+ */
+export function upcomingStage(rules: CollectionRule[] | null | undefined, daysPastDue: number) {
+  return (rules || [])
+    .filter((rule) => rule.enabled && rule.days_past_due > daysPastDue)
+    .sort((a, b) => a.days_past_due - b.days_past_due || a.stage - b.stage)[0] || null;
+}
+
+/** What the call list shows for an invoice's next step. */
+export function nextStepText(
+  invoice: { next_stage: number | null; days_past_due: number; awaiting_approval?: AwaitingApproval | null },
+  rules: CollectionRule[] | null | undefined,
+  labels: StageLabels = STAGE_LABELS,
+) {
+  if (invoice.awaiting_approval) return awaitingApprovalLabel(invoice.awaiting_approval, labels);
+  if (invoice.next_stage) return stageLabel(invoice.next_stage, labels);
+  if (invoice.days_past_due <= 0) return "Not due yet";
+  const upcoming = upcomingStage(rules, invoice.days_past_due);
+  return upcoming ? `Next: ${stageLabel(upcoming.stage, labels)} at ${upcoming.days_past_due} days` : "Ladder complete — follow up manually";
+}
+
 /** "Awaiting Owner/Admin approval: 4 · Owner escalation (requested 2026-10-01)". */
 export function awaitingApprovalLabel(pending: AwaitingApproval, labels: StageLabels = STAGE_LABELS) {
   return `Awaiting Owner/Admin approval: ${stageLabel(pending.stage, labels)} (requested ${pending.requested_at.slice(0, 10)})`;

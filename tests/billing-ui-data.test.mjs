@@ -433,6 +433,26 @@ await check("pending approvals read as awaiting approval, with the configured la
   assert.match(vm.awaitingApprovalLabel(pending, vm.stageLabelsFrom([{ stage: 4, label: "Partner review", days_past_due: 21, automatic: false, enabled: true }])), /4 · Partner review/);
 });
 
+await check("next step: due now, awaiting approval, upcoming, complete, or not due", () => {
+  const ladder = [
+    { stage: 1, label: "Friendly", days_past_due: 1, automatic: true, enabled: true },
+    { stage: 2, label: "Professional", days_past_due: 5, automatic: true, enabled: true },
+    { stage: 3, label: "Firm", days_past_due: 15, automatic: true, enabled: true },
+    { stage: 4, label: "Owner escalation", days_past_due: 21, automatic: false, enabled: true },
+    { stage: 5, label: "Formal notice", days_past_due: 28, automatic: false, enabled: true },
+  ];
+  const labels = vm.stageLabelsFrom(ladder);
+  // Found in the 2026-10-11 local browser test: a 14-day invoice after its stage-2 reminder said "Ladder complete".
+  assert.equal(vm.nextStepText({ next_stage: null, days_past_due: 14 }, ladder, labels), "Next: 3 · Firm at 15 days");
+  assert.equal(vm.nextStepText({ next_stage: 2, days_past_due: 14 }, ladder, labels), "2 · Professional");
+  assert.equal(vm.nextStepText({ next_stage: null, days_past_due: 39 }, ladder, labels), "Ladder complete — follow up manually");
+  assert.equal(vm.nextStepText({ next_stage: null, days_past_due: 0 }, ladder, labels), "Not due yet");
+  assert.match(vm.nextStepText({ next_stage: null, days_past_due: 39, awaiting_approval: { event_id: "e", event_type: "escalation_requested", stage: 4, requested_at: "2026-10-01T00:00:00Z" } }, ladder, labels), /^Awaiting Owner\/Admin approval: 4 · Owner escalation/);
+  const withDisabledFirm = ladder.map((rule) => (rule.stage === 3 ? { ...rule, enabled: false } : rule));
+  assert.equal(vm.nextStepText({ next_stage: null, days_past_due: 14 }, withDisabledFirm, labels), "Next: 4 · Owner escalation at 21 days", "disabled steps are skipped");
+  assert.equal(vm.nextStepText({ next_stage: null, days_past_due: 14 }, [], labels), "Ladder complete — follow up manually", "without rules the UI cannot promise a next step");
+});
+
 await check("a duplicate Collections event gets a plain-language headline", () => {
   assert.equal(vm.friendlyError("conflict", "EVENT_CONFLICT", "This Collections event has already been recorded").headline, "That Collections event has already been recorded.");
 });

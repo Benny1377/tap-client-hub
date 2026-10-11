@@ -497,6 +497,23 @@ check("worklist and preview use the configured ladder labels", () => {
   assert.equal(render(h(worklistPanels.LadderSummary, { rules: [] })), "");
 });
 
+check("with rules loaded, an invoice between ladder steps shows the upcoming step", () => {
+  const rules = [
+    { stage: 3, label: "Firm", days_past_due: 15, automatic: true, enabled: true },
+    { stage: 4, label: "Owner escalation", days_past_due: 21, automatic: false, enabled: true },
+  ];
+  const between = { ...worklistAccount.invoices[1], invoice_id: "inv-4", days_past_due: 14, next_stage: null };
+  const html = render(h(worklistPanels.WorklistTable, { worklist: worklist({ accounts: [{ ...worklistAccount, invoices: [between] }] }), onSelectClient: () => {}, onPage: () => {}, rules }));
+  assert.match(html, /data-worklist-invoice="inv-4"[\s\S]*?Next: 3 · Firm reminder at 15 days/);
+  assert.doesNotMatch(html, /Ladder complete/);
+});
+
+check("history uses the configured stage labels", () => {
+  const reminder = { ...request, event_type: "reminder_logged", stage: 2, invoice_id: "inv-1" };
+  const html = render(h(collections.EventsPanel, { events: [reminder], holds: [], invoiceOptions, clientId: "c-1", clientNames: {}, viewer: staff, today: TODAY, onLog: noop, onApprove: noop, onRecordNoticeSent: noop, stageLabels: { 2: "Professional" } }));
+  assert.match(html, /Ladder 2 · Professional</);
+});
+
 check("hold and event rows prefer the server's invoice_number", () => {
   const serverNamedHold = hold({ id: "h-9", invoice_id: "inv-paid", invoice_number: "TAP-OLD-7" });
   const holdsHtml = holdsPanel([serverNamedHold], owner);
