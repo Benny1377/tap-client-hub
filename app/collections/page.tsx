@@ -65,7 +65,6 @@ export default function CollectionsPage() {
         <p style={hintStyle}>Accounts ranked by the server&rsquo;s priority score. Open a score to see how it was built.</p>
         <LadderSummary rules={rules} />
         {state.rules.status === "ready" ? <CollectionsRulesEditor
-          key={JSON.stringify(ruleSettings)}
           value={ruleSettings}
           canEdit={viewerIsPowerUser(viewer)}
           onSave={(input) => mutate(() => api.updateRules(input))}
@@ -115,6 +114,7 @@ export default function CollectionsPage() {
                 invoiceOptions={invoiceOptions}
                 viewer={viewer}
                 today={today}
+                firmTimezone={firmTimezone}
                 onPlace={(values) => mutate(() => api.placeHold({ client_id: values.client_id, reason: values.reason.trim(), invoice_id: values.invoice_id || null, expires_on: values.expires_on || null }))}
                 onRelease={(holdId) => mutate(() => api.releaseHold(holdId))}
               />

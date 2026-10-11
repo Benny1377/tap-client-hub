@@ -55,13 +55,14 @@ export function ActiveHoldBanner({ holds, clientId, clientNames, invoiceNumbers,
   );
 }
 
-export function HoldsPanel({ holds, clientId, clientNames, invoiceOptions, viewer, today, onPlace, onRelease }: {
+export function HoldsPanel({ holds, clientId, clientNames, invoiceOptions, viewer, today, firmTimezone = "America/Chicago", onPlace, onRelease }: {
   holds: CollectionHold[];
   clientId: string | null;
   clientNames: Record<string, string>;
   invoiceOptions: InvoiceOption[];
   viewer: Viewer | null;
   today: string;
+  firmTimezone?: string;
   onPlace: (values: FormValues) => Mutation;
   onRelease: (holdId: string) => Mutation;
 }) {
@@ -91,13 +92,13 @@ export function HoldsPanel({ holds, clientId, clientNames, invoiceOptions, viewe
                   <tr key={hold.id} data-hold-row={hold.id} data-hold-state={holdState}>
                     <td style={cellStyle}>{clientNames[hold.client_id] || hold.client_id}</td>
                     <td style={cellStyle}>{hold.reason}</td>
-                    <td style={cellStyle}>{hold.placed_at.slice(0, 10)}</td>
+                    <td style={cellStyle}>{formatFirmDate(hold.placed_at, firmTimezone)}</td>
                     <td style={cellStyle}>
                       {hold.expires_on || "—"}
                       {!released && holdExpiryPassed(hold, today) ? <div style={{ fontSize: 12, color: "var(--muted)" }}>Review date passed; no longer blocks. Release it to close it out.</div> : null}
                     </td>
                     <td style={cellStyle}>
-                      {released ? `Released ${hold.released_at?.slice(0, 10)}` : inForce ? <strong>Active</strong> : "Expired, not released"}
+                      {released ? `Released ${formatFirmDate(hold.released_at || "", firmTimezone)}` : inForce ? <strong>Active</strong> : "Expired, not released"}
                       <div data-hold-scope style={{ fontSize: 12, color: "var(--muted)" }}>
                         {hold.invoice_id ? `Invoice ${hold.invoice_number || invoiceNumbers[hold.invoice_id] || hold.invoice_id} only` : "Whole client"}
                       </div>

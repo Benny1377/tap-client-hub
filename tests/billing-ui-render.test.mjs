@@ -237,6 +237,14 @@ check("hold banner appears only while a hold is in force, with its scope", () =>
   assert.equal(banner([hold()], "c-2"), "");
 });
 
+check("hold placed and released dates use the firm timezone, not UTC", () => {
+  const lateEvening = hold({ placed_at: "2026-10-11T03:30:00Z", released_at: "2026-10-12T02:00:00Z" });
+  const chicago = render(h(collections.HoldsPanel, { holds: [lateEvening], clientId: "c-1", clientNames: {}, invoiceOptions, viewer: owner, today: TODAY, firmTimezone: "America/Chicago", onPlace: noop, onRelease: noop }));
+  assert.match(chicago, />2026-10-10</, "placed the previous evening in Chicago");
+  assert.match(chicago, /Released 2026-10-11/);
+  assert.doesNotMatch(chicago, /2026-10-12/);
+});
+
 check("Owner/Admin can place and release holds", () => {
   const html = holdsPanel([hold()], owner);
   assert.match(html, /data-hold-state="active"[\s\S]*>Release hold</);

@@ -249,7 +249,7 @@ export const PREVIEW_REASON_LABELS: Record<string, string> = {
   active_hold: "Active hold",
   unallocated_credit_review: "Unallocated credit to review",
   below_minimum_balance: "Below minimum balance",
-  contact_review_required: "Primary contact or email missing",
+  contact_review_required: "Needs one primary contact with an email",
   email_contact_missing: "No client email on file",
 };
 

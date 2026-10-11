@@ -23,6 +23,16 @@ export function CollectionsRulesEditor({
   const [settings, setSettings] = useState(value.settings);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
+  // Re-sync when the server's rules change, without remounting: a remount would
+  // collapse the panel and drop the "Rules saved" confirmation after each save.
+  const valueKey = JSON.stringify(value);
+  const [syncedKey, setSyncedKey] = useState(valueKey);
+  if (valueKey !== syncedKey) {
+    setSyncedKey(valueKey);
+    setRules(value.rules);
+    setTimezone(value.firm_timezone);
+    setSettings(value.settings);
+  }
 
   if (!canEdit) return null;
   const editRule = (stage: number, changes: Partial<(typeof rules)[number]>) => {
