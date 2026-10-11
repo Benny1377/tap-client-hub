@@ -66,7 +66,7 @@ check("Collections rule controls are Owner/Admin-only and explicitly delivery-di
   };
   const html = render(h(rulesEditor.CollectionsRulesEditor, { value, canEdit: true, onSave: noop }));
   assert.match(html, /Configure Collections rules/);
-  assert.match(html, /Delivery is not active|Email delivery remains disabled|Automated sending is not active/);
+  assert.match(html, /nothing is sent or scheduled/i);
   assert.match(html, /Direct-owner escalation above/);
   assert.match(html, /Firm timezone/);
   assert.match(html, /Review client contacts/);

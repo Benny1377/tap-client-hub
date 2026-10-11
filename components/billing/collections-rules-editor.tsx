@@ -59,7 +59,7 @@ export function CollectionsRulesEditor({
   return (
     <details style={{ ...panelStyle, marginTop: 12 }} data-collections-rules-editor>
       <summary style={{ cursor: "pointer", fontWeight: 700 }}>Owner/Admin · Configure Collections rules</summary>
-      <p style={hintStyle}>These settings control rule evaluation and preview only. Automated sending is not active; sender and test-recipient setup belongs to the integrations phase.</p>
+      <p style={hintStyle}>Stage and balance rules affect the preview. Send-window settings are stored for the future integration; nothing is sent or scheduled here. Sender and test-recipient setup belongs to the integrations phase.</p>
       <div style={{ display: "grid", gap: 12, marginTop: 12 }}>
         {rules.map((rule) => (
           <fieldset key={rule.stage} style={{ border: "1px solid var(--line)", borderRadius: 10, padding: 12, display: "grid", gap: 10 }}>

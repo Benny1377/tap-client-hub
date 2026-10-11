@@ -82,7 +82,7 @@ The PASS above was run against backend `3bec72a`. After it, producer changes wer
 
 | ID | Follow-up | Local implementation status | Required confirmation |
 | --- | --- | --- | --- |
-| H1 | Add required profile fields and seed all five synthetic roles. | Implemented in backend commit `9dec973`; local harness schema test covers fields and `.invalid` profiles. | Included in integrated clean-reset rerun. |
+| H1 | Add required profile fields and seed all five synthetic roles. | Implemented on the backend branch through `53324a7`; local harness schema test covers fields and `.invalid` profiles. | Included in integrated clean-reset rerun. |
 | H2 | Provision local Auth users with random passwords stored only in ignored `.env.local`. | `tools/collections-local/create-test-users.mjs` is hard-pinned to `127.0.0.1:55321`. | Aanan: run on his machine and validate all five role logins. |
 | T1 | Share approval and progression types. | Added in shared `lib/collections-api.ts`. | Typecheck passes on integrated branch. |
 | A1 | Return server-derived completed/upcoming stage. | Forward-only migration `20261011110000_collections_stage_context_and_timezone.sql`; the UI consumes `upcoming_stage`. | SQL regression passes locally; integrated browser rerun needed for explicitly early higher reminder stage. |
@@ -90,11 +90,11 @@ The PASS above was run against backend `3bec72a`. After it, producer changes wer
 | O1 | Make the demo's dynamic ladder and guardrails real, while preserving Owner/Admin approval and deferring delivery integration. | Owner/Admin-only `PATCH /api/collections/rules`, audited migration `20261011120000`, and a UI rules editor now cover thresholds, copy, enabled/automatic settings, balance/escalation limits, schedule, weekdays, and timezone. Stages 4–5 cannot be automatic; high balances and manually held early reminders surface as Owner/Admin review. Email delivery remains disabled; sender/test recipient are not configured. | Local SQL/API-contract/type/lint/build checks pass; Engineer A should exercise save/reload, direct-threshold preview, and approval-only stages in integrated browser rerun. |
 | O2 | Default to primary client contact; pause on ambiguity; remember an explicit selection. | Client contact selection transaction clears competing primary flags and writes actor-attributed audit rows; existing worklist remains fail-closed until a unique primary email exists. | Local SQL regression passes; Engineer A should verify contact selection and blocked preview in browser. |
 
-Current follow-up verification: UI data/render suites (42 and 52 checks), backend contract test, typecheck, targeted ESLint, and production build pass on the merged local UI worktree. Backend SQL suites (including configuration/contact audit), contract test, typecheck, targeted ESLint, and production build pass on backend `9dec973`. These checks used the local synthetic Supabase only. The full login/browser result still refers to `3bec72a`; Engineer A must rerun on the newly pushed integration and UI branches before sign-off.
+Current follow-up verification: UI data/render suites (42 and 52 checks), backend contract test, typecheck, targeted ESLint, and production build pass on the merged local UI worktree. Backend SQL suites (including configuration/contact audit), contract test, typecheck, targeted ESLint, and production build pass through backend `9dec973`; the final preview-specific route follow-up at `53324a7` passes its backend contract test, typecheck, and targeted lint. These checks used the local synthetic Supabase only. The full login/browser result still refers to `3bec72a`; Engineer A must rerun on the newly pushed integration and UI branches before sign-off.
 
 ## Remaining blockers before release
 
-1. Push the merged UI branch, then Engineer A reviews and reruns UI/API/database/browser suites on the updated integration branch (`9dec973`) and UI branch.
+1. Push the merged UI branch, then Engineer A reviews and reruns UI/API/database/browser suites on the updated integration branch (`53324a7`) and UI branch.
 2. Hosted migration application is intentionally deferred until after local integrated testing and release approval; migrations `20261010140000`, `20261011100000`, `20261011110000`, and `20261011120000` are confirmed only in the local harness.
 3. COL-DEP-10: the owner rotates the exposed shared Supabase Auth password.
 4. COL-DEP-12: the owner reviews the credential-bearing historical migration (not inspected here).

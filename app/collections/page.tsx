@@ -3,7 +3,7 @@
 import { useCallback, useMemo, useState } from "react";
 import { mutateThenRefresh, type ApiResult } from "@/lib/billing-ui/api";
 import { readyData } from "@/lib/billing-ui/ledger";
-import { stageLabelsFrom, todayIso } from "@/lib/billing-ui/view-model";
+import { stageLabelsFrom, todayIso, viewerIsPowerUser } from "@/lib/billing-ui/view-model";
 import { useLedger } from "@/components/billing/use-ledger";
 import { ClientPicker, headingStyle, hintStyle, panelStyle, SectionView } from "@/components/billing/ui";
 import { ActiveHoldBanner, EventsPanel, HoldsPanel, type InvoiceOption } from "@/components/billing/collections-panels";
@@ -67,7 +67,7 @@ export default function CollectionsPage() {
         {state.rules.status === "ready" ? <CollectionsRulesEditor
           key={JSON.stringify(ruleSettings)}
           value={ruleSettings}
-          canEdit={viewer?.role === "owner" || viewer?.role === "admin"}
+          canEdit={viewerIsPowerUser(viewer)}
           onSave={(input) => mutate(() => api.updateRules(input))}
         /> : null}
         <SectionView state={worklistState} label="call list">
