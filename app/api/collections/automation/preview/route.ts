@@ -18,7 +18,9 @@ type WorklistInvoice = {
   invoice_number: string;
   balance: string;
   days_past_due: number;
+  completed_stage: number;
   next_stage: number | null;
+  awaiting_approval: { stage: number } | null;
   on_hold: boolean;
   credit_review_required: boolean;
   contact_review_required: boolean;
@@ -68,6 +70,13 @@ export async function POST(request: NextRequest) {
   if (offset === null) return apiError("offset must be a non-negative integer", "INVALID_OFFSET", 422);
 
   const db = createAdminClient();
+  const [{ data: ruleRows, error: rulesError }, { data: settings, error: settingsError }] = await Promise.all([
+    db.from("collection_ladder_rules").select("stage, automatic, enabled"),
+    db.from("collection_settings").select("direct_escalation_threshold").eq("id", "default").maybeSingle(),
+  ]);
+  if (rulesError || settingsError || !settings) return apiError("Unable to load Collections preview rules", "PREVIEW_RULES_READ_FAILED", 500);
+  const automaticByStage = new Map((ruleRows || []).map((rule) => [rule.stage, rule.enabled && rule.automatic]));
+  const directThreshold = Number(settings.direct_escalation_threshold);
   const accounts: WorklistAccount[] = [];
   let totalAccounts = 0;
   let resolvedAsOfDate = "";
@@ -91,7 +100,10 @@ export async function POST(request: NextRequest) {
   }
 
   const allActions: CollectionsPreviewAction[] = accounts.flatMap((account) => account.invoices.flatMap((invoice) => {
-    const stage = invoice.next_stage;
+    const directOwnerEscalation = Number(invoice.balance) >= directThreshold
+      && invoice.completed_stage < 4
+      && !invoice.awaiting_approval;
+    const stage = directOwnerEscalation ? 4 : invoice.next_stage;
     if (!stage || !invoice.balance) return [];
 
     const suppressionReasons: string[] = [];
@@ -111,6 +123,7 @@ export async function POST(request: NextRequest) {
     }
 
     const actionType = stage <= 3 ? "reminder_candidate" : stage === 4 ? "owner_escalation_review" : "formal_notice_approval_review";
+    const requiresApproval = stage >= 4 || automaticByStage.get(stage) !== true;
     return [{
       client_id: account.client_id,
       client_name: account.client_name,
@@ -121,7 +134,7 @@ export async function POST(request: NextRequest) {
       days_past_due: invoice.days_past_due,
       stage,
       action_type: actionType,
-      disposition: suppressionReasons.length ? "suppressed" : stage <= 3 ? "preview_only" : "approval_required",
+      disposition: suppressionReasons.length ? "suppressed" : requiresApproval ? "approval_required" : "preview_only",
       suppression_reasons: suppressionReasons,
       review_warnings: reviewWarnings,
       delivery_performed: false,
