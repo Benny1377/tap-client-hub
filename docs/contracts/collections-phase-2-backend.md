@@ -7,7 +7,7 @@ State: **Engineer A approved conditionally on stage-history corrections; impleme
 - Owner decision: QuickBooks is **not needed** for this scope; Collections reads TAP Hub Billing as its sole receivables source (2026-10-10).
 - Engineer A approval: conditional; pending requests must not count as completed stages, and client-level escalation/notice history must not affect invoices that were not yet due on the event's firm-local date. Regression coverage is in `supabase/tests/collections_phase2_stage_regressions.sql`.
 - Prerequisite for release: Phase 1 ledger migration and UI/backend integration verification.
-- Migration order: `20261010110000_billing_audit_and_receivables.sql` → `20261010120000_collections_automation_foundation.sql` → `20261010130000_collections_shared_date_and_stage_model.sql` → `20261010140000_collections_stage_and_api_corrections.sql` → `20261011100000_collections_catch_up_policy.sql`.
+- Migration order: `20261010110000_billing_audit_and_receivables.sql` → `20261010120000_collections_automation_foundation.sql` → `20261010130000_collections_shared_date_and_stage_model.sql` → `20261010140000_collections_stage_and_api_corrections.sql` → `20261011100000_collections_catch_up_policy.sql` → `20261011110000_collections_stage_context_and_timezone.sql` → `20261011120000_collections_dynamic_rules.sql`.
 - Prototype source: owner-provided `practiceops_1.html` and `TAP_Client_Hub_Demo_v14.html`; numbers and demo copy are not production-approved defaults.
 
 ## Capability boundary
@@ -44,7 +44,7 @@ Reminder history is invoice-aware. A `reminder_logged` event with explicit `stag
 
 The owner approved reminder catch-up: if earlier reminders were missed, the next proposed reminder is the highest enabled automatic stage currently due. The worklist does not skip the Owner escalation or formal-notice approval gates.
 
-Prototype guardrails to expose as configurable settings (not to silently assume as production policy): minimum balance `$50`, direct-owner escalation above `$5,000`, weekdays only, 9:00 a.m.–5:00 p.m. Central time, stop on recorded payment, sender/reply-to, test recipient, and optional assigned-staffer copy. The first-touch body says “due” while its trigger says “1 day past due”; use a neutral editable template until owner/client approves exact copy and timing. Payment links remain off until a Billing-owned payment URL is specified.
+Prototype guardrails to expose as configurable settings (not to silently assume as production policy): minimum balance `$50`, direct-owner escalation above `$5,000`, weekdays only, 9:00 a.m.–5:00 p.m. Central time, and the reminder ladder thresholds/wording/automatic flags. These values are editable through the Owner/Admin rules panel; seeded demo values remain illustrative, and no setting enables delivery. Stop-on-payment remains enforced by the ledger-derived worklist. Sender/reply-to, test recipient, and payment-link configuration remain deferred to integrations. The first-touch body says “due” while its trigger says “1 day past due”; use a neutral editable template until owner/client approves exact copy and timing.
 
 The initial migration leaves automation disabled and delivery mode `disabled`. This implementation has no executable email-delivery path. Any later test-recipient delivery must reject an unset/invalid recipient and must make it impossible to target a real client address. No live-client send mode is in scope without separate approval.
 
@@ -56,14 +56,14 @@ All routes are server-authorized. Exact response schemas and stable errors must 
 | --- | --- | --- |
 | `GET /api/collections/receivables` | Implemented: summary, invoice rows, client aggregates, aging, holds, credit-review flags, contact gaps, and priority sort | Billing or Collections module; Owner/Admin always |
 | `POST /api/collections/automation/preview` | Implemented: side-effect-free proposed actions using a supplied/as-of date; scans all accounts in stable pages and paginates the returned actions | Owner/Admin |
-| `GET /api/collections/rules` | Current ladder display subset: `stage`, `label`, `days_past_due`, `automatic`, `enabled` (no templates/secrets) | Billing/Collections read access |
-| `PATCH /api/collections/rules` | Deferred: update approved thresholds, wording, and test settings | Owner/Admin only; audited transaction |
+| `GET /api/collections/rules` | Ladder thresholds/labels/automatic flags/templates, firm timezone, minimum balance, direct escalation threshold, send window, and weekday guardrail. Sender, reply-to, and test-recipient values are not returned. | Billing/Collections read access |
+| `PATCH /api/collections/rules` | Update dynamic ladder thresholds/labels/templates/automatic flags and send guardrails. Stage 4/5 can never be automated. Sender, reply-to, test recipient, payment links, and delivery mode remain outside this configuration path. | Owner/Admin only; audited transaction |
 | `POST /api/collections/automation/run` | Deferred: protected scheduled job; no worker/provider send exists in this branch yet | Machine secret, not an app-user cookie |
 | `GET /api/collections/deliveries` | Deferred: delivery attempts and suppression/failure history | Owner/Admin |
 
 Exact TypeScript success/error response contracts are in `lib/collections-api.ts`. Receivables accepts `client_id?`, `as_of_date?`, `limit?` (default 100, 1–200), and `offset?` (default 0, max 100,000); its `pagination` object returns `limit`, `offset`, and `total_accounts`. Preview accepts JSON `{ as_of_date?, limit?, offset? }` (same limit/offset bounds), scans the account set in stable 200-account database pages rather than stopping at the top 200 priority rows, then returns a page of actions and `{ limit, offset, total_actions, has_more }`. Money is decimal strings, responses are `no-store`, and every error has a stable `code`.
 
-Collections event and hold list/write responses include top-level `invoice_number` (null for account-level history). Database exception prefixes are not exposed to callers; API errors retain stable machine-readable `code` values with readable `error` text. `formal_notice_sent` records an already-sent notice; it is not a send operation. A current hold does not prevent recording this historical fact, but the event must reference a matching approval and include a note recording when/how the send occurred.
+Collections event and hold list/write responses include top-level `invoice_number` (null for account-level history). Each worklist invoice returns server-derived `completed_stage`, `upcoming_stage`, `next_stage`, and `awaiting_approval`; clients must not infer progression from thresholds alone. `GET /api/collections/rules` returns the configured `firm_timezone` for date display. Database exception prefixes are not exposed to callers; API errors retain stable machine-readable `code` values with readable `error` text. `formal_notice_sent` records an already-sent notice; it is not a send operation. A current hold does not prevent recording this historical fact, but the event must reference a matching approval and include a note recording when/how the send occurred.
 
 Error codes: receivables returns `UNAUTHENTICATED` (401), `FORBIDDEN` (403), `INVALID_CLIENT_ID`, `INVALID_AS_OF_DATE`, `INVALID_LIMIT`, or `INVALID_OFFSET` (422), and `COLLECTIONS_READ_MODEL_FAILED` (500). Preview returns `UNAUTHENTICATED` (401), `FORBIDDEN` (403), `INVALID_JSON` (400), `INVALID_INPUT`, `INVALID_AS_OF_DATE`, `INVALID_LIMIT`, or `INVALID_OFFSET` (422), and `PREVIEW_READ_FAILED` (500). Error bodies are `{ "error": string, "code": string }`.
 
@@ -89,7 +89,7 @@ Error codes: receivables returns `UNAUTHENTICATED` (401), `FORBIDDEN` (403), `IN
 1. Engineer A must review the route and response contracts before UI wiring; requested changes become a Contract Change Request.
 2. Project owner/client must approve exact reminder wording, first-touch semantics, send window/timezone, thresholds, minimum amount, and direct-escalation behavior before considering production delivery.
 3. Project owner must provide an approved test recipient and confirm verified sender/reply-to configuration through the secret-safe environment workflow. Until then, preview only.
-4. The behavior for a client with more than one primary contact remains fail-closed until contact-selection rules are agreed.
+4. A client with no unique primary contact/email remains fail-closed. An authorized client-data editor resolves ambiguity by explicitly setting the chosen contact as primary in Contacts; the server transactionally clears other primary flags and audits the remembered choice. No address is guessed.
 5. Phase 1 must pass integrated UI/backend and database verification before this milestone is released.
 
 ## Validation gates

@@ -2,7 +2,10 @@
 insert into tap_hub_project.profiles (id, full_name, email, role, modules)
 values
   ('00000000-0000-4000-8000-000000000001', 'Local Owner', 'owner@example.invalid', 'owner', array['billing','collections']),
-  ('00000000-0000-4000-8000-000000000002', 'Local Staff', 'staff@example.invalid', 'staff', array['collections']);
+  ('00000000-0000-4000-8000-000000000002', 'Local Collections Staff', 'staff@example.invalid', 'staff', array['collections']),
+  ('00000000-0000-4000-8000-000000000003', 'Local Admin', 'admin@example.invalid', 'admin', '{}'),
+  ('00000000-0000-4000-8000-000000000004', 'Local Billing Staff', 'billing@example.invalid', 'staff', array['billing']),
+  ('00000000-0000-4000-8000-000000000005', 'Local Unassigned Staff', 'unassigned@example.invalid', 'staff', array['timesheet']);
 
 insert into tap_hub_project.clients (id, name, type, status)
 values

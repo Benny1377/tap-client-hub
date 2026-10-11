@@ -7,11 +7,16 @@ const read = (path) => readFile(new URL(path, root), "utf8");
 const migration = await read("supabase/migrations/20261010120000_collections_automation_foundation.sql");
 const followupMigration = await read("supabase/migrations/20261010130000_collections_shared_date_and_stage_model.sql");
 const catchUpMigration = await read("supabase/migrations/20261011100000_collections_catch_up_policy.sql");
+const stageContextMigration = await read("supabase/migrations/20261011110000_collections_stage_context_and_timezone.sql");
+const dynamicRulesMigration = await read("supabase/migrations/20261011120000_collections_dynamic_rules.sql");
 const receivablesRoute = await read("app/api/collections/receivables/route.ts");
 const previewRoute = await read("app/api/collections/automation/preview/route.ts");
 const rulesRoute = await read("app/api/collections/rules/route.ts");
+const contactsRoute = await read("app/api/contacts/route.ts");
 const eventRoute = await read("app/api/collections/events/route.ts");
 const holdsRoute = await read("app/api/collections/holds/route.ts");
+const localBootstrap = await read("tools/collections-local/supabase/migrations/00000000000000_local_collections_bootstrap.sql");
+const localUsers = await read("tools/collections-local/create-test-users.mjs");
 const contracts = await read("lib/collections-api.ts");
 
 assert.match(migration, /create or replace function tap_hub_project\.get_collections_worklist/i);
@@ -47,12 +52,28 @@ assert.match(catchUpMigration, /where r\.enabled and r\.automatic and r\.stage <
   "missed reminders should catch up to the latest currently due automatic stage");
 assert.match(catchUpMigration, /if v_next is null then\s+select min\(r\.stage\)/i,
   "approval stages should remain sequential after automatic reminders");
+assert.match(stageContextMigration, /'completed_stage', v_completed/);
+assert.match(stageContextMigration, /'upcoming_stage', v_upcoming/);
+assert.match(rulesRoute, /firm_timezone/);
 assert.match(rulesRoute, /requireLedgerReadAccess/);
-assert.match(rulesRoute, /stage, label, days_past_due, automatic, enabled/);
+assert.match(rulesRoute, /requireBillingPowerUser/);
+assert.match(rulesRoute, /update_collections_configuration/);
+assert.match(rulesRoute, /subject_template, body_template/);
+assert.match(rulesRoute, /test-recipient setup is deferred to integrations/);
+assert.match(dynamicRulesMigration, /create or replace function tap_hub_project\.update_collections_configuration/i);
+assert.match(dynamicRulesMigration, /stage.*>= 4/i);
+assert.match(dynamicRulesMigration, /create or replace function tap_hub_project\.set_primary_client_contact/i);
+assert.match(dynamicRulesMigration, /selected_primary_contact_id/);
+assert.match(contactsRoute, /set_primary_client_contact/);
 assert.match(eventRoute, /invoice:invoices\(invoice_number\)/);
 assert.match(holdsRoute, /invoice:invoices\(invoice_number\)/);
 assert.match(eventRoute, /collectionsError/);
 assert.match(holdsRoute, /collectionsError/);
+assert.match(localBootstrap, /allow_edit_client_data boolean not null default false/);
+assert.match(localBootstrap, /email_2fa_enabled boolean not null default false/);
+assert.match(localBootstrap, /location text/);
+assert.match(localUsers, /55321/);
+assert.match(localUsers, /SUPABASE_SERVICE_ROLE_KEY/);
 assert.match(contracts, /CollectionsReceivablesResponse/);
 assert.match(contracts, /CollectionsAutomationPreviewResponse/);
 

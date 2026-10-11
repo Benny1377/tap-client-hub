@@ -27,11 +27,33 @@ export type CollectionsRule = {
   days_past_due: number;
   automatic: boolean;
   enabled: boolean;
+  subject_template: string;
+  body_template: string;
 };
 
 export type CollectionsRulesResponse = {
   rules: CollectionsRule[];
   firm_timezone: string;
+  settings: CollectionsRuleSettingsData;
+};
+
+export type CollectionsRuleSettingsData = {
+  minimum_balance: Money;
+  direct_escalation_threshold: Money;
+  send_start: string;
+  send_end: string;
+  weekdays_only: boolean;
+};
+
+export type CollectionsRuleUpdate = Partial<Pick<CollectionsRule, "label" | "days_past_due" | "automatic" | "enabled" | "subject_template" | "body_template">> & { stage: number };
+
+export type CollectionsSettingsUpdate = {
+  timezone?: string;
+  minimum_balance?: number;
+  direct_escalation_threshold?: number;
+  send_start?: string;
+  send_end?: string;
+  weekdays_only?: boolean;
 };
 
 export type CollectionsInvoice = {
