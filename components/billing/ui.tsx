@@ -6,16 +6,17 @@ import type { FieldErrors } from "@/lib/billing-ui/validation";
 import { hasErrors } from "@/lib/billing-ui/validation";
 import { friendlyError, STATUS_LABELS, type SectionState } from "@/lib/billing-ui/view-model";
 
-export const panelStyle: CSSProperties = { background: "var(--card)", border: "1px solid var(--line)", borderRadius: 16, padding: "18px 20px", minWidth: 0 };
-export const headingStyle: CSSProperties = { fontFamily: '"Fraunces",Georgia,serif', fontWeight: 600, fontSize: 19, margin: "0 0 10px" };
-export const hintStyle: CSSProperties = { color: "var(--muted)", fontSize: 13, lineHeight: 1.5, margin: "4px 0 10px" };
-const labelStyle: CSSProperties = { display: "block", fontSize: 11, fontWeight: 700, letterSpacing: ".06em", textTransform: "uppercase", color: "var(--muted)", margin: "10px 0 4px" };
+// Styles follow the TAP Client Hub demo (v14); table and layout classes live in app/globals.css (bc-*).
+export const panelStyle: CSSProperties = { background: "var(--card)", border: "1px solid var(--line)", borderRadius: 14, padding: "22px 24px", boxShadow: "var(--shadow)", minWidth: 0 };
+export const headingStyle: CSSProperties = { fontFamily: '"Fraunces",Georgia,serif', fontWeight: 600, fontSize: 16, margin: "0 0 14px" };
+export const hintStyle: CSSProperties = { color: "var(--muted)", fontSize: 12.5, lineHeight: 1.5, margin: "4px 0 10px" };
+const labelStyle: CSSProperties = { display: "block", fontSize: 10, fontWeight: 600, letterSpacing: ".09em", textTransform: "uppercase", color: "var(--faint)", margin: "12px 0 6px" };
 // Border longhands only: mixing `border` with an error `borderColor` breaks React re-renders.
-const inputStyle: CSSProperties = { width: "100%", borderWidth: 1, borderStyle: "solid", borderColor: "var(--line)", borderRadius: 10, padding: "8px 10px", fontSize: 14, background: "#fff", color: "var(--ink)" };
-export const buttonStyle: CSSProperties = { border: "1px solid var(--teal)", background: "var(--teal)", color: "#fff", borderRadius: 10, padding: "7px 14px", fontSize: 13, fontWeight: 600, cursor: "pointer" };
-export const quietButtonStyle: CSSProperties = { ...buttonStyle, background: "#fff", color: "var(--teal)" };
-export const tableStyle: CSSProperties = { width: "100%", borderCollapse: "collapse", fontSize: 13.5 };
-export const cellStyle: CSSProperties = { borderBottom: "1px solid var(--line)", padding: "8px 6px", textAlign: "left", verticalAlign: "top" };
+const inputStyle: CSSProperties = { width: "100%", borderWidth: 1, borderStyle: "solid", borderColor: "var(--line)", borderRadius: 8, padding: "9px 11px", fontSize: 13.5, fontFamily: "inherit", background: "var(--paper)", color: "var(--ink)", minWidth: 0 };
+export const buttonStyle: CSSProperties = { border: "1px solid var(--navy)", background: "var(--navy)", color: "#fff", borderRadius: 8, padding: "8px 14px", fontSize: 13, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" };
+export const quietButtonStyle: CSSProperties = { ...buttonStyle, background: "#fff", color: "var(--navy)", borderColor: "#cdd6ec" };
+export const tableStyle: CSSProperties = { width: "100%", borderCollapse: "collapse", fontSize: 13 };
+export const cellStyle: CSSProperties = { borderBottom: "1px solid var(--line2)", padding: "10px 8px", textAlign: "left", verticalAlign: "top" };
 
 export function ErrorBanner({ kind, message, code }: { kind: ApiErrorKind; message: string; code?: string }) {
   const tone = kind === "forbidden" || kind === "unauthorized" ? { background: "var(--amber-soft)", color: "#7a5210" } : { background: "var(--red-soft)", color: "var(--red)" };
@@ -43,7 +44,7 @@ export function StatusBadge({ status }: { status: string }) {
     reversed: { background: "var(--red-soft)", color: "var(--red)" },
   };
   return (
-    <span data-status={status} style={{ ...(tones[status] || { background: "var(--teal-soft)", color: "var(--teal-ink)" }), borderRadius: 999, padding: "2px 9px", fontSize: 12, fontWeight: 600 }}>
+    <span data-status={status} style={{ ...(tones[status] || { background: "var(--navy-soft)", color: "var(--navy)" }), borderRadius: 20, padding: "2px 9px", fontSize: 10.5, fontWeight: 700, letterSpacing: ".02em", whiteSpace: "nowrap" }}>
       {STATUS_LABELS[status] || status}
     </span>
   );
@@ -178,9 +179,9 @@ export function LedgerForm({ fields, initialValues, validate, onSubmit, submitLa
 
 export function ClientPicker({ clients, value, onChange }: { clients: Array<{ id: string; name: string }>; value: string | null; onChange: (id: string | null) => void }) {
   return (
-    <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13.5 }}>
-      <span style={{ color: "var(--muted)" }}>Client</span>
-      <select value={value || ""} onChange={(event) => onChange(event.target.value || null)} style={{ ...inputStyle, width: "auto", minWidth: 220, maxWidth: "100%" }}>
+    <label className="bc-picker">
+      <span>Client</span>
+      <select value={value || ""} onChange={(event) => onChange(event.target.value || null)} style={{ ...inputStyle, background: "var(--card)", width: "auto", minWidth: 220, maxWidth: "100%" }}>
         <option value="">All clients</option>
         {clients.map((client) => <option key={client.id} value={client.id}>{client.name}</option>)}
       </select>

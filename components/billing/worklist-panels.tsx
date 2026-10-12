@@ -1,51 +1,86 @@
 "use client";
 
-import { useState, type CSSProperties } from "react";
+import { useState } from "react";
 import type { ApiResult } from "@/lib/billing-ui/api";
 import type { CollectionsAccount, CollectionsAutomationPreviewResponse, CollectionsReceivablesResponse } from "@/lib/collections-api";
 import type { CollectionRule, Viewer } from "@/lib/billing-ui/types";
 import { DISPOSITION_LABELS, formatMoney, nextStepText, PREVIEW_REASON_LABELS, stageLabel, STAGE_LABELS, viewerIsPowerUser, type StageLabels } from "@/lib/billing-ui/view-model";
-import { buttonStyle, cellStyle, ErrorBanner, hintStyle, OwnerAdminOnly, quietButtonStyle, tableStyle } from "./ui";
+import { ErrorBanner, OwnerAdminOnly } from "./ui";
 
-const cardStyle: CSSProperties = { border: "1px solid var(--line)", borderRadius: 12, padding: "10px 12px", minWidth: 0 };
-const cardGridStyle: CSSProperties = { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(100px, 1fr))", gap: 10 };
-const flagStyle: CSSProperties = { display: "inline-block", borderRadius: 999, padding: "1px 8px", fontSize: 11.5, fontWeight: 600, marginRight: 4, marginTop: 2 };
+const amount = (value: string | number | null | undefined) => Number(value || 0);
+const percent = (part: number, whole: number) => (whole > 0 ? Math.round((part / whole) * 100) : 0);
 
-function Card({ label, value, testId }: { label: string; value: string; testId: string }) {
+function Tile({ testId, label, value, detail, tone }: { testId?: string; label: string; value: string; detail?: string; tone?: "red" | "amber" | "green" }) {
   return (
-    <div style={cardStyle} data-summary={testId}>
-      <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".06em", textTransform: "uppercase", color: "var(--muted)" }}>{label}</div>
-      <div style={{ fontSize: 16, fontWeight: 700, marginTop: 2, overflowWrap: "anywhere" }}>{value}</div>
+    <div className="bc-tile" data-summary={testId}>
+      <div className="k">{label}</div>
+      <div className={`v${tone ? ` bc-${tone}` : ""}`}>{value}</div>
+      {detail ? <div className="d">{detail}</div> : null}
     </div>
   );
 }
 
-/** AR insights from the server's Collections read model. Nothing here is computed in the browser. */
+const AGING_BANDS = [
+  { key: "current", testId: "aging-current", label: "Current", color: "var(--green)" },
+  { key: "days_1_30", testId: "aging-1-30", label: "1–30 days", color: "var(--blue)" },
+  { key: "days_31_60", testId: "aging-31-60", label: "31–60 days", color: "var(--amber)" },
+  { key: "days_61_90", testId: "aging-61-90", label: "61–90 days", color: "#c0612b" },
+  { key: "days_over_90", testId: "aging-90", label: "90+ days", color: "var(--red)" },
+] as const;
+
+/** AR insights from the server's Collections read model. Totals are the server's; only shares are derived here. */
 export function WorklistSummary({ worklist }: { worklist: CollectionsReceivablesResponse }) {
   const { summary } = worklist;
+  const gross = amount(summary.gross_open_balance);
+  const over30 = amount(summary.aging.days_31_60) + amount(summary.aging.days_61_90) + amount(summary.aging.days_over_90);
+  const over90 = amount(summary.aging.days_over_90);
+  const pastDue = gross - amount(summary.aging.current);
   return (
     <div>
-      <p style={hintStyle}>As of {worklist.as_of_date} (firm date). Amounts come from Billing.</p>
-      <div style={cardGridStyle}>
-        <Card testId="gross" label="Open balance" value={formatMoney(summary.gross_open_balance)} />
-        <Card testId="credit" label="Unallocated credit" value={formatMoney(summary.unallocated_credit)} />
-        <Card testId="net" label="Net AR estimate" value={formatMoney(summary.net_ar_estimate)} />
-        <Card testId="accounts" label="Accounts owing" value={String(summary.owing_accounts)} />
-        <Card testId="invoices" label="Open invoices" value={String(summary.open_invoice_count)} />
-        <Card testId="oldest" label="Oldest days past due" value={String(summary.oldest_days_past_due)} />
+      <div className="bc-source">
+        Balances come straight from <b>TAP Hub Billing</b>: every issued invoice, less the payments allocated to it.
+        Ages are counted from each due date. <b>As of {worklist.as_of_date} (firm date).</b>
       </div>
-      <div style={{ ...cardGridStyle, marginTop: 10 }}>
-        <Card testId="aging-current" label="Current" value={formatMoney(summary.aging.current)} />
-        <Card testId="aging-1-30" label="1–30 days" value={formatMoney(summary.aging.days_1_30)} />
-        <Card testId="aging-31-60" label="31–60 days" value={formatMoney(summary.aging.days_31_60)} />
-        <Card testId="aging-61-90" label="61–90 days" value={formatMoney(summary.aging.days_61_90)} />
-        <Card testId="aging-90" label="90+ days" value={formatMoney(summary.aging.days_over_90)} />
+      <div className="bc-tiles">
+        <Tile testId="net" label="Net AR outstanding" value={formatMoney(summary.net_ar_estimate)} tone="red" detail={`${summary.owing_accounts} account${summary.owing_accounts === 1 ? "" : "s"} still owe`} />
+        <Tile testId="past-due" label="Past due" value={`${percent(pastDue, gross)}%`} tone="red" detail={`${formatMoney(pastDue.toFixed(2))} of ${formatMoney(summary.gross_open_balance)} open`} />
+        <Tile testId="over-30" label="Over 30 days" value={`${percent(over30, gross)}%`} tone="amber" detail={`${formatMoney(over30.toFixed(2))} aged past a month`} />
+        <Tile testId="over-90" label="Over 90 days" value={formatMoney(summary.aging.days_over_90)} tone="amber" detail={`${percent(over90, gross)}% of open balance`} />
       </div>
-      {summary.credit_review_accounts > 0 ? (
-        <p data-credit-review-count style={{ ...hintStyle, color: "#7a5210" }}>
-          {summary.credit_review_accounts} account{summary.credit_review_accounts === 1 ? " has" : "s have"} unallocated payments to reconcile in Billing. Collections never allocates them.
-        </p>
-      ) : null}
+      <div className="bc-cols">
+        <section className="bc-card" aria-label="Aging">
+          <h3 className="bc-h">Aging <small>from Billing</small></h3>
+          <div className="bc-agebar" aria-hidden="true">
+            {AGING_BANDS.map((band) => {
+              const value = amount(summary.aging[band.key]);
+              return value > 0 ? <div key={band.key} style={{ flex: value, background: band.color }}>{percent(value, gross) >= 12 ? formatMoney(summary.aging[band.key]) : ""}</div> : null;
+            })}
+          </div>
+          <div className="bc-legend">
+            {AGING_BANDS.map((band) => (
+              <span key={band.key} data-summary={band.testId}><i style={{ background: band.color }} />{band.label} <b style={{ color: "var(--ink)" }}>{formatMoney(summary.aging[band.key])}</b></span>
+            ))}
+          </div>
+          <p className="bc-foot">Open balance {formatMoney(summary.gross_open_balance)}, less {formatMoney(summary.unallocated_credit)} in unallocated payments, gives the net AR above.</p>
+        </section>
+        <section className="bc-card" aria-label="Accounts">
+          <h3 className="bc-h">Accounts <small>who owes</small></h3>
+          <table className="bc-table">
+            <tbody>
+              <tr data-summary="gross"><td>Open balance</td><td className="r"><b>{formatMoney(summary.gross_open_balance)}</b></td></tr>
+              <tr data-summary="credit"><td>Unallocated credit</td><td className="r">{formatMoney(summary.unallocated_credit)}</td></tr>
+              <tr data-summary="accounts"><td>Accounts owing</td><td className="r">{summary.owing_accounts}</td></tr>
+              <tr data-summary="invoices"><td>Open invoices</td><td className="r">{summary.open_invoice_count}</td></tr>
+              <tr data-summary="oldest"><td>Oldest invoice</td><td className={`r${summary.oldest_days_past_due >= 90 ? " old" : ""}`}>{summary.oldest_days_past_due} days</td></tr>
+            </tbody>
+          </table>
+          {summary.credit_review_accounts > 0 ? (
+            <p data-credit-review-count className="bc-foot" style={{ color: "var(--gate-ink)" }}>
+              {summary.credit_review_accounts} account{summary.credit_review_accounts === 1 ? " has" : "s have"} unallocated payments to reconcile in Billing. Collections never allocates them.
+            </p>
+          ) : null}
+        </section>
+      </div>
     </div>
   );
 }
@@ -61,44 +96,45 @@ const BANDS: Array<[keyof CollectionsAccount["priority_score_components"], strin
 export function ScoreBreakdown({ account }: { account: CollectionsAccount }) {
   const components = account.priority_score_components;
   return (
-    <details data-score-breakdown={account.client_id}>
-      <summary style={{ cursor: "pointer" }}><strong>{formatMoney(account.call_priority_score).replace("$", "")}</strong></summary>
-      <table style={{ ...tableStyle, fontSize: 12.5 }}>
+    <details data-score-breakdown={account.client_id} className="bc-details">
+      <summary><span className={`bc-pill ${amount(account.call_priority_score) > 0 ? "amber" : "grey"}`}>{formatMoney(account.call_priority_score).replace("$", "")}</span></summary>
+      <table className="bc-table sm" style={{ marginTop: 6 }}>
         <tbody>
           {BANDS.map(([key, label]) => {
             const part = components[key];
             if (typeof part !== "object") return null;
             return (
               <tr key={key} data-score-band={key}>
-                <td style={cellStyle}>{label}</td>
-                <td style={cellStyle}>{formatMoney(part.balance)}</td>
-                <td style={cellStyle}>× {part.weight}</td>
-                <td style={cellStyle}>= {formatMoney(part.weighted_amount).replace("$", "")}</td>
+                <td>{label}</td>
+                <td className="r">{formatMoney(part.balance)}</td>
+                <td className="r">× {part.weight}</td>
+                <td className="r">= {formatMoney(part.weighted_amount).replace("$", "")}</td>
               </tr>
             );
           })}
         </tbody>
       </table>
-      <div style={{ fontSize: 12, color: "var(--muted)" }}>Balances under {components.score_zero_before_days_past_due} days past due add nothing to the score.</div>
+      <div className="bc-small">Balances under {components.score_zero_before_days_past_due} days past due add nothing to the score.</div>
     </details>
   );
 }
 
 function Flags({ account }: { account: CollectionsAccount }) {
+  if (!account.on_hold && !account.credit_review_required && !account.contact_review_required) return null;
   return (
-    <div>
-      {account.on_hold ? <span data-flag="hold" style={{ ...flagStyle, background: "var(--amber-soft)", color: "#7a5210" }}>Hold</span> : null}
-      {account.credit_review_required ? <span data-flag="credit" style={{ ...flagStyle, background: "var(--blue-soft)", color: "var(--blue)" }}>Credit to reconcile</span> : null}
-      {account.contact_review_required ? <span data-flag="contact" style={{ ...flagStyle, background: "var(--red-soft)", color: "var(--red)" }}>Contact needs review</span> : null}
+    <div style={{ marginTop: 4 }}>
+      {account.on_hold ? <span data-flag="hold" className="bc-pill amber">Hold</span> : null}
+      {account.credit_review_required ? <span data-flag="credit" className="bc-pill blue">Credit to reconcile</span> : null}
+      {account.contact_review_required ? <span data-flag="contact" className="bc-pill red">Contact needs review</span> : null}
     </div>
   );
 }
 
-/** The configured ladder from GET /api/collections/rules. */
+/** The configured ladder from GET /api/collections/rules, as one line. */
 export function LadderSummary({ rules }: { rules: CollectionRule[] }) {
   if (rules.length === 0) return null;
   return (
-    <p data-ladder style={hintStyle}>
+    <p data-ladder className="bc-hint">
       Ladder:{" "}
       {rules.map((rule, index) => (
         <span key={rule.stage} data-ladder-stage={rule.stage} style={rule.enabled ? undefined : { textDecoration: "line-through" }}>
@@ -109,78 +145,129 @@ export function LadderSummary({ rules }: { rules: CollectionRule[] }) {
   );
 }
 
+const isGate = (stage: number) => stage >= 4;
+
+/** The five touches as cards; opening one shows the template wording stored for it. */
+export function LadderRungs({ rules }: { rules: CollectionRule[] }) {
+  const [open, setOpen] = useState<number | null>(null);
+  if (rules.length === 0) return null;
+  const selected = rules.find((rule) => rule.stage === open) || null;
+  return (
+    <div data-ladder-rungs>
+      <div className="bc-ladder">
+        {rules.map((rule) => (
+          <button
+            key={rule.stage}
+            type="button"
+            data-rung={rule.stage}
+            aria-expanded={open === rule.stage}
+            className={`bc-rung${isGate(rule.stage) ? " gate" : ""}${rule.enabled ? "" : " off"}`}
+            onClick={() => setOpen(open === rule.stage ? null : rule.stage)}
+          >
+            <div className="ln">Touch {rule.stage} · day {rule.days_past_due}{rule.enabled ? "" : " · off"}</div>
+            <div className="lt">{rule.label}</div>
+            <div className="lw">{isGate(rule.stage) ? "Owner/Admin decision" : rule.automatic ? "Reminder · automatic when enabled" : "Reminder · held for approval"}</div>
+            {isGate(rule.stage) ? <span className="bc-gatetag">⚑ Needs Owner/Admin</span> : null}
+            <div className="open">{open === rule.stage ? "▾ hide wording" : "▸ read the wording"}</div>
+          </button>
+        ))}
+      </div>
+      {selected ? (
+        <div className="bc-email" data-rung-template={selected.stage}>
+          <div className="es">Touch {selected.stage} · {selected.label} — template as configured in Setup &amp; rules</div>
+          {isGate(selected.stage) ? <div className="bc-gatebox">⚑ A person decides this step: it waits for Owner/Admin approval.</div> : null}
+          <div className="esub">{selected.subject_template || "No subject set"}</div>
+          <pre>{selected.body_template || "No message set."}</pre>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 /** Progression fields come from the server's Collections worklist contract. */
 type WorklistInvoice = CollectionsAccount["invoices"][number];
 
-export function WorklistTable({ worklist, onSelectClient, onPage, stageLabels = STAGE_LABELS, rules = [], firmTimezone = "America/Chicago" }: {
+function Pager({ first, last, total, onPrevious, onNext, previousDisabled, nextDisabled, testId }: {
+  first: number; last: number; total: number; onPrevious: () => void; onNext: () => void; previousDisabled: boolean; nextDisabled: boolean; testId?: string;
+}) {
+  return (
+    <div className="bc-pager">
+      <span data-worklist-range={testId ? "" : undefined}>Showing {first}–{last} of {total}</span>
+      <button type="button" className="bc-btn quiet" disabled={previousDisabled} onClick={onPrevious}>Previous</button>
+      <button type="button" className="bc-btn quiet" disabled={nextDisabled} onClick={onNext}>Next</button>
+    </div>
+  );
+}
+
+/** The call list: accounts ranked by the server's priority score, with each invoice's next step. */
+export function WorklistTable({ worklist, onSelectClient, onPage, stageLabels = STAGE_LABELS, rules = [], firmTimezone = "America/Chicago", selectedClientId = null }: {
   worklist: CollectionsReceivablesResponse;
   onSelectClient: (clientId: string) => void;
   onPage: (offset: number) => void;
   stageLabels?: StageLabels;
   rules?: CollectionRule[];
   firmTimezone?: string;
+  selectedClientId?: string | null;
 }) {
   const { accounts, pagination } = worklist;
-  if (accounts.length === 0) return <p style={hintStyle}>No accounts owe money or have credit to review.</p>;
+  if (accounts.length === 0) return <p className="bc-hint">No accounts owe money or have credit to review.</p>;
   const first = pagination.offset + 1;
   const last = pagination.offset + accounts.length;
   return (
     <div>
-      <div style={{ overflowX: "auto" }}>
-        <table style={tableStyle}>
+      <div className="bc-scroll">
+        <table className="bc-table">
           <thead>
             <tr>
-              <th style={cellStyle}>Client</th>
-              <th style={cellStyle}>Contact</th>
-              <th style={cellStyle}>Open</th>
-              <th style={cellStyle}>Credit</th>
-              <th style={cellStyle}>Oldest</th>
-              <th style={cellStyle}>Priority</th>
-              <th style={cellStyle}>Invoices</th>
+              <th>Client</th>
+              <th>Contact</th>
+              <th className="r">Open</th>
+              <th className="r">Credit</th>
+              <th className="r">Oldest</th>
+              <th className="r">Priority</th>
+              <th>Invoices</th>
             </tr>
           </thead>
           <tbody>
             {accounts.map((account) => (
-              <tr key={account.client_id} data-worklist-account={account.client_id}>
-                <td style={cellStyle}>
-                  <button type="button" onClick={() => onSelectClient(account.client_id)} style={{ background: "none", border: 0, padding: 0, color: "var(--teal)", fontWeight: 600, cursor: "pointer", textAlign: "left" }}>
-                    {account.client_name}
-                  </button>
+              <tr key={account.client_id} data-worklist-account={account.client_id} className={selectedClientId === account.client_id ? "on" : undefined}>
+                <td>
+                  <button type="button" className="bc-name" onClick={() => onSelectClient(account.client_id)}>{account.client_name}</button>
                   <Flags account={account} />
                 </td>
-                <td style={cellStyle}>
+                <td>
                   {account.contact_name || "—"}
-                  {account.contact_phone ? <div style={{ fontSize: 12.5 }}>{account.contact_phone}</div> : null}
-                  {account.contact_email ? <div style={{ fontSize: 12.5, color: "var(--muted)" }}>{account.contact_email}</div> : null}
+                  {account.contact_phone ? <div className="bc-small">{account.contact_phone}</div> : null}
+                  {account.contact_email ? <div className="bc-small">{account.contact_email}</div> : null}
                 </td>
-                <td style={cellStyle}>{formatMoney(account.gross_open_balance)}</td>
-                <td style={cellStyle}>{formatMoney(account.unallocated_credit)}</td>
-                <td style={{ ...cellStyle, color: account.oldest_days_past_due > 0 ? "var(--red)" : undefined }}>{account.oldest_days_past_due} days</td>
-                <td style={cellStyle}><ScoreBreakdown account={account} /></td>
-                <td style={cellStyle}>
-                  <details>
-                    <summary style={{ cursor: "pointer" }}>{account.open_invoice_count} open</summary>
-                    <table style={{ ...tableStyle, fontSize: 12.5 }}>
+                <td className="r bc-red">{formatMoney(account.gross_open_balance)}</td>
+                <td className="r">{formatMoney(account.unallocated_credit)}</td>
+                <td className={`r${account.oldest_days_past_due >= 90 ? " old" : account.oldest_days_past_due > 0 ? " late" : ""}`}>{account.oldest_days_past_due}d</td>
+                <td className="r"><ScoreBreakdown account={account} /></td>
+                <td>
+                  <details className="bc-details">
+                    <summary>{account.open_invoice_count} open</summary>
+                    <table className="bc-table sm" style={{ marginTop: 6 }}>
                       <thead>
                         <tr>
-                          <th style={cellStyle}>Invoice</th>
-                          <th style={cellStyle}>Due</th>
-                          <th style={cellStyle}>Balance</th>
-                          <th style={cellStyle}>Days</th>
-                          <th style={cellStyle}>Next step</th>
+                          <th>Invoice</th>
+                          <th>Due</th>
+                          <th className="r">Balance</th>
+                          <th className="r">Days</th>
+                          <th>Next step</th>
                         </tr>
                       </thead>
                       <tbody>
                         {(account.invoices as WorklistInvoice[]).map((invoice) => (
                           <tr key={invoice.invoice_id} data-worklist-invoice={invoice.invoice_id} data-next-stage={invoice.next_stage ?? ""} data-awaiting={invoice.awaiting_approval ? invoice.awaiting_approval.stage : undefined}>
-                            <td style={cellStyle}>{invoice.invoice_number}</td>
-                            <td style={cellStyle}>{invoice.due_date}</td>
-                            <td style={cellStyle}>{formatMoney(invoice.balance)}</td>
-                            <td style={cellStyle}>{invoice.days_past_due}</td>
-                            <td style={cellStyle}>
-                              <span style={invoice.awaiting_approval ? { color: "#7a5210" } : undefined}>{nextStepText(invoice, rules, stageLabels, firmTimezone)}</span>
-                              {invoice.on_hold ? <div style={{ color: "#7a5210" }}>On hold</div> : null}
-                              {invoice.below_minimum ? <div style={{ color: "var(--muted)" }}>Below minimum</div> : null}
+                            <td>{invoice.invoice_number}</td>
+                            <td>{invoice.due_date}</td>
+                            <td className="r">{formatMoney(invoice.balance)}</td>
+                            <td className="r">{invoice.days_past_due}</td>
+                            <td>
+                              <span style={invoice.awaiting_approval ? { color: "var(--gate-ink)" } : undefined}>{nextStepText(invoice, rules, stageLabels, firmTimezone)}</span>
+                              {invoice.on_hold ? <div style={{ color: "var(--gate-ink)" }}>On hold</div> : null}
+                              {invoice.below_minimum ? <div className="bc-muted">Below minimum</div> : null}
                             </td>
                           </tr>
                         ))}
@@ -193,12 +280,119 @@ export function WorklistTable({ worklist, onSelectClient, onPage, stageLabels = 
           </tbody>
         </table>
       </div>
-      <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", marginTop: 10, fontSize: 13 }}>
-        <span data-worklist-range>Showing {first}–{last} of {pagination.total_accounts}</span>
-        <button type="button" style={quietButtonStyle} disabled={pagination.offset === 0} onClick={() => onPage(Math.max(0, pagination.offset - pagination.limit))}>Previous</button>
-        <button type="button" style={quietButtonStyle} disabled={last >= pagination.total_accounts} onClick={() => onPage(pagination.offset + pagination.limit)}>Next</button>
+      <Pager
+        testId="worklist"
+        first={first}
+        last={last}
+        total={pagination.total_accounts}
+        previousDisabled={pagination.offset === 0}
+        nextDisabled={last >= pagination.total_accounts}
+        onPrevious={() => onPage(Math.max(0, pagination.offset - pagination.limit))}
+        onNext={() => onPage(pagination.offset + pagination.limit)}
+      />
+    </div>
+  );
+}
+
+/** Pipeline banner: the outstanding total and what the ladder does about it. */
+export function PipelineBanner({ worklist }: { worklist: CollectionsReceivablesResponse }) {
+  const { summary } = worklist;
+  return (
+    <div className="bc-banner" data-pipeline-banner>
+      <div className="big">{formatMoney(summary.net_ar_estimate)}<small>net AR outstanding · oldest invoice {summary.oldest_days_past_due} days past due</small></div>
+      <div className="msg">
+        Every overdue invoice is placed on the follow-up ladder below by its age. <b>Automation and email delivery are off</b>:
+        each touch is logged by a person, and touches 4 and 5 always wait for <b>Owner/Admin approval</b>.
       </div>
     </div>
+  );
+}
+
+/** Groups this page's overdue invoices by the ladder touch their age has reached. */
+export function MoneyByStage({ worklist, rules }: { worklist: CollectionsReceivablesResponse; rules: CollectionRule[] }) {
+  const ladder = rules.filter((rule) => rule.enabled).sort((a, b) => a.days_past_due - b.days_past_due || a.stage - b.stage);
+  if (ladder.length === 0) return null;
+  const bands = ladder.map((rule, index) => ({ rule, until: ladder[index + 1]?.days_past_due ?? null, total: 0, count: 0 }));
+  for (const invoice of worklist.accounts.flatMap((account) => account.invoices)) {
+    if (invoice.days_past_due <= 0) continue;
+    const band = [...bands].reverse().find((candidate) => candidate.rule.days_past_due <= invoice.days_past_due);
+    if (!band) continue;
+    band.total += amount(invoice.balance);
+    band.count += 1;
+  }
+  const max = Math.max(...bands.map((band) => band.total), 0);
+  const reminders = bands.filter((band) => !isGate(band.rule.stage)).reduce((sum, band) => sum + band.total, 0);
+  const decisions = bands.filter((band) => isGate(band.rule.stage)).reduce((sum, band) => sum + band.total, 0);
+  const partial = worklist.pagination.total_accounts > worklist.accounts.length;
+  return (
+    <section className="bc-card" aria-label="Where the money sits" data-money-by-stage>
+      <div className="bc-head" style={{ marginBottom: 14 }}>
+        <h3 className="bc-sect">Where the money sits in the ladder</h3>
+        <div>
+          <span className="bc-pill navy">Reminders {formatMoney(reminders.toFixed(2))}</span>
+          <span className="bc-pill amber">Owner/Admin decisions {formatMoney(decisions.toFixed(2))} · {percent(decisions, reminders + decisions)}%</span>
+        </div>
+      </div>
+      {bands.map((band) => (
+        <div key={band.rule.stage} data-stage-band={band.rule.stage} style={{ display: "grid", gridTemplateColumns: "minmax(110px,132px) 1fr auto minmax(70px,96px) 44px", alignItems: "center", gap: 10, padding: "8px 0", borderBottom: "1px solid var(--line2)" }}>
+          <div>
+            <div style={{ fontWeight: 700, fontSize: 12.5 }}>Day {band.rule.days_past_due}{band.until ? `–${band.until - 1}` : "+"}</div>
+            <div style={{ fontSize: 10.5, color: "var(--muted)" }}>{band.rule.label}</div>
+          </div>
+          <div style={{ background: "var(--line2)", borderRadius: 6, height: 12, overflow: "hidden" }}>
+            <div style={{ height: "100%", borderRadius: 6, width: `${max ? Math.max(band.total ? 1.5 : 0, (band.total / max) * 100) : 0}%`, background: isGate(band.rule.stage) ? "var(--amber)" : "var(--navy)" }} />
+          </div>
+          <span className={`bc-pill ${isGate(band.rule.stage) ? "amber" : "navy"}`}>{isGate(band.rule.stage) ? "Needs you" : "Reminder"}</span>
+          <div className="r" style={{ textAlign: "right", fontWeight: 700, fontSize: 13 }}>{band.total ? formatMoney(band.total.toFixed(2)) : "—"}</div>
+          <div style={{ textAlign: "right", fontSize: 11, color: "var(--faint)" }}>{band.count} inv</div>
+        </div>
+      ))}
+      <p className="bc-foot">
+        Each overdue invoice sits at the last touch its age has reached. Touches 4 and 5 always come to an Owner or Admin.
+        {partial ? ` Covers the ${worklist.accounts.length} accounts on this page of the call list.` : ""}
+      </p>
+    </section>
+  );
+}
+
+/** "Who's where": every open invoice on this page and the step it is at today. */
+export function WhoIsWhere({ worklist, rules = [], stageLabels = STAGE_LABELS, firmTimezone = "America/Chicago", onSelectClient }: {
+  worklist: CollectionsReceivablesResponse;
+  rules?: CollectionRule[];
+  stageLabels?: StageLabels;
+  firmTimezone?: string;
+  onSelectClient: (clientId: string) => void;
+}) {
+  const rows = worklist.accounts
+    .flatMap((account) => (account.invoices as WorklistInvoice[]).map((invoice) => ({ account, invoice })))
+    .filter(({ invoice }) => invoice.days_past_due > 0)
+    .sort((a, b) => amount(b.invoice.balance) - amount(a.invoice.balance));
+  return (
+    <section className="bc-card" aria-label="Who's where" data-who-is-where>
+      <h3 className="bc-h">Who&rsquo;s where <small>overdue invoices on this page, by balance</small></h3>
+      {rows.length === 0 ? <p className="bc-hint">No overdue invoices.</p> : (
+        <div className="bc-scroll">
+          <table className="bc-table">
+            <thead><tr><th>Client</th><th>Invoice</th><th className="r">Outstanding</th><th className="r">Past due</th><th>Step today</th><th className="r">Who acts</th></tr></thead>
+            <tbody>
+              {rows.map(({ account, invoice }) => {
+                const gate = Boolean(invoice.awaiting_approval) || (invoice.next_stage ?? 0) >= 4;
+                return (
+                  <tr key={invoice.invoice_id} data-who-row={invoice.invoice_id}>
+                    <td><button type="button" className="bc-name" onClick={() => onSelectClient(account.client_id)}>{account.client_name}</button></td>
+                    <td>{invoice.invoice_number}</td>
+                    <td className="r bc-red">{formatMoney(invoice.balance)}</td>
+                    <td className={`r${invoice.days_past_due >= 90 ? " old" : ""}`}>{invoice.days_past_due}d</td>
+                    <td>{nextStepText(invoice, rules, stageLabels, firmTimezone)}{invoice.on_hold ? <span className="bc-pill amber" style={{ marginLeft: 6 }}>Hold</span> : null}</td>
+                    <td className="r"><span className={`bc-pill ${gate ? "amber" : "navy"}`}>{gate ? "Owner/Admin" : "Staff"}</span></td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -208,37 +402,37 @@ export function PreviewResults({ preview, onPage, stageLabels = STAGE_LABELS }: 
   const { actions, pagination } = preview;
   return (
     <div>
-      <div data-preview-safety role="note" style={{ background: "var(--teal-soft)", borderRadius: 10, padding: "8px 12px", fontSize: 13, margin: "8px 0" }}>
+      <div data-preview-safety role="note" className="bc-source" style={{ margin: "12px 0" }}>
         Preview only, as of {preview.as_of_date}. Automation is {preview.automation_enabled ? "on" : "off"} and delivery is {preview.delivery_mode}. Nothing was sent.
       </div>
-      {actions.length === 0 ? <p style={hintStyle}>No actions are due.</p> : (
-        <div style={{ overflowX: "auto" }}>
-          <table style={tableStyle}>
+      {actions.length === 0 ? <p className="bc-hint">No actions are due.</p> : (
+        <div className="bc-scroll">
+          <table className="bc-table">
             <thead>
               <tr>
-                <th style={cellStyle}>Client</th>
-                <th style={cellStyle}>Invoice</th>
-                <th style={cellStyle}>Balance</th>
-                <th style={cellStyle}>Days</th>
-                <th style={cellStyle}>Step</th>
-                <th style={cellStyle}>Outcome</th>
+                <th>Client</th>
+                <th>Invoice</th>
+                <th className="r">Balance</th>
+                <th className="r">Days</th>
+                <th>Step</th>
+                <th>Outcome</th>
               </tr>
             </thead>
             <tbody>
               {actions.map((action) => (
                 <tr key={`${action.invoice_id}-${action.stage}`} data-preview-action={action.invoice_id} data-disposition={action.disposition}>
-                  <td style={cellStyle}>
+                  <td>
                     {action.client_name}
-                    {action.contact_phone ? <div style={{ fontSize: 12.5 }}>{action.contact_phone}</div> : null}
+                    {action.contact_phone ? <div className="bc-small">{action.contact_phone}</div> : null}
                   </td>
-                  <td style={cellStyle}>{action.invoice_number}</td>
-                  <td style={cellStyle}>{formatMoney(action.balance)}</td>
-                  <td style={cellStyle}>{action.days_past_due}</td>
-                  <td style={cellStyle}>{stageLabel(action.stage, stageLabels)}</td>
-                  <td style={cellStyle}>
-                    <strong>{DISPOSITION_LABELS[action.disposition] || action.disposition}</strong>
-                    {action.suppression_reasons.map((reason) => <div key={reason} data-suppression={reason} style={{ fontSize: 12 }}>{PREVIEW_REASON_LABELS[reason] || reason}</div>)}
-                    {action.review_warnings.map((warning) => <div key={warning} data-warning={warning} style={{ fontSize: 12, color: "var(--muted)" }}>Note: {PREVIEW_REASON_LABELS[warning] || warning}</div>)}
+                  <td>{action.invoice_number}</td>
+                  <td className="r">{formatMoney(action.balance)}</td>
+                  <td className="r">{action.days_past_due}</td>
+                  <td>{stageLabel(action.stage, stageLabels)}</td>
+                  <td>
+                    <span className={`bc-pill ${action.disposition === "suppressed" ? "grey" : action.disposition === "approval_required" ? "amber" : "navy"}`}>{DISPOSITION_LABELS[action.disposition] || action.disposition}</span>
+                    {action.suppression_reasons.map((reason) => <div key={reason} data-suppression={reason} className="bc-small">{PREVIEW_REASON_LABELS[reason] || reason}</div>)}
+                    {action.review_warnings.map((warning) => <div key={warning} data-warning={warning} className="bc-small">Note: {PREVIEW_REASON_LABELS[warning] || warning}</div>)}
                   </td>
                 </tr>
               ))}
@@ -246,10 +440,10 @@ export function PreviewResults({ preview, onPage, stageLabels = STAGE_LABELS }: 
           </table>
         </div>
       )}
-      <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", marginTop: 10, fontSize: 13 }}>
+      <div className="bc-pager">
         <span>{pagination.total_actions} action{pagination.total_actions === 1 ? "" : "s"} in total</span>
-        <button type="button" style={quietButtonStyle} disabled={pagination.offset === 0} onClick={() => onPage(Math.max(0, pagination.offset - pagination.limit))}>Previous</button>
-        <button type="button" style={quietButtonStyle} disabled={!pagination.has_more} onClick={() => onPage(pagination.offset + pagination.limit)}>Next</button>
+        <button type="button" className="bc-btn quiet" disabled={pagination.offset === 0} onClick={() => onPage(Math.max(0, pagination.offset - pagination.limit))}>Previous</button>
+        <button type="button" className="bc-btn quiet" disabled={!pagination.has_more} onClick={() => onPage(pagination.offset + pagination.limit)}>Next</button>
       </div>
     </div>
   );
@@ -268,7 +462,7 @@ export function AutomationPreviewPanel({ viewer, runPreview, stageLabels = STAGE
   const [result, setResult] = useState<ApiResult<CollectionsAutomationPreviewResponse> | null>(null);
   const [pending, setPending] = useState(false);
 
-  if (!viewerIsPowerUser(viewer)) return <p style={hintStyle}><OwnerAdminOnly action="The automation preview" /></p>;
+  if (!viewerIsPowerUser(viewer)) return <p className="bc-hint"><OwnerAdminOnly action="The automation preview" /></p>;
 
   async function run(offset: number) {
     setPending(true);
@@ -278,13 +472,13 @@ export function AutomationPreviewPanel({ viewer, runPreview, stageLabels = STAGE
 
   return (
     <div>
-      <p style={hintStyle}>See which reminders and reviews the ladder would propose. This never sends anything; delivery is disabled.</p>
-      <div style={{ display: "flex", gap: 10, alignItems: "flex-end", flexWrap: "wrap" }}>
-        <label style={{ fontSize: 13 }}>
-          <span style={{ display: "block", color: "var(--muted)", fontSize: 12 }}>As of (optional)</span>
-          <input type="date" value={asOfDate} onChange={(event) => setAsOfDate(event.target.value)} style={{ border: "1px solid var(--line)", borderRadius: 10, padding: "6px 8px" }} />
+      <p className="bc-hint">See which reminders and reviews the ladder would propose on any date. This never sends anything; delivery is disabled.</p>
+      <div className="bc-inline" style={{ alignItems: "flex-end" }}>
+        <label className="bc-field" style={{ margin: 0 }}>
+          <span>As of (optional)</span>
+          <input type="date" className="bc-in" value={asOfDate} onChange={(event) => setAsOfDate(event.target.value)} />
         </label>
-        <button type="button" style={{ ...buttonStyle, opacity: pending ? 0.6 : 1 }} disabled={pending} onClick={() => run(0)}>
+        <button type="button" className="bc-btn" disabled={pending} onClick={() => run(0)}>
           {pending ? "Building preview…" : "Run preview"}
         </button>
       </div>

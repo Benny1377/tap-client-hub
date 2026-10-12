@@ -4,7 +4,7 @@ import type { ApiResult } from "@/lib/billing-ui/api";
 import type { ClientAging, Invoice, Payment, Receivable, Viewer } from "@/lib/billing-ui/types";
 import { PAYMENT_METHODS, validateAllocation, validatePayment, validateReason } from "@/lib/billing-ui/validation";
 import { AGING_LABELS, formatMoney, receivableFor, viewerIsPowerUser } from "@/lib/billing-ui/view-model";
-import { cellStyle, ConfirmAction, hintStyle, LedgerForm, OwnerAdminOnly, StatusBadge, tableStyle, type FormValues } from "./ui";
+import { ConfirmAction, hintStyle, LedgerForm, OwnerAdminOnly, StatusBadge, type FormValues } from "./ui";
 
 type Mutation = Promise<ApiResult<unknown>>;
 
@@ -33,27 +33,27 @@ export function PaymentsPanel({ payments, invoices, receivables, clientId, clien
     <div>
       {payments.length === 0 ? <p style={hintStyle}>No payments recorded.</p> : (
         <div style={{ overflowX: "auto" }}>
-          <table style={tableStyle}>
+          <table className="bc-table">
             <thead>
               <tr>
-                <th style={cellStyle}>Received</th>
-                <th style={cellStyle}>Client</th>
-                <th style={cellStyle}>Amount</th>
-                <th style={cellStyle}>Unallocated</th>
-                <th style={cellStyle}>Method</th>
-                <th style={cellStyle}>Status</th>
-                <th style={cellStyle}>Allocations</th>
+                <th>Received</th>
+                <th>Client</th>
+                <th>Amount</th>
+                <th>Unallocated</th>
+                <th>Method</th>
+                <th>Status</th>
+                <th>Allocations</th>
               </tr>
             </thead>
             <tbody>
               {payments.map((payment) => (
                 <tr key={payment.id} data-payment-row={payment.id}>
-                  <td style={cellStyle}>{payment.received_on}</td>
-                  <td style={cellStyle}>{clientNames[payment.client_id] || payment.client_id}</td>
-                  <td style={cellStyle}>{formatMoney(payment.amount)}</td>
-                  <td style={cellStyle} data-unallocated={payment.unallocated_amount ?? ""}>{payment.unallocated_amount !== undefined ? formatMoney(payment.unallocated_amount) : "—"}</td>
-                  <td style={cellStyle}>{payment.method}{payment.reference ? ` · ${payment.reference}` : ""}</td>
-                  <td style={cellStyle}>
+                  <td>{payment.received_on}</td>
+                  <td>{clientNames[payment.client_id] || payment.client_id}</td>
+                  <td>{formatMoney(payment.amount)}</td>
+                  <td data-unallocated={payment.unallocated_amount ?? ""}>{payment.unallocated_amount !== undefined ? formatMoney(payment.unallocated_amount) : "—"}</td>
+                  <td>{payment.method}{payment.reference ? ` · ${payment.reference}` : ""}</td>
+                  <td>
                     <StatusBadge status={payment.status} />
                     {payment.status === "recorded" && power && (payment.payment_allocations || []).some((allocation) => !allocation.reversed_at) ? (
                       <div data-reverse-blocked style={{ fontSize: 12, color: "var(--muted)" }}>Reverse its allocations first to reverse this payment.</div>
@@ -71,7 +71,7 @@ export function PaymentsPanel({ payments, invoices, receivables, clientId, clien
                         </details>
                     ) : null}
                   </td>
-                  <td style={cellStyle}>
+                  <td>
                     {(payment.payment_allocations || []).length === 0 ? "—" : (
                       <ul style={{ margin: 0, paddingLeft: 16 }}>
                         {payment.payment_allocations.map((allocation) => (
@@ -154,32 +154,32 @@ export function ReceivablesTable({ receivables, clientNames }: { receivables: Re
   if (receivables.length === 0) return <p style={hintStyle}>No open receivables.</p>;
   return (
     <div style={{ overflowX: "auto" }}>
-      <table style={tableStyle}>
+      <table className="bc-table">
         <thead>
           <tr>
-            <th style={cellStyle}>Invoice</th>
-            <th style={cellStyle}>Client</th>
-            <th style={cellStyle}>Status</th>
-            <th style={cellStyle}>Due</th>
-            <th style={cellStyle}>Total</th>
-            <th style={cellStyle}>Paid</th>
-            <th style={cellStyle}>Balance</th>
-            <th style={cellStyle}>Days past due</th>
-            <th style={cellStyle}>Aging</th>
+            <th>Invoice</th>
+            <th>Client</th>
+            <th>Status</th>
+            <th>Due</th>
+            <th>Total</th>
+            <th>Paid</th>
+            <th>Balance</th>
+            <th>Days past due</th>
+            <th>Aging</th>
           </tr>
         </thead>
         <tbody>
           {receivables.map((row) => (
             <tr key={row.id} data-receivable-row={row.id}>
-              <td style={cellStyle}>{row.invoice_number}</td>
-              <td style={cellStyle}>{clientNames[row.client_id] || row.client_id}</td>
-              <td style={cellStyle}><StatusBadge status={row.status} /></td>
-              <td style={cellStyle}>{row.due_date}</td>
-              <td style={cellStyle}>{formatMoney(row.total)}</td>
-              <td style={cellStyle}>{formatMoney(row.allocated)}</td>
-              <td style={cellStyle}><strong>{formatMoney(row.balance)}</strong></td>
-              <td style={{ ...cellStyle, color: row.days_past_due > 0 ? "var(--red)" : undefined }}>{row.days_past_due}</td>
-              <td style={cellStyle} data-aging={row.aging_bucket || ""}>{row.aging_bucket ? AGING_LABELS[row.aging_bucket] || row.aging_bucket : "—"}</td>
+              <td>{row.invoice_number}</td>
+              <td>{clientNames[row.client_id] || row.client_id}</td>
+              <td><StatusBadge status={row.status} /></td>
+              <td>{row.due_date}</td>
+              <td>{formatMoney(row.total)}</td>
+              <td>{formatMoney(row.allocated)}</td>
+              <td><strong>{formatMoney(row.balance)}</strong></td>
+              <td style={{ color: row.days_past_due > 0 ? "var(--red)" : undefined }}>{row.days_past_due}</td>
+              <td data-aging={row.aging_bucket || ""}>{row.aging_bucket ? AGING_LABELS[row.aging_bucket] || row.aging_bucket : "—"}</td>
             </tr>
           ))}
         </tbody>

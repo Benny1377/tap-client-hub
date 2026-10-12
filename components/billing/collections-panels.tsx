@@ -18,7 +18,7 @@ import {
   viewerIsPowerUser,
   type StageLabels,
 } from "@/lib/billing-ui/view-model";
-import { ActionButton, cellStyle, hintStyle, LedgerForm, OwnerAdminOnly, tableStyle, type FormValues } from "./ui";
+import { ActionButton, LedgerForm, OwnerAdminOnly, type FormValues } from "./ui";
 
 type Mutation = Promise<ApiResult<unknown>>;
 
@@ -49,12 +49,13 @@ export function ActiveHoldBanner({ holds, clientId, clientNames, invoiceNumbers,
     return `${clientNames[id] || id} (${list.join(", ")})`;
   });
   return (
-    <div role="status" data-active-hold-banner style={{ background: "var(--amber-soft)", border: "1px solid #e8d3a6", color: "#7a5210", borderRadius: 12, padding: "10px 14px", fontSize: 13.5, margin: "12px 0" }}>
-      <strong>Collections hold in force</strong> for {scopes.join(", ")}. Escalation and formal-notice requests and approvals are blocked for that scope until the hold is released or its review date passes.
+    <div role="status" data-active-hold-banner className="bc-strip">
+      <b>Collections hold in force</b> for {scopes.join(", ")}. Escalation and formal-notice requests and approvals are blocked for that scope until the hold is released or its review date passes.
     </div>
   );
 }
 
+/** Holds as the demo's "On hold — never chased" list, with release and place-hold for Owner/Admin. */
 export function HoldsPanel({ holds, clientId, clientNames, invoiceOptions, viewer, today, firmTimezone = "America/Chicago", onPlace, onRelease }: {
   holds: CollectionHold[];
   clientId: string | null;
@@ -70,74 +71,64 @@ export function HoldsPanel({ holds, clientId, clientNames, invoiceOptions, viewe
   const invoiceNumbers = Object.fromEntries(invoiceOptions.map((option) => [option.id, option.invoice_number]));
   const clientInvoices = invoiceOptions.filter((option) => option.client_id === clientId);
   return (
-    <div>
-      {holds.length === 0 ? <p style={hintStyle}>No holds.</p> : (
-        <div style={{ overflowX: "auto" }}>
-          <table style={tableStyle}>
-            <thead>
-              <tr>
-                <th style={cellStyle}>Client</th>
-                <th style={cellStyle}>Reason</th>
-                <th style={cellStyle}>Placed</th>
-                <th style={cellStyle}>Review by</th>
-                <th style={cellStyle}>State</th>
-              </tr>
-            </thead>
-            <tbody>
-              {holds.map((hold) => {
-                const released = Boolean(hold.released_at);
-                const inForce = holdInForce(hold, today);
-                const holdState = released ? "released" : inForce ? "active" : "expired";
-                return (
-                  <tr key={hold.id} data-hold-row={hold.id} data-hold-state={holdState}>
-                    <td style={cellStyle}>{clientNames[hold.client_id] || hold.client_id}</td>
-                    <td style={cellStyle}>{hold.reason}</td>
-                    <td style={cellStyle}>{formatFirmDate(hold.placed_at, firmTimezone)}</td>
-                    <td style={cellStyle}>
-                      {hold.expires_on || "—"}
-                      {!released && holdExpiryPassed(hold, today) ? <div style={{ fontSize: 12, color: "var(--muted)" }}>Review date passed; no longer blocks. Release it to close it out.</div> : null}
-                    </td>
-                    <td style={cellStyle}>
-                      {released ? `Released ${formatFirmDate(hold.released_at || "", firmTimezone)}` : inForce ? <strong>Active</strong> : "Expired, not released"}
-                      <div data-hold-scope style={{ fontSize: 12, color: "var(--muted)" }}>
-                        {hold.invoice_id ? `Invoice ${hold.invoice_number || invoiceNumbers[hold.invoice_id] || hold.invoice_id} only` : "Whole client"}
-                      </div>
-                      {!released && power ? <div><ActionButton quiet label="Release hold" onAction={() => onRelease(hold.id)} /></div> : null}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
+    <div className="bc-exlist">
+      {holds.length === 0 ? <div className="bc-exrow"><span className="why">No holds.</span></div> : holds.map((hold) => {
+        const released = Boolean(hold.released_at);
+        const inForce = holdInForce(hold, today);
+        const holdState = released ? "released" : inForce ? "active" : "expired";
+        return (
+          <div key={hold.id} className="bc-exrow" data-hold-row={hold.id} data-hold-state={holdState}>
+            <div>
+              <div className="n">{clientNames[hold.client_id] || hold.client_id}</div>
+              <div data-hold-scope className="bc-small">
+                {hold.invoice_id ? `Invoice ${hold.invoice_number || invoiceNumbers[hold.invoice_id] || hold.invoice_id} only` : "Whole client"}
+              </div>
+            </div>
+            <div>
+              <div className="why">{hold.reason}</div>
+              <div className="bc-small">
+                Placed {formatFirmDate(hold.placed_at, firmTimezone)}{hold.expires_on ? ` · review by ${hold.expires_on}` : ""}
+              </div>
+              {!released && holdExpiryPassed(hold, today) ? <div className="bc-small">Review date passed; no longer blocks. Release it to close it out.</div> : null}
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 }}>
+              <span className={`bc-pill ${released ? "grey" : inForce ? "amber" : "red"}`}>
+                {released ? `Released ${formatFirmDate(hold.released_at || "", firmTimezone)}` : inForce ? "On hold" : "Expired, not released"}
+              </span>
+              {!released && power ? <ActionButton quiet label="Release hold" onAction={() => onRelease(hold.id)} /> : null}
+            </div>
+          </div>
+        );
+      })}
       {power ? (
         clientId ? (
-          <section aria-label="Place hold" style={{ maxWidth: 420 }}>
-            <h3 style={{ fontSize: 14, margin: "10px 0 6px" }}>Place hold</h3>
-            <LedgerForm
-              key={`hold-${clientId}-${today}`}
-              fields={[
-                { name: "reason", label: "Reason", type: "textarea" },
-                { name: "invoice_id", label: "Applies to", type: "select", optional: true, options: clientInvoices.map((option) => ({ value: option.id, label: `Invoice ${option.invoice_number} only` })) },
-                { name: "expires_on", label: "Review by", type: "date", optional: true },
-              ]}
-              initialValues={{ client_id: clientId, reason: "", invoice_id: "", expires_on: "" }}
-              validate={(values) => validateHold(values, today)}
-              onSubmit={onPlace}
-              submitLabel="Place hold"
-            />
-            <p style={hintStyle}>Leave &ldquo;Applies to&rdquo; empty to hold the whole client.</p>
-          </section>
-        ) : <p style={hintStyle}>Choose a client to place a hold.</p>
-      ) : <p style={hintStyle}><OwnerAdminOnly action="Placing or releasing a hold" /></p>}
+          <details className="bc-exadd">
+            <summary>+ Place a hold for {clientNames[clientId] || "this client"}</summary>
+            <section aria-label="Place hold" style={{ maxWidth: 440 }}>
+              <LedgerForm
+                key={`hold-${clientId}-${today}`}
+                fields={[
+                  { name: "reason", label: "Reason", type: "textarea" },
+                  { name: "invoice_id", label: "Applies to", type: "select", optional: true, options: clientInvoices.map((option) => ({ value: option.id, label: `Invoice ${option.invoice_number} only` })) },
+                  { name: "expires_on", label: "Review by", type: "date", optional: true },
+                ]}
+                initialValues={{ client_id: clientId, reason: "", invoice_id: "", expires_on: "" }}
+                validate={(values) => validateHold(values, today)}
+                onSubmit={onPlace}
+                submitLabel="Place hold"
+              />
+              <p className="bc-note">Leave &ldquo;Applies to&rdquo; empty to hold the whole client.</p>
+            </section>
+          </details>
+        ) : <div className="bc-exadd bc-small">Choose a client to place a hold.</div>
+      ) : <div className="bc-exadd bc-small"><OwnerAdminOnly action="Placing or releasing a hold" /></div>}
     </div>
   );
 }
 
 const APPROVAL_LABELS: Record<string, string> = { escalated: "Approve escalation", formal_notice_approved: "Approve formal notice" };
 
-export function EventsPanel({ events, holds, invoiceOptions, clientId, clientNames, viewer, today, firmTimezone = "America/Chicago", onLog, onApprove, onRecordNoticeSent, stageLabels = STAGE_LABELS }: {
+interface EventsProps {
   events: CollectionEvent[];
   holds: CollectionHold[];
   invoiceOptions: InvoiceOption[];
@@ -150,115 +141,157 @@ export function EventsPanel({ events, holds, invoiceOptions, clientId, clientNam
   onApprove: (eventId: string, approvalType: "escalated" | "formal_notice_approved") => Mutation;
   onRecordNoticeSent: (approval: CollectionEvent, note: string) => Mutation;
   stageLabels?: StageLabels;
-}) {
-  const requests = approvalRequests(events, holds, viewer, today).filter((item) => item.state !== "approved");
-  const notices = noticesAwaitingSend(events, holds, viewer, today);
-  const clientWideHold = clientId ? holdBlocks(holds, today, clientId, null) : false;
-  const clientInvoices = invoiceOptions.filter((option) => option.client_id === clientId);
+}
+
+function eventLabels({ invoiceOptions, clientNames, firmTimezone = "America/Chicago" }: Pick<EventsProps, "invoiceOptions" | "clientNames" | "firmTimezone">) {
   const invoiceNumbers = Object.fromEntries(invoiceOptions.map((option) => [option.id, option.invoice_number]));
-  const heldInvoices = clientWideHold ? [] : [...new Set(
-    activeHolds(holds, today, clientId).filter((hold) => hold.invoice_id).map((hold) => hold.invoice_number || invoiceNumbers[hold.invoice_id as string] || (hold.invoice_id as string)),
-  )];
   const invoiceLabel = (event: CollectionEvent) => event.invoice_number || (event.invoice_id ? invoiceNumbers[event.invoice_id] || event.invoice_id : null);
   const describe = (event: CollectionEvent) =>
     `${clientNames[event.client_id] || event.client_id}${event.invoice_id ? ` · invoice ${invoiceLabel(event)}` : ""} · ${formatFirmDate(event.occurred_at, firmTimezone)}`;
+  return { invoiceNumbers, invoiceLabel, describe };
+}
+
+/** Escalation and formal-notice decisions, and approved notices still to record as sent. */
+export function DecisionsPanel(props: EventsProps) {
+  const { events, holds, viewer, today, onApprove, onRecordNoticeSent } = props;
+  const { describe } = eventLabels(props);
+  const requests = approvalRequests(events, holds, viewer, today).filter((item) => item.state !== "approved");
+  const notices = noticesAwaitingSend(events, holds, viewer, today);
+  return (
+    <div className="bc-grid2">
+      <section className="bc-cfgcard" aria-label="Requests awaiting approval">
+        <h3 className="bc-h">Requests awaiting approval <small>touches 4 and 5</small></h3>
+        {requests.length === 0 ? <p className="bc-hint">Nothing awaiting approval.</p> : (
+          <ul className="bc-list">
+            {requests.map(({ request, approvalType, state }) => (
+              <li key={request.id} className="bc-item" data-approval-request={request.id} data-approval-state={state}>
+                <span className={`dot${state === "blocked_by_hold" ? " red" : ""}`} />
+                <div className="grow">
+                  <div className="ct">{EVENT_LABELS[request.event_type]}</div>
+                  <div className="cd">{describe(request)}</div>
+                </div>
+                {state === "can_approve" ? <ActionButton label={APPROVAL_LABELS[approvalType]} onAction={() => onApprove(request.id, approvalType)} /> : null}
+                {state === "requires_owner_admin" ? <OwnerAdminOnly action={APPROVAL_LABELS[approvalType]} /> : null}
+                {state === "blocked_by_hold" ? <span data-blocked-by-hold className="bc-pill amber">Blocked by an active hold.</span> : null}
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+      <section className="bc-cfgcard" aria-label="Approved notices">
+        <h3 className="bc-h">Approved notices not yet recorded as sent</h3>
+        <p className="bc-hint">TAP Hub does not send notices. After the approved notice goes out by your usual process, an Owner or Admin records it here. A hold placed after the notice went out does not stop you recording it.</p>
+        {notices.length === 0 ? <p className="bc-hint">No approved notices waiting.</p> : (
+          <ul className="bc-list">
+            {notices.map(({ approval, state }) => (
+              <li key={approval.id} className="bc-item" data-notice-approval={approval.id} data-notice-state={state}>
+                <span className="dot green" />
+                <div className="grow">
+                  <div className="ct">Formal notice approved</div>
+                  <div className="cd">{describe(approval)}</div>
+                  {state === "can_record" ? (
+                    <details className="bc-details" style={{ marginTop: 8 }}>
+                      <summary>Record notice sent</summary>
+                      <LedgerForm
+                        fields={[{ name: "note", label: "How and when it was sent", type: "textarea" }]}
+                        initialValues={{ note: "" }}
+                        validate={(values) => (validateReason(values.note).reason ? { note: "Say how and when the notice was sent." } : {})}
+                        onSubmit={(values) => onRecordNoticeSent(approval, values.note)}
+                        submitLabel="Record notice sent"
+                      />
+                    </details>
+                  ) : null}
+                  {state === "requires_owner_admin" ? <OwnerAdminOnly action="Recording a notice as sent" /> : null}
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+    </div>
+  );
+}
+
+/** The log-activity form and the Collections history. */
+export function ActivityPanel(props: EventsProps) {
+  const { events, holds, invoiceOptions, clientId, clientNames, today, firmTimezone = "America/Chicago", onLog, stageLabels = STAGE_LABELS } = props;
+  const { invoiceNumbers, invoiceLabel } = eventLabels(props);
+  const clientWideHold = clientId ? holdBlocks(holds, today, clientId, null) : false;
+  const clientInvoices = invoiceOptions.filter((option) => option.client_id === clientId);
+  const heldInvoices = clientWideHold ? [] : [...new Set(
+    activeHolds(holds, today, clientId).filter((hold) => hold.invoice_id).map((hold) => hold.invoice_number || invoiceNumbers[hold.invoice_id as string] || (hold.invoice_id as string)),
+  )];
 
   return (
-    <div>
-      <h3 style={{ fontSize: 14, margin: "4px 0 6px" }}>Requests awaiting approval</h3>
-      {requests.length === 0 ? <p style={hintStyle}>Nothing awaiting approval.</p> : (
-        <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
-          {requests.map(({ request, approvalType, state }) => (
-            <li key={request.id} data-approval-request={request.id} data-approval-state={state} style={{ borderBottom: "1px solid var(--line)", padding: "8px 0", display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
-              <span>{EVENT_LABELS[request.event_type]} · {describe(request)}</span>
-              {state === "can_approve" ? <ActionButton label={APPROVAL_LABELS[approvalType]} onAction={() => onApprove(request.id, approvalType)} /> : null}
-              {state === "requires_owner_admin" ? <OwnerAdminOnly action={APPROVAL_LABELS[approvalType]} /> : null}
-              {state === "blocked_by_hold" ? <span data-blocked-by-hold style={{ fontSize: 12.5, color: "#7a5210" }}>Blocked by an active hold.</span> : null}
-            </li>
-          ))}
-        </ul>
-      )}
-
-      <h3 style={{ fontSize: 14, margin: "14px 0 6px" }}>Approved notices not yet recorded as sent</h3>
-      <p style={hintStyle}>TAP Hub does not send notices. After the approved notice goes out by your usual process, an Owner or Admin records it here. A hold placed after the notice went out does not stop you recording it.</p>
-      {notices.length === 0 ? <p style={hintStyle}>No approved notices waiting.</p> : (
-        <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
-          {notices.map(({ approval, state }) => (
-            <li key={approval.id} data-notice-approval={approval.id} data-notice-state={state} style={{ borderBottom: "1px solid var(--line)", padding: "8px 0" }}>
-              <div>Formal notice approved · {describe(approval)}</div>
-              {state === "can_record" ? (
-                <details>
-                  <summary style={{ cursor: "pointer", fontSize: 13, fontWeight: 600, color: "var(--teal)" }}>Record notice sent</summary>
-                  <LedgerForm
-                    fields={[{ name: "note", label: "How and when it was sent", type: "textarea" }]}
-                    initialValues={{ note: "" }}
-                    validate={(values) => (validateReason(values.note).reason ? { note: "Say how and when the notice was sent." } : {})}
-                    onSubmit={(values) => onRecordNoticeSent(approval, values.note)}
-                    submitLabel="Record notice sent"
-                  />
-                </details>
-              ) : null}
-              {state === "requires_owner_admin" ? <OwnerAdminOnly action="Recording a notice as sent" /> : null}
-            </li>
-          ))}
-        </ul>
-      )}
-
-      {clientId ? (
-        <section aria-label="Log activity" style={{ maxWidth: 420 }}>
-          <h3 style={{ fontSize: 14, margin: "14px 0 6px" }}>Log activity</h3>
-          {clientWideHold ? <p data-requests-blocked style={hintStyle}>A client-wide hold is in force, so escalation and formal-notice requests will be refused. Notes, reminders, calls, and promises to pay can still be logged.</p> : null}
-          {heldInvoices.length ? (
-            <p data-invoice-holds style={hintStyle}>
-              {heldInvoices.length === 1 ? "Invoice" : "Invoices"} {heldInvoices.join(", ")} {heldInvoices.length === 1 ? "has" : "have"} a hold, so escalation and formal-notice requests for {heldInvoices.length === 1 ? "it" : "them"} will be refused.
-            </p>
-          ) : null}
-          <LedgerForm
-            key={`event-${clientId}`}
-            fields={[
-              { name: "event_type", label: "Activity", type: "select", options: LOGGABLE_EVENT_TYPES.map((type) => ({ value: type, label: EVENT_LABELS[type] })) },
-              { name: "invoice_id", label: "Invoice", type: "select", optional: true, options: clientInvoices.map((option) => ({ value: option.id, label: option.invoice_number })) },
-              { name: "note", label: "Details", type: "textarea", optional: true },
-            ]}
-            initialValues={{ client_id: clientId, event_type: "", invoice_id: "", note: "" }}
-            validate={validateEvent}
-            onSubmit={onLog}
-            submitLabel="Log activity"
-          />
-          <p style={hintStyle}>Escalation and formal-notice requests must name the invoice.</p>
-        </section>
-      ) : <p style={hintStyle}>Choose a client to log Collections activity.</p>}
-
-      <h3 style={{ fontSize: 14, margin: "16px 0 6px" }}>History</h3>
-      {events.length === 0 ? <p style={hintStyle}>No Collections activity yet.</p> : (
-        <div style={{ overflowX: "auto" }}>
-          <table style={tableStyle}>
-            <thead>
-              <tr>
-                <th style={cellStyle}>When</th>
-                <th style={cellStyle}>Client</th>
-                <th style={cellStyle}>Invoice</th>
-                <th style={cellStyle}>Activity</th>
-                <th style={cellStyle}>Details</th>
-              </tr>
-            </thead>
-            <tbody>
-              {events.map((event) => (
-                <tr key={event.id} data-event-row={event.id}>
-                  <td style={cellStyle}>{formatFirmDateTime(event.occurred_at, firmTimezone)}</td>
-                  <td style={cellStyle}>{clientNames[event.client_id] || event.client_id}</td>
-                  <td style={cellStyle}>{event.invoice_id ? invoiceLabel(event) || "—" : "All"}</td>
-                  <td style={cellStyle}>
-                    {EVENT_LABELS[event.event_type] || event.event_type}
-                    {event.event_type === "reminder_logged" && event.stage ? <div style={{ fontSize: 12, color: "var(--muted)" }}>Ladder {stageLabel(event.stage, stageLabels)}</div> : null}
-                  </td>
-                  <td style={cellStyle}>{typeof event.detail?.note === "string" ? event.detail.note : "—"}</td>
+    <div className="bc-cols wide">
+      <section className="bc-card" aria-label="History">
+        <h3 className="bc-h">History <small>newest first · firm time</small></h3>
+        {events.length === 0 ? <p className="bc-hint">No Collections activity yet.</p> : (
+          <div className="bc-scroll">
+            <table className="bc-table">
+              <thead>
+                <tr>
+                  <th>When</th>
+                  <th>Client</th>
+                  <th>Invoice</th>
+                  <th>Activity</th>
+                  <th>Details</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+              </thead>
+              <tbody>
+                {events.map((event) => (
+                  <tr key={event.id} data-event-row={event.id}>
+                    <td className="bc-small" style={{ whiteSpace: "nowrap" }}>{formatFirmDateTime(event.occurred_at, firmTimezone)}</td>
+                    <td>{clientNames[event.client_id] || event.client_id}</td>
+                    <td className="bc-nowrap">{event.invoice_id ? invoiceLabel(event) || "—" : "All"}</td>
+                    <td>
+                      {EVENT_LABELS[event.event_type] || event.event_type}
+                      {event.event_type === "reminder_logged" && event.stage ? <div className="bc-small">Ladder {stageLabel(event.stage, stageLabels)}</div> : null}
+                    </td>
+                    <td className="bc-muted">{typeof event.detail?.note === "string" ? event.detail.note : "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+      <section className="bc-card" aria-label="Log activity">
+        <h3 className="bc-h">Log activity {clientId ? <small>{clientNames[clientId] || ""}</small> : null}</h3>
+        {clientId ? (
+          <>
+            {clientWideHold ? <p data-requests-blocked className="bc-hint">A client-wide hold is in force, so escalation and formal-notice requests will be refused. Notes, reminders, calls, and promises to pay can still be logged.</p> : null}
+            {heldInvoices.length ? (
+              <p data-invoice-holds className="bc-hint">
+                {heldInvoices.length === 1 ? "Invoice" : "Invoices"} {heldInvoices.join(", ")} {heldInvoices.length === 1 ? "has" : "have"} a hold, so escalation and formal-notice requests for {heldInvoices.length === 1 ? "it" : "them"} will be refused.
+              </p>
+            ) : null}
+            <LedgerForm
+              key={`event-${clientId}`}
+              fields={[
+                { name: "event_type", label: "Activity", type: "select", options: LOGGABLE_EVENT_TYPES.map((type) => ({ value: type, label: EVENT_LABELS[type] })) },
+                { name: "invoice_id", label: "Invoice", type: "select", optional: true, options: clientInvoices.map((option) => ({ value: option.id, label: option.invoice_number })) },
+                { name: "note", label: "Details", type: "textarea", optional: true },
+              ]}
+              initialValues={{ client_id: clientId, event_type: "", invoice_id: "", note: "" }}
+              validate={validateEvent}
+              onSubmit={onLog}
+              submitLabel="Log activity"
+            />
+            <p className="bc-note">Escalation and formal-notice requests must name the invoice.</p>
+          </>
+        ) : <p className="bc-hint">Choose a client to log Collections activity.</p>}
+      </section>
+    </div>
+  );
+}
+
+/** Decisions, activity, and history together (the Collections page shows them on separate tabs). */
+export function EventsPanel(props: EventsProps) {
+  return (
+    <div className="bc-stack">
+      <DecisionsPanel {...props} />
+      <ActivityPanel {...props} />
     </div>
   );
 }

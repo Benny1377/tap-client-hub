@@ -18,12 +18,12 @@ export default function BillingPage() {
   const selectedInvoice = invoices.find((invoice) => invoice.id === selectedInvoiceId) || null;
 
   return (
-    <div style={{ padding: "20px 16px", maxWidth: 1280, margin: "0 auto" }}>
-      <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+    <div className="bc-page">
+      <div className="bc-head" style={{ justifyContent: "flex-end" }}>
         <ClientPicker clients={clients} value={clientId} onChange={(id) => { setClientId(id); setSelectedInvoiceId(null); }} />
       </div>
 
-      <div style={{ display: "flex", gap: 16, flexWrap: "wrap", alignItems: "flex-start", marginTop: 12 }}>
+      <div style={{ display: "flex", gap: 20, flexWrap: "wrap", alignItems: "flex-start", marginTop: 22 }}>
         <section style={{ ...panelStyle, flex: "1 1 360px" }} aria-label="Invoices">
           <h2 style={headingStyle}>Invoices</h2>
           <SectionView state={state.invoices} label="invoices">
@@ -72,7 +72,7 @@ export default function BillingPage() {
         </section>
       </div>
 
-      <section style={{ ...panelStyle, marginTop: 16 }} aria-label="Payments">
+      <section style={{ ...panelStyle, marginTop: 20 }} aria-label="Payments">
         <h2 style={headingStyle}>Payments and allocations</h2>
         <SectionView state={state.payments} label="payments">
           {(payments) => (
@@ -94,7 +94,7 @@ export default function BillingPage() {
         </SectionView>
       </section>
 
-      <section style={{ ...panelStyle, marginTop: 16 }} aria-label="Receivables">
+      <section style={{ ...panelStyle, marginTop: 20 }} aria-label="Receivables">
         <h2 style={headingStyle}>Receivables</h2>
         <SectionView state={state.receivables} label="receivables">
           {(data) => (

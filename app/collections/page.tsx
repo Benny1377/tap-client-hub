@@ -1,18 +1,31 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useState, type ReactNode } from "react";
 import { mutateThenRefresh, type ApiResult } from "@/lib/billing-ui/api";
 import { readyData } from "@/lib/billing-ui/ledger";
-import { stageLabelsFrom, todayIso, viewerIsPowerUser } from "@/lib/billing-ui/view-model";
+import { approvalRequests, noticesAwaitingSend, stageLabelsFrom, todayIso, viewerIsPowerUser } from "@/lib/billing-ui/view-model";
 import { useLedger } from "@/components/billing/use-ledger";
-import { ClientPicker, headingStyle, hintStyle, panelStyle, SectionView } from "@/components/billing/ui";
-import { ActiveHoldBanner, EventsPanel, HoldsPanel, type InvoiceOption } from "@/components/billing/collections-panels";
-import { AutomationPreviewPanel, LadderSummary, WorklistSummary, WorklistTable } from "@/components/billing/worklist-panels";
+import { ClientPicker, OwnerAdminOnly, SectionView } from "@/components/billing/ui";
+import { ActiveHoldBanner, ActivityPanel, DecisionsPanel, HoldsPanel, type InvoiceOption } from "@/components/billing/collections-panels";
+import { AutomationPreviewPanel, LadderRungs, LadderSummary, MoneyByStage, PipelineBanner, WhoIsWhere, WorklistSummary, WorklistTable } from "@/components/billing/worklist-panels";
 import { CollectionsRulesEditor } from "@/components/billing/collections-rules-editor";
 
 const WORKLIST_PAGE = 50;
+const TABS = [
+  { id: "insights", label: "AR Insights" },
+  { id: "pipeline", label: "Pipeline" },
+  { id: "setup", label: "Setup & rules" },
+  { id: "activity", label: "Activity" },
+] as const;
+type TabId = (typeof TABS)[number]["id"];
+
+/** Every tab stays mounted (only hidden), so drafts and preview results survive switching tabs. */
+function TabPanel({ id, active, children }: { id: TabId; active: TabId; children: ReactNode }) {
+  return <div role="tabpanel" id={`collections-${id}`} aria-labelledby={`collections-tab-${id}`} hidden={id !== active}>{children}</div>;
+}
 
 export default function CollectionsPage() {
+  const [tab, setTab] = useState<TabId>("insights");
   const [clientId, setClientId] = useState<string | null>(null);
   const [worklistOffset, setWorklistOffset] = useState(0);
   // Two loaders: paging the call list reloads only the worklist, not holds and activity.
@@ -27,6 +40,7 @@ export default function CollectionsPage() {
   const worklistState = calls.state.worklist;
   const worklist = readyData(worklistState, null);
   const holds = readyData(state.holds, []);
+  const events = readyData(state.events, []);
   const receivables = readyData(state.receivables, { receivables: [] });
   const ruleSettings = readyData(state.rules, {
     rules: [], firm_timezone: "America/Chicago",
@@ -34,77 +48,118 @@ export default function CollectionsPage() {
   });
   const { rules, firm_timezone: firmTimezone } = ruleSettings;
   const stageLabels = stageLabelsFrom(rules);
+  const power = viewerIsPowerUser(viewer);
   // The server's firm date drives hold and ladder rules; fall back to the browser
   // date only while neither read model has loaded.
   const today = worklist?.as_of_date || receivables.as_of_date || todayIso();
   // Every issued invoice (all clients, all pages), so names resolve regardless of the call-list page.
-  const invoiceOptions = useMemo<InvoiceOption[]>(
-    () => receivables.receivables.map((row) => ({ id: row.id, invoice_number: row.invoice_number, client_id: row.client_id })),
-    [receivables],
-  );
-  const invoiceNumbers = useMemo(() => Object.fromEntries(invoiceOptions.map((option) => [option.id, option.invoice_number])), [invoiceOptions]);
+  const invoiceOptions: InvoiceOption[] = receivables.receivables.map((row) => ({ id: row.id, invoice_number: row.invoice_number, client_id: row.client_id }));
+  const invoiceNumbers = Object.fromEntries(invoiceOptions.map((option) => [option.id, option.invoice_number]));
   const selectClient = (id: string | null) => { setClientId(id); setWorklistOffset(0); };
+  const decisions = approvalRequests(events, holds, viewer, today).filter((item) => item.state !== "approved").length
+    + noticesAwaitingSend(events, holds, viewer, today).length;
+
+  const eventProps = {
+    holds,
+    invoiceOptions,
+    clientId,
+    clientNames,
+    viewer,
+    today,
+    firmTimezone,
+    stageLabels,
+    onLog: (values: Record<string, string>) => mutate(() => api.logEvent({ client_id: values.client_id, event_type: values.event_type, invoice_id: values.invoice_id || null, detail: values.note.trim() ? { note: values.note.trim() } : {} })),
+    onApprove: (eventId: string, approvalType: "escalated" | "formal_notice_approved") => mutate(() => api.approveEvent(eventId, approvalType)),
+    onRecordNoticeSent: (approval: { id: string; client_id: string; invoice_id: string | null }, note: string) => mutate(() => api.logEvent({
+      client_id: approval.client_id,
+      invoice_id: approval.invoice_id,
+      event_type: "formal_notice_sent",
+      approval_event_id: approval.id,
+      detail: { note: note.trim() },
+    })),
+  };
 
   return (
-    <div style={{ padding: "20px 16px", maxWidth: 1280, margin: "0 auto" }}>
-      <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+    <div className="bc-page">
+      <div className="bc-tabrow">
+        <div className="bc-subnav" role="tablist" aria-label="Collections views">
+          {TABS.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              role="tab"
+              id={`collections-tab-${item.id}`}
+              aria-controls={`collections-${item.id}`}
+              aria-selected={tab === item.id}
+              className="bc-snb"
+              onClick={() => setTab(item.id)}
+            >
+              {item.label}
+              {item.id === "pipeline" && decisions > 0 ? <span className="bc-count" aria-label={`${decisions} waiting`}>{decisions}</span> : null}
+            </button>
+          ))}
+        </div>
         <ClientPicker clients={clients} value={clientId} onChange={selectClient} />
       </div>
 
       <ActiveHoldBanner holds={holds} clientId={clientId} clientNames={clientNames} invoiceNumbers={invoiceNumbers} today={today} />
 
-      <section style={{ ...panelStyle, marginTop: 12 }} aria-label="AR insights">
-        <h2 style={headingStyle}>AR insights</h2>
-        <SectionView state={worklistState} label="AR insights">
-          {(data) => <WorklistSummary worklist={data} />}
-        </SectionView>
-      </section>
-
-      <section style={{ ...panelStyle, marginTop: 16 }} aria-label="Call list">
-        <h2 style={headingStyle}>Call list</h2>
-        <p style={hintStyle}>Accounts ranked by the server&rsquo;s priority score. Open a score to see how it was built.</p>
-        <LadderSummary rules={rules} />
-        {state.rules.status === "ready" ? <CollectionsRulesEditor
-          value={ruleSettings}
-          canEdit={viewerIsPowerUser(viewer)}
-          onSave={(input) => mutate(() => api.updateRules(input))}
-        /> : null}
-        <SectionView state={worklistState} label="call list">
-          {(data) => <WorklistTable worklist={data} onSelectClient={selectClient} onPage={setWorklistOffset} stageLabels={stageLabels} rules={rules} firmTimezone={firmTimezone} />}
-        </SectionView>
-      </section>
-
-      <div style={{ display: "flex", gap: 16, flexWrap: "wrap", alignItems: "flex-start", marginTop: 16 }}>
-        <section style={{ ...panelStyle, flex: "2 1 480px" }} aria-label="Collections activity">
-          <h2 style={headingStyle}>Activity and approvals</h2>
-          <SectionView state={state.events} label="Collections activity">
-            {(events) => (
-              <EventsPanel
-                events={events}
-                holds={holds}
-                invoiceOptions={invoiceOptions}
-                clientId={clientId}
-                clientNames={clientNames}
-                viewer={viewer}
-                today={today}
-                firmTimezone={firmTimezone}
-                stageLabels={stageLabels}
-                onLog={(values) => mutate(() => api.logEvent({ client_id: values.client_id, event_type: values.event_type, invoice_id: values.invoice_id || null, detail: values.note.trim() ? { note: values.note.trim() } : {} }))}
-                onApprove={(eventId, approvalType) => mutate(() => api.approveEvent(eventId, approvalType))}
-                onRecordNoticeSent={(approval, note) => mutate(() => api.logEvent({
-                  client_id: approval.client_id,
-                  invoice_id: approval.invoice_id,
-                  event_type: "formal_notice_sent",
-                  approval_event_id: approval.id,
-                  detail: { note: note.trim() },
-                }))}
-              />
-            )}
+      <TabPanel id="insights" active={tab}>
+        <section aria-label="AR insights">
+          <SectionView state={worklistState} label="AR insights">
+            {(data) => <WorklistSummary worklist={data} />}
           </SectionView>
         </section>
+        <section className="bc-card" aria-label="Call list" style={{ marginTop: 20 }}>
+          <div className="bc-eyebrow">Where to focus first · ranked by the server&rsquo;s priority score</div>
+          <h3 className="bc-sect" style={{ fontSize: 18 }}>The accounts that need you now</h3>
+          <p className="bc-hint">Dollars are weighted up the older they get, so the most expensive and most overdue rise first. Open a score to see how it was built; pick a client to filter the page.</p>
+          <SectionView state={worklistState} label="call list">
+            {(data) => <WorklistTable worklist={data} onSelectClient={selectClient} onPage={setWorklistOffset} stageLabels={stageLabels} rules={rules} firmTimezone={firmTimezone} selectedClientId={clientId} />}
+          </SectionView>
+        </section>
+      </TabPanel>
 
-        <section style={{ ...panelStyle, flex: "1 1 340px" }} aria-label="Holds">
-          <h2 style={headingStyle}>Holds</h2>
+      <TabPanel id="pipeline" active={tab}>
+        <SectionView state={worklistState} label="pipeline">
+          {(data) => <PipelineBanner worklist={data} />}
+        </SectionView>
+        <h3 className="bc-sect">Needs your decision</h3>
+        <p className="bc-hint">Escalations and formal notices wait here for an Owner or Admin.</p>
+        <SectionView state={state.events} label="approvals">
+          {(rows) => <DecisionsPanel events={rows} {...eventProps} />}
+        </SectionView>
+        <h3 className="bc-sect" style={{ marginTop: 26 }}>The five-touch ladder <span style={{ color: "var(--muted)", fontWeight: 400, fontSize: 11.5, fontFamily: "inherit" }}>— open any touch to read its wording</span></h3>
+        <LadderRungs rules={rules} />
+        <div className="bc-stack">
+          <SectionView state={worklistState} label="ladder positions">
+            {(data) => <MoneyByStage worklist={data} rules={rules} />}
+          </SectionView>
+          <SectionView state={worklistState} label="invoice positions">
+            {(data) => <WhoIsWhere worklist={data} rules={rules} stageLabels={stageLabels} firmTimezone={firmTimezone} onSelectClient={selectClient} />}
+          </SectionView>
+          <section className="bc-card" aria-label="Automation preview">
+            <h3 className="bc-sect">Automation preview</h3>
+            <AutomationPreviewPanel viewer={viewer} runPreview={(params) => api.preview(params)} stageLabels={stageLabels} />
+          </section>
+        </div>
+      </TabPanel>
+
+      <TabPanel id="setup" active={tab}>
+        {power ? (
+          state.rules.status === "ready" ? (
+            <CollectionsRulesEditor value={ruleSettings} canEdit onSave={(input) => mutate(() => api.updateRules(input))} />
+          ) : <SectionView state={state.rules} label="rules">{() => null}</SectionView>
+        ) : (
+          <section className="bc-cfgsec" aria-label="The follow-up ladder">
+            <h3 className="bc-sect">The follow-up ladder</h3>
+            <LadderSummary rules={rules} />
+            <p className="bc-hint"><OwnerAdminOnly action="Changing the ladder, wording, or guardrails" /></p>
+          </section>
+        )}
+        <section className="bc-cfgsec" aria-label="Holds">
+          <h3 className="bc-sect">On hold — never chased</h3>
+          <p className="bc-hint">Disputes, payment plans, and anyone a person should handle. A hold blocks escalation and formal-notice steps for its client or invoice.</p>
           <SectionView state={state.holds} label="holds">
             {(rows) => (
               <HoldsPanel
@@ -121,12 +176,13 @@ export default function CollectionsPage() {
             )}
           </SectionView>
         </section>
-      </div>
+      </TabPanel>
 
-      <section style={{ ...panelStyle, marginTop: 16 }} aria-label="Automation preview">
-        <h2 style={headingStyle}>Automation preview</h2>
-        <AutomationPreviewPanel viewer={viewer} runPreview={(params) => api.preview(params)} stageLabels={stageLabels} />
-      </section>
+      <TabPanel id="activity" active={tab}>
+        <SectionView state={state.events} label="Collections activity">
+          {(rows) => <ActivityPanel events={rows} {...eventProps} />}
+        </SectionView>
+      </TabPanel>
     </div>
   );
 }

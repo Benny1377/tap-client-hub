@@ -240,7 +240,7 @@ check("hold banner appears only while a hold is in force, with its scope", () =>
 check("hold placed and released dates use the firm timezone, not UTC", () => {
   const lateEvening = hold({ placed_at: "2026-10-11T03:30:00Z", released_at: "2026-10-12T02:00:00Z" });
   const chicago = render(h(collections.HoldsPanel, { holds: [lateEvening], clientId: "c-1", clientNames: {}, invoiceOptions, viewer: owner, today: TODAY, firmTimezone: "America/Chicago", onPlace: noop, onRelease: noop }));
-  assert.match(chicago, />2026-10-10</, "placed the previous evening in Chicago");
+  assert.match(chicago, /Placed 2026-10-10/, "placed the previous evening in Chicago");
   assert.match(chicago, /Released 2026-10-11/);
   assert.doesNotMatch(chicago, /2026-10-12/);
 });
@@ -492,10 +492,13 @@ check("the activity form names invoices with their own hold before a request is 
   assert.doesNotMatch(eventsPanel([], [hold()], staff), /data-invoice-holds/, "a client-wide hold uses the client-wide warning instead");
 });
 
-check("AR summary cards sit in a grid that fits two per row on a phone", () => {
+check("AR summary tiles sit in a grid that keeps two per row on a phone", () => {
   const html = render(h(worklistPanels.WorklistSummary, { worklist: worklist() }));
-  // 100px minimum: the cards area is about 230px wide on a 375px phone, so two fit per row.
-  assert.equal((html.match(/grid-template-columns:repeat\(auto-fill, minmax\(100px, 1fr\)\)/g) || []).length, 2);
+  assert.equal((html.match(/class="bc-tiles"/g) || []).length, 1);
+  const { readFileSync } = createRequire(import.meta.url)("node:fs");
+  const css = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
+  const phone = css.slice(css.indexOf("@media (max-width: 520px)"));
+  assert.match(phone, /\.bc-tiles \{ grid-template-columns: repeat\(2, 1fr\)/, "two tiles per row at phone width");
 });
 
 // --- Integration contract (3bec72a) -------------------------------------------
@@ -553,6 +556,55 @@ check("hold and event rows prefer the server's invoice_number", () => {
   const eventHtml = eventsPanel([{ ...request, invoice_id: "inv-paid", invoice_number: "TAP-OLD-7" }], [], staff);
   assert.match(eventHtml, /data-event-row="e-1"[\s\S]*?>TAP-OLD-7</);
   assert.match(eventHtml, /invoice TAP-OLD-7/);
+});
+
+// --- Demo v14 design ------------------------------------------------------------
+const demoRules = [
+  { stage: 1, label: "Friendly", days_past_due: 1, automatic: true, enabled: true, subject_template: "Reminder {invoice_number}", body_template: "Hello {contact_name}" },
+  { stage: 3, label: "Firm", days_past_due: 15, automatic: true, enabled: true, subject_template: "", body_template: "" },
+  { stage: 4, label: "Owner escalation", days_past_due: 21, automatic: false, enabled: true, subject_template: "Owner review", body_template: "Internal only" },
+];
+
+check("Collections opens on AR Insights with the other views mounted but hidden", () => {
+  const html = render(h(CollectionsPage));
+  assert.match(html, /role="tablist"/);
+  for (const label of ["AR Insights", "Pipeline", "Setup &amp; rules", "Activity"]) assert.match(html, new RegExp(`role="tab"[^>]*>${label}`));
+  assert.match(html, /id="collections-tab-insights"[^>]*aria-selected="true"/);
+  assert.match(html, /role="tabpanel" id="collections-insights"[^>]*>/);
+  assert.doesNotMatch(html, /id="collections-insights"[^>]*hidden/);
+  for (const id of ["pipeline", "setup", "activity"]) assert.match(html, new RegExp(`id="collections-${id}"[^>]*hidden`));
+});
+
+check("ladder touches flag the Owner/Admin gates and hide their wording until opened", () => {
+  const html = render(h(worklistPanels.LadderRungs, { rules: demoRules }));
+  assert.match(html, /data-rung="4"[^>]*class="bc-rung gate"[\s\S]*?Needs Owner\/Admin/);
+  assert.doesNotMatch(html, /data-rung="1"[^>]*class="bc-rung gate"/);
+  assert.doesNotMatch(html, /data-rung-template/, "wording stays closed until a touch is opened");
+  assert.equal(render(h(worklistPanels.LadderRungs, { rules: [] })), "");
+});
+
+check("money by stage places each overdue invoice at the last touch its age reached", () => {
+  const html = render(h(worklistPanels.MoneyByStage, { worklist: worklist(), rules: demoRules }));
+  // TAP-1 is 45 days (touch 4 band), TAP-2 is 25 days (touch 4 band, since 21 <= 25).
+  assert.match(html, /data-stage-band="4"[\s\S]*?\$1,500\.00[\s\S]*?2 inv/);
+  assert.match(html, /data-stage-band="1"[\s\S]*?—[\s\S]*?0 inv/);
+  assert.match(html, /Owner\/Admin decisions \$1,500\.00 · 100%/);
+});
+
+check("who's where lists overdue invoices by balance with who acts next", () => {
+  const html = render(h(worklistPanels.WhoIsWhere, { worklist: worklist(), rules: demoRules, onSelectClient: () => {} }));
+  assert.match(html, /data-who-row="inv-1"[\s\S]*?\$1,000\.00[\s\S]*?Owner\/Admin[\s\S]*?data-who-row="inv-2"/, "largest balance first; touch 4 needs Owner/Admin");
+});
+
+check("decisions and activity render as separate panels", () => {
+  const props = { events: [request], holds: [], invoiceOptions, clientId: "c-1", clientNames: {}, viewer: owner, today: TODAY, onLog: noop, onApprove: noop, onRecordNoticeSent: noop };
+  const decisions = render(h(collections.DecisionsPanel, props));
+  assert.match(decisions, />Approve formal notice</);
+  assert.doesNotMatch(decisions, /Log activity|data-event-row/);
+  const activity = render(h(collections.ActivityPanel, props));
+  assert.match(activity, /data-event-row="e-1"/);
+  assert.match(activity, /aria-label="Log activity"/);
+  assert.doesNotMatch(activity, /Approve formal notice/);
 });
 
 console.log(`billing UI render checks passed (${passed})`);
