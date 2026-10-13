@@ -11,3 +11,7 @@ Each decision record must include:
 - Follow-up owner and revisit trigger.
 
 Use `Proposed`, `Approved`, and `Superseded` as statuses.
+
+Current Collections decisions include:
+
+- `2026-10-13-collections-supabase-sandbox.md` — separate non-production Supabase project approved in principle; provisioning details remain open.

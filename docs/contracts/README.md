@@ -4,6 +4,14 @@ Create a contract before dependent implementation changes any API behavior, pers
 
 Use `Draft`, `Frozen for implementation`, `Released`, and `Superseded` as contract states.
 
+Collections contracts:
+
+- [Phase 1 Billing ledger](collections-phase-1-billing-ledger.md) — frozen for implementation.
+- [Phase 2 backend](collections-phase-2-backend.md) — integrated and locally validated; review/merge closure remains.
+- [Phase 3 integrations](collections-phase-3-integrations.md) — draft; owner and producer/consumer decisions remain open.
+
+Collections non-production sandbox decision: `../decisions/2026-10-13-collections-supabase-sandbox.md` (approved in principle; provisioning details pending).
+
 Each module contract must state:
 
 - Capability boundary and exclusions.

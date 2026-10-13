@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { requireClientDataEditAccess } from "@/lib/access-server";
+import { requireClientDataEditAccess, resolveAccessIdentity } from "@/lib/access-server";
 
 export const dynamic = "force-dynamic";
 
@@ -8,6 +8,10 @@ type ContactInput = { id?: unknown; clientId?: unknown; category?: unknown; name
 const text = (value: unknown) => typeof value === "string" ? value.trim() : "";
 
 export async function GET() {
+  const identity = await resolveAccessIdentity();
+  if (!identity) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!identity.modules.includes("Clients")) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+
   try {
     const admin = createAdminClient();
     const [{ data: contactRows, error: contactsError }, { data: clients, error: clientsError }] = await Promise.all([

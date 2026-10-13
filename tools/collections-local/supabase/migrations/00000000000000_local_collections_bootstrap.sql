@@ -19,6 +19,12 @@ create table tap_hub_project.profiles (
 create table tap_hub_project.clients (
   id uuid primary key default gen_random_uuid(),
   name text not null,
+  client_code text,
+  group_name text,
+  address text,
+  city text,
+  state text,
+  zip text,
   type text not null default 'business',
   status text not null default 'active'
 );
@@ -35,7 +41,8 @@ create table tap_hub_project.contacts (
   is_primary boolean not null default false,
   name text,
   email text,
-  phone text
+  phone text,
+  updated_at timestamptz not null default now()
 );
 
 create table tap_hub_project.audit_log (
