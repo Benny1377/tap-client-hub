@@ -29,6 +29,9 @@ const NAV_ITEMS: NavItem[] = [
   { label: "Renditions", href: "/rend", icon: "🏠", module: "Renditions" },
   { label: "Annual Reports", href: "/annual", icon: "📄", module: "Annual Reports" },
   { label: "---", href: "" },
+  { label: "Billing", href: "/billing", icon: "🧾", module: "Billing" },
+  { label: "Collections", href: "/collections", icon: "📬", module: "Collections" },
+  { label: "---", href: "" },
   { label: "Password Vault", href: "/vault", icon: "🔒", module: "Vault" },
   { label: "Users & Access", href: "/users", icon: "🪪", module: "Users & Access" },
   { label: "Help & Support", href: "/support", icon: "🛟", module: "Support" },
@@ -53,6 +56,8 @@ const PAGE_TITLES: Record<string, { title: string; subtitle: string }> = {
   "/support": { title: "Help & Support", subtitle: "Stuck on something? Open a ticket and our team will jump on it." },
   "/support/inbox": { title: "Support Inbox", subtitle: "Firm-wide support tickets, grouped by application." },
   "/settings": { title: "Settings", subtitle: "Your account details, password, and security settings." },
+  "/billing": { title: "Billing", subtitle: "Invoices, payments, and balances. Balances come from the server and refresh after every change." },
+  "/collections": { title: "Collections", subtitle: "Follow up on balances owed. Amounts come from Billing, and nothing here sends anything to a client." },
 };
 
 async function logoutAndRedirect() {

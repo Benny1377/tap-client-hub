@@ -1,0 +1,169 @@
+// Response shapes of the Phase 1 Billing and Collections routes as implemented on
+// codex/collections-phase-1-billing-ledger. Numeric columns arrive from PostgREST
+// as numbers or strings; the UI only formats them and never does balance math.
+
+import type {
+  CollectionsAwaitingApproval,
+  CollectionsRule as ApiCollectionsRule,
+  CollectionsRulesResponse,
+} from "@/lib/collections-api";
+
+export type Numeric = string | number;
+
+export type InvoiceStatus = "draft" | "issued" | "void";
+
+export interface InvoiceLine {
+  id: string;
+  invoice_id: string;
+  client_service_id: string | null;
+  period: string | null;
+  description: string;
+  quantity: Numeric;
+  unit_amount: Numeric;
+  amount: Numeric;
+  sort_order: number;
+}
+
+export interface Invoice {
+  id: string;
+  client_id: string;
+  invoice_number: string;
+  status: InvoiceStatus;
+  issue_date: string;
+  due_date: string;
+  memo: string | null;
+  created_by: string | null;
+  created_at: string;
+  voided_by: string | null;
+  voided_at: string | null;
+  void_reason: string | null;
+  invoice_lines: InvoiceLine[];
+}
+
+export interface PaymentAllocation {
+  id: string;
+  payment_id: string;
+  invoice_id: string;
+  amount: Numeric;
+  created_by: string | null;
+  created_at: string;
+  reversed_at: string | null;
+}
+
+export type PaymentMethod = "check" | "ach" | "wire" | "card" | "cash" | "other";
+
+export interface Payment {
+  id: string;
+  client_id: string;
+  received_on: string;
+  amount: Numeric;
+  method: PaymentMethod;
+  reference: string | null;
+  status: "recorded" | "reversed";
+  reversed_by: string | null;
+  reversed_at: string | null;
+  reversal_reason: string | null;
+  created_by: string | null;
+  payment_allocations: PaymentAllocation[];
+  /** Server-derived amount of a recorded payment not yet allocated; "0.00" once reversed. */
+  unallocated_amount?: string;
+}
+
+/** One row of GET /api/billing/receivables. Totals are server-derived strings. */
+export interface Receivable {
+  id: string;
+  client_id: string;
+  invoice_number: string;
+  status: InvoiceStatus;
+  issue_date: string;
+  due_date: string;
+  total: string;
+  allocated: string;
+  balance: string;
+  days_past_due: number;
+  aging_bucket?: AgingBucket;
+}
+
+export type AgingBucket = "current" | "1_30" | "31_60" | "61_90" | "90_plus";
+
+/** Per-client aging totals from GET /api/billing/receivables. Keys match AgingBucket. */
+export interface ClientAging {
+  client_id: string;
+  current: string;
+  "1_30": string;
+  "31_60": string;
+  "61_90": string;
+  "90_plus": string;
+}
+
+/** Full response of GET /api/billing/receivables (shared Billing read model). */
+export interface ReceivablesResponse {
+  as_of_date?: string;
+  receivables: Receivable[];
+  client_aging?: ClientAging[];
+  unallocated_payment_balances?: Array<{ payment_id: string; client_id: string; amount: string; unallocated: string }>;
+  unallocated_by_client?: Array<{ client_id: string; amount: string }>;
+}
+
+export interface CollectionHold {
+  id: string;
+  client_id: string;
+  invoice_id: string | null;
+  reason: string;
+  placed_by: string | null;
+  placed_at: string;
+  expires_on: string | null;
+  released_by: string | null;
+  released_at: string | null;
+  /** Invoice number from the server; null for a whole-client hold. */
+  invoice_number?: string | null;
+}
+
+export type CollectionEventType =
+  | "note"
+  | "reminder_logged"
+  | "call_logged"
+  | "promise_to_pay"
+  | "escalation_requested"
+  | "escalated"
+  | "formal_notice_requested"
+  | "formal_notice_approved"
+  | "formal_notice_sent"
+  | "hold_placed"
+  | "hold_released";
+
+export interface CollectionEvent {
+  id: string;
+  client_id: string;
+  invoice_id: string | null;
+  event_type: CollectionEventType;
+  /** Ladder stage 1–5 (integer in the database). */
+  stage: number | null;
+  occurred_at: string;
+  actor: string | null;
+  detail: Record<string, unknown> | null;
+  approves_event_id: string | null;
+  /** Invoice number from the server; null for client-level history. */
+  invoice_number?: string | null;
+}
+
+/** Shared response types for the safe Collections rules display endpoint. */
+export type CollectionRule = ApiCollectionsRule;
+export type CollectionRuleSettings = CollectionsRulesResponse;
+
+/**
+ * A pending escalation or formal-notice request on a worklist invoice. The
+ * worklist proposes no later stage until it is approved. Returned by the
+ * Returned by the Collections worklist and shared API contract.
+ */
+export type AwaitingApproval = CollectionsAwaitingApproval;
+
+export interface ClientOption {
+  id: string;
+  name: string;
+}
+
+export interface Viewer {
+  role: string;
+  modules: string[];
+}
