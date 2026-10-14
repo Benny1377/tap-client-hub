@@ -9,6 +9,9 @@ test("Contacts API is a dedicated database endpoint, not a client-directory proj
 
   const route = readFileSync(routePath, "utf8");
   assert.match(route, /\.from\("contacts"\)/, "Contacts endpoint must read the contacts table");
+  assert.match(route, /export async function GET\(\)[\s\S]*?resolveAccessIdentity\(\)/, "Contacts reads must resolve the authenticated identity");
+  assert.match(route, /if \(!identity\)[\s\S]*?status: 401/, "Anonymous Contacts reads must be rejected");
+  assert.match(route, /identity\.modules\.includes\("Clients"\)[\s\S]*?status: 403/, "Contacts reads must require the Clients module");
   assert.match(route, /export async function POST/, "Contacts endpoint must create contacts");
   assert.match(route, /export async function PATCH/, "Contacts endpoint must update dedicated contacts");
   assert.match(route, /requireClientDataEditAccess/, "Contact writes must require client-data edit access");

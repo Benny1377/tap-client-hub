@@ -6,6 +6,10 @@ declare
     'location', 'allow_edit_client_data', 'email_2fa_enabled'
   ];
   v_found_columns text[];
+  v_client_required_columns text[] := array[
+    'client_code', 'group_name', 'address', 'city', 'state', 'zip'
+  ];
+  v_client_found_columns text[];
 begin
   select array_agg(column_name order by column_name)
     into v_found_columns
@@ -15,6 +19,24 @@ begin
 
   if coalesce(cardinality(v_found_columns), 0) <> cardinality(v_required_columns) then
     raise exception 'Local profile subset is missing app identity/2FA fields';
+  end if;
+
+  select array_agg(column_name order by column_name)
+    into v_found_columns
+  from information_schema.columns
+  where table_schema = 'tap_hub_project' and table_name = 'contacts'
+    and column_name = 'updated_at';
+  if coalesce(cardinality(v_found_columns), 0) <> 1 then
+    raise exception 'Local contacts subset is missing updated_at';
+  end if;
+
+  select array_agg(column_name order by column_name)
+    into v_client_found_columns
+  from information_schema.columns
+  where table_schema = 'tap_hub_project' and table_name = 'clients'
+    and column_name = any(v_client_required_columns);
+  if coalesce(cardinality(v_client_found_columns), 0) <> cardinality(v_client_required_columns) then
+    raise exception 'Local clients subset is missing Contacts-directory display fields';
   end if;
 
   select count(*) into v_profile_count from tap_hub_project.profiles;
