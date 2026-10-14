@@ -4,7 +4,7 @@ import type { ApiResult } from "@/lib/billing-ui/api";
 import type { Invoice, Receivable, Viewer } from "@/lib/billing-ui/types";
 import { validateInvoiceDraft, validateLine, validateReason } from "@/lib/billing-ui/validation";
 import { formatMoney, invoiceActions, receivableFor } from "@/lib/billing-ui/view-model";
-import { ActionButton, cellStyle, hintStyle, LedgerForm, OwnerAdminOnly, StatusBadge, tableStyle, type FormValues } from "./ui";
+import { ActionButton, hintStyle, LedgerForm, OwnerAdminOnly, StatusBadge, type FormValues } from "./ui";
 
 type Mutation = Promise<ApiResult<unknown>>;
 
@@ -18,30 +18,30 @@ export function InvoiceList({ invoices, receivables, clientNames, selectedId, on
   if (invoices.length === 0) return <p style={hintStyle}>No invoices yet.</p>;
   return (
     <div style={{ overflowX: "auto" }}>
-      <table style={tableStyle}>
+      <table className="bc-table">
         <thead>
           <tr>
-            <th style={cellStyle}>Invoice</th>
-            <th style={cellStyle}>Client</th>
-            <th style={cellStyle}>Status</th>
-            <th style={cellStyle}>Due</th>
-            <th style={cellStyle}>Balance</th>
+            <th>Invoice</th>
+            <th>Client</th>
+            <th>Status</th>
+            <th>Due</th>
+            <th className="r">Balance</th>
           </tr>
         </thead>
         <tbody>
           {invoices.map((invoice) => {
             const receivable = receivableFor(invoice.id, receivables);
             return (
-              <tr key={invoice.id} data-invoice-row={invoice.id} style={invoice.id === selectedId ? { background: "var(--teal-soft)" } : undefined}>
-                <td style={cellStyle}>
-                  <button type="button" onClick={() => onSelect(invoice.id)} style={{ background: "none", border: 0, padding: 0, color: "var(--teal)", fontWeight: 600, cursor: "pointer" }}>
+              <tr key={invoice.id} data-invoice-row={invoice.id} className={invoice.id === selectedId ? "on" : undefined}>
+                <td>
+                  <button type="button" onClick={() => onSelect(invoice.id)} className="bc-name bc-nowrap">
                     {invoice.invoice_number}
                   </button>
                 </td>
-                <td style={cellStyle}>{clientNames[invoice.client_id] || invoice.client_id}</td>
-                <td style={cellStyle}><StatusBadge status={invoice.status} /></td>
-                <td style={cellStyle}>{invoice.due_date}</td>
-                <td style={cellStyle}>{receivable ? formatMoney(receivable.balance) : "—"}</td>
+                <td>{clientNames[invoice.client_id] || invoice.client_id}</td>
+                <td><StatusBadge status={invoice.status} /></td>
+                <td className="bc-nowrap">{invoice.due_date}</td>
+                <td className="r">{receivable ? formatMoney(receivable.balance) : "—"}</td>
               </tr>
             );
           })}
@@ -102,29 +102,29 @@ export function InvoiceDetail({ invoice, receivable, viewer, handlers }: {
       {invoice.status === "void" ? <p style={hintStyle}>Voided {invoice.voided_at?.slice(0, 10)}{invoice.void_reason ? `: ${invoice.void_reason}` : ""}. Void invoices take no payments.</p> : null}
 
       <div style={{ overflowX: "auto" }}>
-        <table style={tableStyle}>
+        <table className="bc-table">
           <thead>
             <tr>
-              <th style={cellStyle}>Description</th>
-              <th style={cellStyle}>Period</th>
-              <th style={cellStyle}>Qty</th>
-              <th style={cellStyle}>Unit</th>
-              <th style={cellStyle}>Amount</th>
-              {actions.editable ? <th style={cellStyle} /> : null}
+              <th>Description</th>
+              <th>Period</th>
+              <th>Qty</th>
+              <th>Unit</th>
+              <th>Amount</th>
+              {actions.editable ? <th /> : null}
             </tr>
           </thead>
           <tbody>
             {lines.length === 0 ? (
-              <tr><td style={cellStyle} colSpan={actions.editable ? 6 : 5}>No lines yet.</td></tr>
+              <tr><td colSpan={actions.editable ? 6 : 5}>No lines yet.</td></tr>
             ) : lines.map((line) => (
               <tr key={line.id} data-line-row={line.id}>
-                <td style={cellStyle}>{line.description}</td>
-                <td style={cellStyle}>{line.period || "—"}</td>
-                <td style={cellStyle}>{String(line.quantity)}</td>
-                <td style={cellStyle}>{formatMoney(line.unit_amount)}</td>
-                <td style={cellStyle}>{formatMoney(line.amount)}</td>
+                <td>{line.description}</td>
+                <td>{line.period || "—"}</td>
+                <td>{String(line.quantity)}</td>
+                <td>{formatMoney(line.unit_amount)}</td>
+                <td>{formatMoney(line.amount)}</td>
                 {actions.editable ? (
-                  <td style={cellStyle}>
+                  <td>
                     <details>
                       <summary style={{ cursor: "pointer", fontSize: 12.5 }}>Edit</summary>
                       <LedgerForm
