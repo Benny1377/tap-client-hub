@@ -7,7 +7,7 @@ import { approvalRequests, noticesAwaitingSend, stageLabelsFrom, todayIso, viewe
 import { useLedger } from "@/components/billing/use-ledger";
 import { ClientPicker, OwnerAdminOnly, SectionView } from "@/components/billing/ui";
 import { ActiveHoldBanner, ActivityPanel, DecisionsPanel, HoldsPanel, type InvoiceOption } from "@/components/billing/collections-panels";
-import { AutomationPreviewPanel, LadderRungs, LadderSummary, MoneyByStage, PipelineBanner, WhoIsWhere, WorklistSummary, WorklistTable } from "@/components/billing/worklist-panels";
+import { AutomationPreviewPanel, LadderRungs, LadderSummary, MoneyByStage, PipelineBanner, PipelineTiles, WhoIsWhere, WorklistSummary, WorklistTable } from "@/components/billing/worklist-panels";
 import { CollectionsRulesEditor } from "@/components/billing/collections-rules-editor";
 
 const WORKLIST_PAGE = 50;
@@ -15,7 +15,6 @@ const TABS = [
   { id: "insights", label: "AR Insights" },
   { id: "pipeline", label: "Pipeline" },
   { id: "setup", label: "Setup & rules" },
-  { id: "activity", label: "Activity" },
 ] as const;
 type TabId = (typeof TABS)[number]["id"];
 
@@ -107,42 +106,53 @@ export default function CollectionsPage() {
       <TabPanel id="insights" active={tab}>
         <section aria-label="AR insights">
           <SectionView state={worklistState} label="AR insights">
-            {(data) => <WorklistSummary worklist={data} />}
+            {(data) => <WorklistSummary worklist={data} minimumBalance={state.rules.status === "ready" ? ruleSettings.settings.minimum_balance : null} />}
           </SectionView>
         </section>
-        <section className="bc-card" aria-label="Call list" style={{ marginTop: 20 }}>
-          <div className="bc-eyebrow">Where to focus first · ranked by the server&rsquo;s priority score</div>
-          <h3 className="bc-sect" style={{ fontSize: 18 }}>The accounts that need you now</h3>
-          <p className="bc-hint">Dollars are weighted up the older they get, so the most expensive and most overdue rise first. Open a score to see how it was built; pick a client to filter the page.</p>
+        <section className="bc-inscard" aria-label="Call list" style={{ marginTop: 16 }}>
+          <div className="bc-eyebrow">Where to focus first · ranked by priority</div>
+          <div className="ins-h" style={{ marginBottom: 4 }}>The accounts that need you now</div>
+          <div className="ins-b" style={{ marginBottom: 14 }}>Ranked by dollars, <b>weighted up the older they get</b>, so the most expensive and most overdue rise first. Start at the top. Open a score to see how it was built; pick a client to filter the page.</div>
           <SectionView state={worklistState} label="call list">
             {(data) => <WorklistTable worklist={data} onSelectClient={selectClient} onPage={setWorklistOffset} stageLabels={stageLabels} rules={rules} firmTimezone={firmTimezone} selectedClientId={clientId} />}
           </SectionView>
         </section>
+        <p className="bc-foot" style={{ marginTop: 18 }}><b>No guessed recovery rate.</b> Every figure here comes straight from Billing; nothing is estimated.</p>
       </TabPanel>
 
       <TabPanel id="pipeline" active={tab}>
         <SectionView state={worklistState} label="pipeline">
-          {(data) => <PipelineBanner worklist={data} />}
+          {(data) => (
+            <>
+              <PipelineBanner worklist={data} />
+              <PipelineTiles worklist={data} decisions={decisions} />
+              <MoneyByStage worklist={data} rules={rules} />
+            </>
+          )}
         </SectionView>
-        <h3 className="bc-sect">Needs your decision</h3>
-        <p className="bc-hint">Escalations and formal notices wait here for an Owner or Admin.</p>
-        <SectionView state={state.events} label="approvals">
-          {(rows) => <DecisionsPanel events={rows} {...eventProps} />}
-        </SectionView>
-        <h3 className="bc-sect" style={{ marginTop: 26 }}>The five-touch ladder <span style={{ color: "var(--muted)", fontWeight: 400, fontSize: 11.5, fontFamily: "inherit" }}>— open any touch to read its wording</span></h3>
+        <h3 className="bc-sect" style={{ marginTop: 26 }}>The five-touch ladder <span style={{ color: "var(--muted)", fontWeight: 400, fontSize: 11.5, fontFamily: "inherit" }}>— click any touch to read its wording</span></h3>
         <LadderRungs rules={rules} />
-        <div className="bc-stack">
-          <SectionView state={worklistState} label="ladder positions">
-            {(data) => <MoneyByStage worklist={data} rules={rules} />}
+        <SectionView state={worklistState} label="invoice positions">
+          {(data) => <WhoIsWhere worklist={data} rules={rules} stageLabels={stageLabels} firmTimezone={firmTimezone} onSelectClient={selectClient} />}
+        </SectionView>
+        <section className="bc-cfgsec" aria-label="Needs your decision" style={{ marginTop: 26 }}>
+          <h3 className="bc-sect">Needs your decision</h3>
+          <p className="bc-hint">Touches 4 and 5 hand off to an Owner or Admin. Escalations and formal notices wait here.</p>
+          <SectionView state={state.events} label="approvals">
+            {(rows) => <DecisionsPanel events={rows} {...eventProps} />}
           </SectionView>
-          <SectionView state={worklistState} label="invoice positions">
-            {(data) => <WhoIsWhere worklist={data} rules={rules} stageLabels={stageLabels} firmTimezone={firmTimezone} onSelectClient={selectClient} />}
+        </section>
+        <section className="bc-cfgsec" aria-label="Activity">
+          <h3 className="bc-sect">Activity</h3>
+          <p className="bc-hint">Every call, reminder, promise to pay, and decision, newest first.</p>
+          <SectionView state={state.events} label="Collections activity">
+            {(rows) => <ActivityPanel events={rows} {...eventProps} />}
           </SectionView>
-          <section className="bc-card" aria-label="Automation preview">
-            <h3 className="bc-sect">Automation preview</h3>
-            <AutomationPreviewPanel viewer={viewer} runPreview={(params) => api.preview(params)} stageLabels={stageLabels} />
-          </section>
-        </div>
+        </section>
+        <section className="bc-card" aria-label="Automation preview">
+          <h3 className="bc-sect">Automation preview</h3>
+          <AutomationPreviewPanel viewer={viewer} runPreview={(params) => api.preview(params)} stageLabels={stageLabels} />
+        </section>
       </TabPanel>
 
       <TabPanel id="setup" active={tab}>
@@ -176,12 +186,6 @@ export default function CollectionsPage() {
             )}
           </SectionView>
         </section>
-      </TabPanel>
-
-      <TabPanel id="activity" active={tab}>
-        <SectionView state={state.events} label="Collections activity">
-          {(rows) => <ActivityPanel events={rows} {...eventProps} />}
-        </SectionView>
       </TabPanel>
     </div>
   );

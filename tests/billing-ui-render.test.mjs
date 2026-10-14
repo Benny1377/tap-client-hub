@@ -565,14 +565,16 @@ const demoRules = [
   { stage: 4, label: "Owner escalation", days_past_due: 21, automatic: false, enabled: true, subject_template: "Owner review", body_template: "Internal only" },
 ];
 
-check("Collections opens on AR Insights with the other views mounted but hidden", () => {
+check("Collections has the demo's three views, opening on AR Insights with the others mounted but hidden", () => {
   const html = render(h(CollectionsPage));
   assert.match(html, /role="tablist"/);
-  for (const label of ["AR Insights", "Pipeline", "Setup &amp; rules", "Activity"]) assert.match(html, new RegExp(`role="tab"[^>]*>${label}`));
+  assert.equal((html.match(/role="tab"/g) || []).length, 3);
+  for (const label of ["AR Insights", "Pipeline", "Setup &amp; rules"]) assert.match(html, new RegExp(`role="tab"[^>]*>${label}`));
   assert.match(html, /id="collections-tab-insights"[^>]*aria-selected="true"/);
   assert.match(html, /role="tabpanel" id="collections-insights"[^>]*>/);
   assert.doesNotMatch(html, /id="collections-insights"[^>]*hidden/);
-  for (const id of ["pipeline", "setup", "activity"]) assert.match(html, new RegExp(`id="collections-${id}"[^>]*hidden`));
+  assert.match(html, /id="collections-pipeline"[^>]*hidden[\s\S]*?aria-label="Activity"/, "activity lives on the Pipeline view");
+  for (const id of ["pipeline", "setup"]) assert.match(html, new RegExp(`id="collections-${id}"[^>]*hidden`));
 });
 
 check("ladder touches flag the Owner/Admin gates and hide their wording until opened", () => {
@@ -605,6 +607,22 @@ check("decisions and activity render as separate panels", () => {
   assert.match(activity, /data-event-row="e-1"/);
   assert.match(activity, /aria-label="Log activity"/);
   assert.doesNotMatch(activity, /Approve formal notice/);
+});
+
+check("AR insight cards are built from the server summary, not demo copy", () => {
+  const html = render(h(worklistPanels.WorklistSummary, { worklist: worklist(), minimumBalance: "50.00" }));
+  for (const id of ["concentration", "chronic", "backlog", "oldest", "credits", "small"]) assert.match(html, new RegExp(`data-insight="${id}"`));
+  assert.match(html, /data-insight="chronic"[\s\S]*?0 accounts carry 3\+ unpaid invoices/);
+  assert.match(html, /data-insight="backlog"[\s\S]*?The problem is the backlog, not new billing\./, "$1,000 of $1,500 is 31+ days");
+  assert.doesNotMatch(html, /QuickBooks|AI agent|Tushar|\$234,196/);
+});
+
+check("pipeline tiles show the server's totals and the Owner/Admin queue", () => {
+  const html = render(h(worklistPanels.PipelineTiles, { worklist: worklist(), decisions: 2 }));
+  assert.equal((html.match(/class="bc-tile"/g) || []).length, 6);
+  assert.match(html, /Outstanding today[\s\S]*?\$1,300\.00/);
+  assert.match(html, /Waiting on Owner\/Admin[\s\S]*?>2</);
+  assert.match(html, /Oldest invoice[\s\S]*?45<small> days<\/small>/);
 });
 
 console.log(`billing UI render checks passed (${passed})`);

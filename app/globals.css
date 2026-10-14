@@ -545,7 +545,14 @@ select.pick { padding: 10px 12px; border: 1px solid var(--line); border-radius: 
 
 .bc-source { font-size: 11.5px; color: var(--muted); background: var(--navy-soft); border-radius: 9px; padding: 11px 15px; margin-bottom: 18px; line-height: 1.55; }
 .bc-source b { color: var(--navy); }
-.bc-tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 22px; }
+.bc-tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 22px; }
+.bc-insgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 2px; }
+.bc-inscard { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 19px 21px; box-shadow: var(--shadow); min-width: 0; }
+.bc-inscard .ins-h { font-family: "Fraunces", Georgia, serif; font-size: 18px; font-weight: 600; line-height: 1.22; margin-bottom: 8px; color: var(--ink); }
+.bc-inscard .ins-b { font-size: 12.5px; line-height: 1.6; color: var(--muted); margin-bottom: 12px; }
+.bc-inscard .ins-b b { color: var(--ink); }
+.bc-inscard .ins-a { font-size: 12px; color: var(--navy); font-weight: 600; line-height: 1.45; border-top: 1px solid var(--line2); padding-top: 10px; }
+.bc-inscard .ins-a span { color: var(--amber); font-weight: 700; }
 .bc-tile { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 17px 19px; box-shadow: var(--shadow); min-width: 0; }
 .bc-tile .k { font-size: 10px; letter-spacing: .09em; text-transform: uppercase; color: var(--faint); font-weight: 600; }
 .bc-tile .v { font-family: "Fraunces", Georgia, serif; font-size: 28px; font-weight: 600; margin-top: 9px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
@@ -658,7 +665,7 @@ textarea.bc-in { min-height: 150px; line-height: 1.6; resize: vertical; }
 
 @media (max-width: 900px) {
   .bc-tiles, .bc-ladder, .bc-cfgladder { grid-template-columns: repeat(2, 1fr); }
-  .bc-cols, .bc-cols.wide, .bc-mails, .bc-grid2 { grid-template-columns: 1fr; }
+  .bc-cols, .bc-cols.wide, .bc-mails, .bc-grid2, .bc-insgrid { grid-template-columns: 1fr; }
   .bc-banner { padding: 20px; }
   .bc-banner .big { font-size: 36px; }
   .bc-exrow { grid-template-columns: 1fr; }

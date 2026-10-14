@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import type { ApiResult } from "@/lib/billing-ui/api";
 import type { CollectionsAccount, CollectionsAutomationPreviewResponse, CollectionsReceivablesResponse } from "@/lib/collections-api";
 import type { CollectionRule, Viewer } from "@/lib/billing-ui/types";
@@ -10,11 +10,11 @@ import { ErrorBanner, OwnerAdminOnly } from "./ui";
 const amount = (value: string | number | null | undefined) => Number(value || 0);
 const percent = (part: number, whole: number) => (whole > 0 ? Math.round((part / whole) * 100) : 0);
 
-function Tile({ testId, label, value, detail, tone }: { testId?: string; label: string; value: string; detail?: string; tone?: "red" | "amber" | "green" }) {
+function Tile({ testId, label, value, unit, detail, tone }: { testId?: string; label: string; value: string; unit?: string; detail?: string; tone?: "red" | "amber" | "green" }) {
   return (
     <div className="bc-tile" data-summary={testId}>
       <div className="k">{label}</div>
-      <div className={`v${tone ? ` bc-${tone}` : ""}`}>{value}</div>
+      <div className={`v${tone ? ` bc-${tone}` : ""}`}>{value}{unit ? <small> {unit}</small> : null}</div>
       {detail ? <div className="d">{detail}</div> : null}
     </div>
   );
@@ -28,59 +28,123 @@ const AGING_BANDS = [
   { key: "days_over_90", testId: "aging-90", label: "90+ days", color: "var(--red)" },
 ] as const;
 
+/** "Not obvious from the report" card, as in the demo. */
+function InsightCard({ head, children, action, testId }: { head: string; children: ReactNode; action: string; testId: string }) {
+  return (
+    <div className="bc-inscard" data-insight={testId}>
+      <div className="bc-eyebrow">Not obvious from the report</div>
+      <div className="ins-h">{head}</div>
+      <div className="ins-b">{children}</div>
+      <div className="ins-a"><span>&rarr;</span> {action}</div>
+    </div>
+  );
+}
+
 /** AR insights from the server's Collections read model. Totals are the server's; only shares are derived here. */
-export function WorklistSummary({ worklist }: { worklist: CollectionsReceivablesResponse }) {
-  const { summary } = worklist;
+export function WorklistSummary({ worklist, minimumBalance = null }: { worklist: CollectionsReceivablesResponse; minimumBalance?: string | null }) {
+  const { summary, accounts, pagination } = worklist;
   const gross = amount(summary.gross_open_balance);
+  const recent = amount(summary.aging.current) + amount(summary.aging.days_1_30);
   const over30 = amount(summary.aging.days_31_60) + amount(summary.aging.days_61_90) + amount(summary.aging.days_over_90);
   const over90 = amount(summary.aging.days_over_90);
   const pastDue = gross - amount(summary.aging.current);
+  const partial = pagination.total_accounts > accounts.length;
+  // Concentration: the fewest accounts (largest first) that hold half the open balance.
+  const byBalance = [...accounts].sort((a, b) => amount(b.gross_open_balance) - amount(a.gross_open_balance));
+  let running = 0;
+  let top = 0;
+  for (const account of byBalance) {
+    if (running >= gross / 2) break;
+    running += amount(account.gross_open_balance);
+    top += 1;
+  }
+  const smallInvoices = accounts.flatMap((account) => account.invoices).filter((invoice) => invoice.below_minimum);
+  const smallTotal = smallInvoices.reduce((sum, invoice) => sum + amount(invoice.balance), 0);
+  const money = (value: number) => formatMoney(value.toFixed(2));
   return (
     <div>
       <div className="bc-source">
-        Balances come straight from <b>TAP Hub Billing</b>: every issued invoice, less the payments allocated to it.
-        Ages are counted from each due date. <b>As of {worklist.as_of_date} (firm date).</b>
+        Reading every issued invoice in <b>TAP Hub Billing</b>, less the payments allocated to it, so Collections always works the
+        current balance, never a stale report. Ages count from each due date. <b>As of {worklist.as_of_date} (firm date).</b>
       </div>
       <div className="bc-tiles">
         <Tile testId="net" label="Net AR outstanding" value={formatMoney(summary.net_ar_estimate)} tone="red" detail={`${summary.owing_accounts} account${summary.owing_accounts === 1 ? "" : "s"} still owe`} />
-        <Tile testId="past-due" label="Past due" value={`${percent(pastDue, gross)}%`} tone="red" detail={`${formatMoney(pastDue.toFixed(2))} of ${formatMoney(summary.gross_open_balance)} open`} />
-        <Tile testId="over-30" label="Over 30 days" value={`${percent(over30, gross)}%`} tone="amber" detail={`${formatMoney(over30.toFixed(2))} aged past a month`} />
-        <Tile testId="over-90" label="Over 90 days" value={formatMoney(summary.aging.days_over_90)} tone="amber" detail={`${percent(over90, gross)}% of open balance`} />
+        <Tile testId="past-due" label="Past due" value={`${percent(pastDue, gross)}%`} tone="red" detail={`${money(pastDue)} of ${formatMoney(summary.gross_open_balance)} is past its due date`} />
+        <Tile testId="over-30" label="Over 30 days" value={`${percent(over30, gross)}%`} tone="amber" detail={`${money(over30)} aged past a month`} />
+        <Tile testId="over-90" label="Over 90 days" value={formatMoney(summary.aging.days_over_90)} tone="amber" detail={`${percent(over90, gross)}% of AR · danger zone`} />
       </div>
-      <div className="bc-cols">
-        <section className="bc-card" aria-label="Aging">
-          <h3 className="bc-h">Aging <small>from Billing</small></h3>
-          <div className="bc-agebar" aria-hidden="true">
-            {AGING_BANDS.map((band) => {
-              const value = amount(summary.aging[band.key]);
-              return value > 0 ? <div key={band.key} style={{ flex: value, background: band.color }}>{percent(value, gross) >= 12 ? formatMoney(summary.aging[band.key]) : ""}</div> : null;
-            })}
-          </div>
-          <div className="bc-legend">
+      <div className="bc-insgrid">
+        <InsightCard
+          testId="concentration"
+          head={top > 0 && top < summary.owing_accounts ? `Your ${summary.owing_accounts} accounts are really ${top}.` : "The balance is spread across every account."}
+          action={top > 0 ? `Work ${top === 1 ? "this account" : `these ${top}`} first. Half the AR moves before you touch the long tail.` : "Nothing is owed right now."}
+        >
+          {top > 0 ? <>Just <b>{top} {top === 1 ? "client holds" : "clients hold"} {percent(running, gross)}%</b> of the money ({money(running)}). The call list below is ranked so they come first.</> : <>No open balance.</>}
+          {partial ? ` Based on the ${accounts.length} accounts on this page.` : ""}
+        </InsightCard>
+        <InsightCard
+          testId="chronic"
+          head={summary.chronic_accounts > 0 ? "Some of it is chronic, not forgetful." : "No chronic accounts yet."}
+          action={summary.chronic_accounts > 0 ? "These need a terms or pricing talk, not another reminder." : "Keep the ladder running so it stays that way."}
+        >
+          <b>{summary.chronic_accounts} account{summary.chronic_accounts === 1 ? " carries" : "s carry"} 3+ unpaid invoices.</b> Repeat balances scatter across an alphabetical list, so the pattern is easy to miss.
+        </InsightCard>
+        <InsightCard
+          testId="backlog"
+          head={over30 > recent ? "The problem is the backlog, not new billing." : "Most of it is recent."}
+          action={over30 > recent ? "Work the 31+ backlog first; the ladder keeps new invoices from piling up." : "The ladder catches these early, before they age."}
+        >
+          <span data-summary="gross">Of {formatMoney(summary.gross_open_balance)} open,</span> <b>{money(recent)} ({percent(recent, gross)}%)</b> is within 30 days and <b>{money(over30)} ({percent(over30, gross)}%)</b> is 31+ days.
+          <div className="bc-legend" style={{ marginTop: 10 }}>
             {AGING_BANDS.map((band) => (
               <span key={band.key} data-summary={band.testId}><i style={{ background: band.color }} />{band.label} <b style={{ color: "var(--ink)" }}>{formatMoney(summary.aging[band.key])}</b></span>
             ))}
           </div>
-          <p className="bc-foot">Open balance {formatMoney(summary.gross_open_balance)}, less {formatMoney(summary.unallocated_credit)} in unallocated payments, gives the net AR above.</p>
-        </section>
-        <section className="bc-card" aria-label="Accounts">
-          <h3 className="bc-h">Accounts <small>who owes</small></h3>
-          <table className="bc-table">
-            <tbody>
-              <tr data-summary="gross"><td>Open balance</td><td className="r"><b>{formatMoney(summary.gross_open_balance)}</b></td></tr>
-              <tr data-summary="credit"><td>Unallocated credit</td><td className="r">{formatMoney(summary.unallocated_credit)}</td></tr>
-              <tr data-summary="accounts"><td>Accounts owing</td><td className="r">{summary.owing_accounts}</td></tr>
-              <tr data-summary="invoices"><td>Open invoices</td><td className="r">{summary.open_invoice_count}</td></tr>
-              <tr data-summary="oldest"><td>Oldest invoice</td><td className={`r${summary.oldest_days_past_due >= 90 ? " old" : ""}`}>{summary.oldest_days_past_due} days</td></tr>
-            </tbody>
-          </table>
+        </InsightCard>
+        <InsightCard
+          testId="oldest"
+          head={over90 > 0 ? "The oldest money needs a person." : "Nothing is over 90 days."}
+          action={over90 > 0 ? "Escalation calls target the oldest, largest balances first." : "The oldest invoice is still inside the ladder."}
+        >
+          <b>{formatMoney(summary.aging.days_over_90)} is over 90 days</b> ({percent(over90, gross)}% of AR), and the oldest invoice is <b>{summary.oldest_days_past_due} days</b> past due.
+        </InsightCard>
+        <InsightCard
+          testId="credits"
+          head={amount(summary.unallocated_credit) > 0 ? "Part of it is already settled." : "No payments waiting to be applied."}
+          action={amount(summary.unallocated_credit) > 0 ? "Apply these in Billing first, so no one who paid gets chased." : "Payments are fully applied in Billing."}
+        >
+          <b>{formatMoney(summary.unallocated_credit)} in unallocated payments</b> is netted into the total above.
           {summary.credit_review_accounts > 0 ? (
-            <p data-credit-review-count className="bc-foot" style={{ color: "var(--gate-ink)" }}>
-              {summary.credit_review_accounts} account{summary.credit_review_accounts === 1 ? " has" : "s have"} unallocated payments to reconcile in Billing. Collections never allocates them.
-            </p>
+            <div data-credit-review-count style={{ marginTop: 6, color: "var(--gate-ink)" }}>{summary.credit_review_accounts} account{summary.credit_review_accounts === 1 ? " has" : "s have"} unallocated payments to reconcile in Billing. Collections never allocates them.</div>
           ) : null}
-        </section>
+        </InsightCard>
+        <InsightCard
+          testId="small"
+          head={smallInvoices.length > 0 ? `${smallInvoices.length} small balance${smallInvoices.length === 1 ? "" : "s"} cost more than they return.` : "No balances under the minimum."}
+          action={smallInvoices.length > 0 ? "Batch them into one statement or write them off. Don't spend a call on them." : "Every open invoice is worth a follow-up."}
+        >
+          <b>{smallInvoices.length} invoice{smallInvoices.length === 1 ? " is" : "s are"} under the {minimumBalance ? formatMoney(minimumBalance) : "minimum"} minimum</b> ({money(smallTotal)} in all). The ladder skips them.
+          {partial ? ` Based on the ${accounts.length} accounts on this page.` : ""}
+        </InsightCard>
       </div>
+    </div>
+  );
+}
+
+/** Pipeline headline tiles, as in the demo, from the server summary. */
+export function PipelineTiles({ worklist, decisions }: { worklist: CollectionsReceivablesResponse; decisions: number }) {
+  const { summary } = worklist;
+  const gross = amount(summary.gross_open_balance);
+  const over90 = amount(summary.aging.days_over_90);
+  const pastDue = gross - amount(summary.aging.current);
+  return (
+    <div className="bc-tiles" data-pipeline-tiles>
+      <Tile label="Outstanding today" value={formatMoney(summary.net_ar_estimate)} tone="red" detail={`${summary.owing_accounts} accounts · ${percent(pastDue, gross)}% already past due`} />
+      <Tile label="Over 90 days" value={formatMoney(summary.aging.days_over_90)} tone="amber" detail={`${percent(over90, gross)}% of AR · the danger zone`} />
+      <Tile label="Chronic accounts" value={String(summary.chronic_accounts)} detail="3+ unpaid invoices each" />
+      <Tile label="Waiting on Owner/Admin" value={String(decisions)} tone={decisions > 0 ? "amber" : undefined} detail="escalations and notices to decide" />
+      <Tile label="Stops the moment they pay" value="Yes" detail="a paid invoice leaves the ladder at once" />
+      <Tile label="Oldest invoice" value={`${summary.oldest_days_past_due}`} unit="days" detail={summary.oldest_days_past_due >= 90 ? "well past the ladder — needs a person" : "still inside the ladder"} />
     </div>
   );
 }
@@ -199,7 +263,7 @@ function Pager({ first, last, total, onPrevious, onNext, previousDisabled, nextD
   );
 }
 
-/** The call list: accounts ranked by the server's priority score, with each invoice's next step. */
+/** The call list, in the demo's "where to focus first" table: accounts ranked by the server's priority score. */
 export function WorklistTable({ worklist, onSelectClient, onPage, stageLabels = STAGE_LABELS, rules = [], firmTimezone = "America/Chicago", selectedClientId = null }: {
   worklist: CollectionsReceivablesResponse;
   onSelectClient: (clientId: string) => void;
@@ -220,12 +284,10 @@ export function WorklistTable({ worklist, onSelectClient, onPage, stageLabels = 
           <thead>
             <tr>
               <th>Client</th>
-              <th>Contact</th>
-              <th className="r">Open</th>
-              <th className="r">Credit</th>
+              <th className="r">Balance</th>
               <th className="r">Oldest</th>
+              <th className="r">Open</th>
               <th className="r">Priority</th>
-              <th>Invoices</th>
             </tr>
           </thead>
           <tbody>
@@ -233,21 +295,20 @@ export function WorklistTable({ worklist, onSelectClient, onPage, stageLabels = 
               <tr key={account.client_id} data-worklist-account={account.client_id} className={selectedClientId === account.client_id ? "on" : undefined}>
                 <td>
                   <button type="button" className="bc-name" onClick={() => onSelectClient(account.client_id)}>{account.client_name}</button>
+                  <div className="bc-small">
+                    {account.contact_name || "No primary contact"}
+                    {account.contact_phone ? ` · ${account.contact_phone}` : ""}
+                    {account.contact_email ? ` · ${account.contact_email}` : ""}
+                  </div>
+                  {amount(account.unallocated_credit) > 0 ? <div className="bc-small">{formatMoney(account.unallocated_credit)} unallocated credit</div> : null}
                   <Flags account={account} />
                 </td>
-                <td>
-                  {account.contact_name || "—"}
-                  {account.contact_phone ? <div className="bc-small">{account.contact_phone}</div> : null}
-                  {account.contact_email ? <div className="bc-small">{account.contact_email}</div> : null}
-                </td>
                 <td className="r bc-red">{formatMoney(account.gross_open_balance)}</td>
-                <td className="r">{formatMoney(account.unallocated_credit)}</td>
                 <td className={`r${account.oldest_days_past_due >= 90 ? " old" : account.oldest_days_past_due > 0 ? " late" : ""}`}>{account.oldest_days_past_due}d</td>
-                <td className="r"><ScoreBreakdown account={account} /></td>
-                <td>
+                <td className="r">
                   <details className="bc-details">
                     <summary>{account.open_invoice_count} open</summary>
-                    <table className="bc-table sm" style={{ marginTop: 6 }}>
+                    <table className="bc-table sm" style={{ marginTop: 6, textAlign: "left" }}>
                       <thead>
                         <tr>
                           <th>Invoice</th>
@@ -260,8 +321,8 @@ export function WorklistTable({ worklist, onSelectClient, onPage, stageLabels = 
                       <tbody>
                         {(account.invoices as WorklistInvoice[]).map((invoice) => (
                           <tr key={invoice.invoice_id} data-worklist-invoice={invoice.invoice_id} data-next-stage={invoice.next_stage ?? ""} data-awaiting={invoice.awaiting_approval ? invoice.awaiting_approval.stage : undefined}>
-                            <td>{invoice.invoice_number}</td>
-                            <td>{invoice.due_date}</td>
+                            <td className="bc-nowrap">{invoice.invoice_number}</td>
+                            <td className="bc-nowrap">{invoice.due_date}</td>
                             <td className="r">{formatMoney(invoice.balance)}</td>
                             <td className="r">{invoice.days_past_due}</td>
                             <td>
@@ -275,6 +336,7 @@ export function WorklistTable({ worklist, onSelectClient, onPage, stageLabels = 
                     </table>
                   </details>
                 </td>
+                <td className="r"><ScoreBreakdown account={account} /></td>
               </tr>
             ))}
           </tbody>
