@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { requireClientDataEditAccess } from "@/lib/access-server";
+import { requireClientDataEditAccess, resolveAccessIdentity } from "@/lib/access-server";
 
 export const dynamic = "force-dynamic";
 
@@ -8,6 +8,10 @@ type ContactInput = { id?: unknown; clientId?: unknown; category?: unknown; name
 const text = (value: unknown) => typeof value === "string" ? value.trim() : "";
 
 export async function GET() {
+  const identity = await resolveAccessIdentity();
+  if (!identity) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!identity.modules.includes("Clients")) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+
   try {
     const admin = createAdminClient();
     const [{ data: contactRows, error: contactsError }, { data: clients, error: clientsError }] = await Promise.all([
@@ -16,7 +20,10 @@ export async function GET() {
     ]);
     if (contactsError) throw contactsError;
     if (clientsError) throw clientsError;
-    const contacts = (contactRows || []).filter((contact: any) => contact.category === "internal" || contact.client?.status === "active");
+    const contacts = ((contactRows || []) as unknown as Array<{ category: string; client: { status: string } | Array<{ status: string }> | null }>)
+      .filter((contact) => contact.category === "internal" || (Array.isArray(contact.client)
+        ? contact.client.some((client) => client.status === "active")
+        : contact.client?.status === "active"));
     return NextResponse.json({ contacts, clients: clients || [] }, { headers: { "Cache-Control": "no-store, max-age=0" } });
   } catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : "Unable to load contacts" }, { status: 500 }); }
 }
@@ -36,8 +43,14 @@ export async function POST(request: Request) {
       if (clientError) throw clientError;
       if (!client) return NextResponse.json({ error: "Select a current active TAP client." }, { status: 400 });
     }
-    const { data, error } = await admin.from("contacts").insert({ client_id: category === "client" ? clientId : null, category, name, email: email || null, phone: phone || null, is_primary: isPrimary }).select("id, client_id, category, name, email, phone, is_primary").single();
+    if (isPrimary && category !== "client") return NextResponse.json({ error: "Only a client contact can be primary." }, { status: 400 });
+    const { data, error } = await admin.from("contacts").insert({ client_id: category === "client" ? clientId : null, category, name, email: email || null, phone: phone || null, is_primary: false }).select("id, client_id, category, name, email, phone, is_primary").single();
     if (error) throw error;
+    if (isPrimary) {
+      const { error: primaryError } = await admin.rpc("set_primary_client_contact", { p_contact_id: data.id, p_actor: access.identity!.id });
+      if (primaryError) throw primaryError;
+      data.is_primary = true;
+    }
     return NextResponse.json({ contact: data }, { status: 201 });
   } catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : "Unable to add contact" }, { status: 500 }); }
 }
@@ -57,8 +70,15 @@ export async function PATCH(request: Request) {
       if (clientError) throw clientError;
       if (!client) return NextResponse.json({ error: "Select a current active TAP client." }, { status: 400 });
     }
-    const { data, error } = await admin.from("contacts").update({ client_id: category === "client" ? clientId : null, category, name, email: email || null, phone: phone || null, is_primary: body.isPrimary === true, updated_at: new Date().toISOString() }).eq("id", id).select("id, client_id, category, name, email, phone, is_primary").single();
+    const isPrimary = body.isPrimary === true;
+    if (isPrimary && category !== "client") return NextResponse.json({ error: "Only a client contact can be primary." }, { status: 400 });
+    const { data, error } = await admin.from("contacts").update({ client_id: category === "client" ? clientId : null, category, name, email: email || null, phone: phone || null, is_primary: false, updated_at: new Date().toISOString() }).eq("id", id).select("id, client_id, category, name, email, phone, is_primary").single();
     if (error) throw error;
+    if (isPrimary) {
+      const { error: primaryError } = await admin.rpc("set_primary_client_contact", { p_contact_id: data.id, p_actor: access.identity!.id });
+      if (primaryError) throw primaryError;
+      data.is_primary = true;
+    }
     return NextResponse.json({ contact: data });
   } catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : "Unable to update contact" }, { status: 500 }); }
 }

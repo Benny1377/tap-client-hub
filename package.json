@@ -7,6 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "typecheck": "tsc --noEmit",
     "test:support": "node tests/support-shared-system.test.mjs && node tests/support-api-auth.test.mjs && node tests/support-inbox-dashboard.test.mjs"
   },
   "dependencies": {

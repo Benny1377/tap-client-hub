@@ -1,9 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerClient } from "@supabase/ssr";
+import { createHash } from "node:crypto";
 import { authContext, authError, authRequestId } from "@/lib/auth-debug";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+// The former repository-wide onboarding password was exposed in public source.
+// Keep only its digest so it cannot be reused through normal Supabase Auth.
+const REVOKED_PASSWORD_SHA256 = "73051c8843aca22f28c4ce0dbef2eb63b46851e9ba5ddd08285a851329d5fc1f";
 
 export async function POST(request: NextRequest) {
   const requestId = authRequestId(request);
@@ -31,6 +36,9 @@ export async function POST(request: NextRequest) {
   if (!email || !password) {
     console.warn("[auth.sign-in] missing credentials", { ...context, elapsedMs: Date.now() - startedAt });
     return NextResponse.json({ error: "Invalid email or password", requestId }, { status: 401, headers: { "x-auth-request-id": requestId } });
+  }
+  if (createHash("sha256").update(password).digest("hex") === REVOKED_PASSWORD_SHA256) {
+    return NextResponse.json({ error: "This legacy password is no longer accepted. Reset your password to continue.", requestId }, { status: 401, headers: { "x-auth-request-id": requestId, "Cache-Control": "no-store" } });
   }
 
   try {
