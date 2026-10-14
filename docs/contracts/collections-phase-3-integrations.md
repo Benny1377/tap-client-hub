@@ -66,7 +66,7 @@ Exact paths and schemas require Engineer A/Engineer B review before implementati
 | Operation | Proposed request and response | Access |
 | --- | --- | --- |
 | `POST /api/collections/automation/run` | Optional `{ "limit": number }` (default 50, max 200). Returns run identifier and counts for claimed, accepted, suppressed, needs-review, failed, and remaining attempts. No arbitrary recipient or production as-of-date input. | Machine identity only; never app-user cookie or public/anonymous. |
-| `GET /api/collections/deliveries` | Optional invoice/status filters and bounded `limit`/`offset`. Returns the exact safe fields defined in “Engineer A review answers”; no raw recipient, provider payload, key, or full rendered body. | Owner/Admin only. |
+| `GET /api/collections/deliveries` | Query filters: `invoice_id` (optional UUID), `status` (optional single allowed status), `limit` (default 50, max 200), and `offset` (default 0, min 0). Returns `{ items: DeliveryAttemptSummary[], pagination: { limit, offset, total } }`, ordered by `created_at DESC, attempt_id DESC`. Exact item fields are defined below; no raw recipient, provider payload, key, or full rendered body. | Owner/Admin only. |
 | `GET /api/collections/delivery-status` | Returns effective mode, readiness, stable missing-configuration codes, and a masked test address; never returns credentials or full addresses. | Owner/Admin only. |
 | `POST /api/collections/automation/test-run` | Owner/Admin “Run test now” using the current server-side preview, synthetic fixtures only, and the configured test mailbox. No recipient/body/as-of-date override. Worker rechecks all guards. | Owner/Admin only; test mode and all safety gates required. |
 | `POST /api/collections/deliveries/{id}/retry` | No recipient/body input. Only a known provider-rejected failure may be retried; uncertain provider outcome is `needs_review`, not blindly retried. Reuses the same invoice/stage idempotency identity. | Owner/Admin only, audited. |
@@ -132,7 +132,7 @@ Production/live send remains a separate gate: owner/client approval of provider,
 
 These answer the consumer/API questions raised in the UI review. They remain subject to Engineer A/B approval and local implementation tests; they do not enable delivery.
 
-1. **Delivery history response.** Each item returns only `attempt_id`, `invoice_id`, `invoice_number`, `client_id`, `stage`, `status`, `reason_code`, `reason_text`, `attempt_count`, `retryable`, `created_at`, `updated_at`, `next_attempt_at`, and `accepted_at`. Do not return client email, recipient hash, provider message ID, provider payload, secret/config values, or message body. `reason_text` is generated from stable codes below, not copied from provider errors. A reviewed forward-only migration must align the database status/`sent_at` naming to `accepted`/`accepted_at`; do not rewrite an existing migration.
+1. **Delivery history response.** `GET /api/collections/deliveries` returns `{ items, pagination: { limit, offset, total } }`. Filters are named `invoice_id`, `status`, `limit`, and `offset`; the stable order is `created_at DESC, attempt_id DESC`. Each item returns only `attempt_id`, `invoice_id`, `invoice_number`, `client_id`, `stage`, `status`, `reason_code`, `reason_text`, `attempt_count`, `retryable`, `created_at`, `updated_at`, `next_attempt_at`, and `accepted_at`. Do not return client email, recipient hash, provider message ID, provider payload, secret/config values, or message body. `reason_text` is generated from stable codes below, not copied from provider errors. A reviewed forward-only migration must align the database status/`sent_at` naming to `accepted`/`accepted_at`; do not rewrite an existing migration.
 
    Statuses and plain wording:
 
@@ -193,7 +193,7 @@ These answer the consumer/API questions raised in the UI review. They remain sub
 ## Approval record
 
 - Project owner: P3-D1–D8 and the Owner/Admin “Run test now” trigger approved on 2026-10-14. Engineer A/B review/approval remains pending.
-- Engineer A consumer review: pending.
+- Engineer A consumer review: approved on `4549344` (2026-10-14); this pagination-envelope clarification is an addendum for review.
 - Engineer B producer review: pending.
 - Approval date: pending.
 - Contract Change Requests: none yet.

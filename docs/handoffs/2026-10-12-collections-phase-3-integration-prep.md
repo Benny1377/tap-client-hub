@@ -35,7 +35,7 @@ The owner approved a **test-only email integration** over the Phase 2 preview/at
 The client approved a separate Supabase sandbox in principle, but the owner currently lacks permission to create another project. Continue with local Supabase only. If a shared sandbox becomes available later, use synthetic fixtures only, keep it separate from production, and keep automation/email disabled by default. See `docs/decisions/2026-10-13-collections-supabase-sandbox.md`.
 
 1. **Consumer/producer review:** Engineer A reviews exact route/UI contracts and Engineer B reviews queue/provider/security and synthetic-data enforcement.
-2. **Freeze the contract:** owner decisions P3-D1–D8 and Owner/Admin “Run test now” are approved; Collections emails exclude Billing's payment URL in the initial scope. Obtain Engineer A/B approval. Keep live sending explicitly excluded.
+2. **Freeze the contract:** owner decisions P3-D1–D8 and Owner/Admin “Run test now” are approved; Collections emails exclude Billing's payment URL in the initial scope. Engineer A approved at `4549344`; the subsequent deliveries pagination envelope needs Engineer A/B review. Keep live sending explicitly excluded.
 3. **Prepare harness:** address H4/H5 and preferably H6 so local contact workflows and repeatable fixtures work without manual SQL overlays.
 4. **Implement behind disabled defaults:** mock provider, test recipient rewriter, concurrency-safe worker, attempt history, sanitized audit/observability, and server-only machine authentication.
 5. **Validate without sending:** mock-provider and local synthetic tests first; confirm zero network provider calls and zero delivery attempts while disabled.
@@ -46,7 +46,7 @@ The client approved a separate Supabase sandbox in principle, but the owner curr
 
 - **Engineer B:** provider adapter, idempotent queue/worker, database/RLS changes, machine-auth route, audit, failure/retry policy, and mock/integration tests.
 - **Engineer A:** delivery-history UI, Owner/Admin controls, preview-vs-send clarity, disabled/error/needs-review states, responsive behavior, and browser validation.
-- **Project owner/client:** decisions P3-D1–D8 recorded; retain security/release approval for any live-send proposal and confirm the remaining test-run/payment-link details.
+- **Project owner/client:** decisions P3-D1–D8 recorded; retain security/release approval for any live-send proposal.
 - **Codex prep branch:** contract/handoff/index coordination only. No provider credential, actual email send, production migration, or implementation change is included here.
 
 ## Phase 3 acceptance checklist (proposed)
