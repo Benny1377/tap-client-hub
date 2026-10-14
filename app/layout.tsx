@@ -192,6 +192,10 @@ export default function RootLayout({
   const router = useRouter();
   const isAuthPage = pathname === "/login" || pathname.startsWith("/auth");
   const [accessLoading, setAccessLoading] = useState(!isAuthPage);
+  // True only once /api/me has answered. After signing in, the layout moves from
+  // /login to the app before the new identity loads; redirecting on the default
+  // (staff, no modules) would send every user to the fallback page.
+  const [accessKnown, setAccessKnown] = useState(false);
   const [role, setRole] = useState<string>("staff");
   const [realRole, setRealRole] = useState<string>("staff");
   const [userModules, setUserModules] = useState<string[]>([]);
@@ -215,6 +219,7 @@ export default function RootLayout({
         if (cancelled) return;
         const resolvedRole = normalizeRole(data.role);
         setRealRole(resolvedRole);
+        setAccessKnown(true);
         setRole(resolvedRole);
         setUserModules(Array.isArray(data.modules) ? data.modules : []);
         setUserName(String(data.name || ""));
@@ -240,9 +245,9 @@ export default function RootLayout({
   );
 
   useEffect(() => {
-    if (isAuthPage || accessLoading || canAccessPathname(role, userModules, pathname)) return;
+    if (isAuthPage || accessLoading || !accessKnown || canAccessPathname(role, userModules, pathname)) return;
     router.replace(firstAllowedRoute(role, userModules));
-  }, [accessLoading, isAuthPage, pathname, role, router, userModules]);
+  }, [accessKnown, accessLoading, isAuthPage, pathname, role, router, userModules]);
 
   // The full client dataset is several megabytes. Pages that do not consume it
   // should render without paying for that request.
