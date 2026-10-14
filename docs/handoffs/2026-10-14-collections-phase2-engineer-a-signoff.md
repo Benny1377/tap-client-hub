@@ -11,11 +11,11 @@
 
 | Branch | Head | Role | Merge order |
 | --- | --- | --- | --- |
-| `codex/collections-phase2-integration` | `53324a7` | Phase 1/2 backend (Engineer B) | 1 |
+| `codex/collections-phase2-integration` | `8ba6897` | Phase 1/2 backend (Engineer B), now including the S1 and H4/H5/H6 port | 1 |
 | `codex/collections-phase2-ui-validation` | `dd3472f` | Phase 1/2 UI, harness tools, validation records | 2 |
 | `codex/collections-phase2-demo-design` | this commit | Demo v14 design for Billing/Collections, plus the sign-in redirect fix | 3 |
 
-The S1 and H4/H5/H6 fixes on `codex/collections-phase3-contract` (`cc862c4`) must reach the Phase 2 line before release (condition 1). They touch no file changed on the UI branches.
+The S1 and H4/H5/H6 fixes were ported from `cc862c4` to the Phase 2 backend at `8ba6897`; the code is byte-identical to what was validated on `cc862c4`. The design branch and `8ba6897` merge without conflicts.
 
 ## Evidence
 
@@ -26,7 +26,8 @@ All runs used the local synthetic Supabase harness only. Automation stayed off, 
 | Backend `3bec72a`, first integrated pass | PASS: SQL suites, 48/48 API/DB/audit, Owner and staff browser flows | `docs/handoffs/2026-10-11-collections-phase2-ui-validation.md` |
 | Backend `53324a7` rerun | PASS: 5 SQL suites, 68/68 API/DB/audit, browser (rules editor, firm timezone, early higher stage, contact pause) | Same handoff, "Integrated rerun" section |
 | `cc862c4`, no workaround | PASS: clean reset, 5 SQL suites, 68/68; H4/H5/H6 confirmed; Contacts browser and primary-contact audit; S1 access matrix 12/12 | Engineer A report, 2026-10-14 |
-| This branch | PASS: `tsc`, UI data 42/42, UI render 60/60, access-policy regression, `npm run build`; ESLint clean on all changed files; `app/layout.tsx` keeps its 2 pre-existing findings | This commit |
+| **Final merged Phase 2** (design branch `298b813` merged with backend `8ba6897`; local only) | **PASS:** clean reset; 5 SQL suites; H4/H5/H6 present (fixture ages 40 and 15 days); **68/68 API/DB/audit with no workaround**; **S1 matrix 12/12**; `tsc`; UI data 42/42 and render 60/60; Phase 1/2 contract, contacts, route-access, access-policy, and support suites; `npm run build`; ESLint clean on changed files. Browser: login form → Owner lands on Clients, Contacts loads (3 contacts), Collections shows the three demo views and six insight cards. | Engineer A, 2026-10-14 |
+| This branch before the port | PASS: `tsc`, UI data 42/42, UI render 60/60, access-policy regression, `npm run build`; ESLint clean on all changed files; `app/layout.tsx` keeps its 2 pre-existing findings | This commit |
 
 ## Sign-in redirect fix (included here)
 
@@ -34,12 +35,12 @@ After signing in, the layout moved from `/login` into the app before `/api/me` a
 
 Verified through the real login form: Owner lands on Clients, and Collections staff land on Collections.
 
-## Release conditions (open)
+## Release conditions
 
-1. **S1 into the Phase 2 line (Engineer B):** bring the validated S1 (`GET /api/contacts` auth) and H4/H5/H6 changes from `cc862c4` into the Phase 2 integration line, then rerun the 68-check suite and the S1 matrix once on the merged result.
-2. **Joint review, then merge in the order above.** Nothing goes to `main` before sign-off.
-3. **Hosted migrations stay deferred** until release approval; no hosted test project is available yet.
-4. **Owner security actions:** COL-DEP-10 (rotate the exposed shared password) and COL-DEP-12 (review the historical credential-bearing migration).
+1. ~~S1 into the Phase 2 line~~ **Done:** ported at `8ba6897`, and the final merged rerun above passed.
+2. **Open: joint review, then merge in the order above** (`8ba6897` → `dd3472f` → this branch). Nothing goes to `main` before sign-off.
+3. **Open: hosted migrations stay deferred** until release approval; no hosted test project is available yet.
+4. **Open: owner security actions:** COL-DEP-10 (rotate the exposed shared password) and COL-DEP-12 (review the historical credential-bearing migration).
 
 ## Known, non-blocking
 
