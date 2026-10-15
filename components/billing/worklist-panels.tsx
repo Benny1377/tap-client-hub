@@ -6,6 +6,8 @@ import type { CollectionsAccount, CollectionsAutomationPreviewResponse, Collecti
 import type { CollectionRule, Viewer } from "@/lib/billing-ui/types";
 import { DISPOSITION_LABELS, formatMoney, nextStepText, PREVIEW_REASON_LABELS, stageLabel, STAGE_LABELS, viewerIsPowerUser, type StageLabels } from "@/lib/billing-ui/view-model";
 import { ErrorBanner, OwnerAdminOnly } from "./ui";
+import { LastTouch, PreviewAttemptNote } from "./delivery-panels";
+import type { LastDelivery, PreviewDeliveryAttempt } from "@/lib/billing-ui/delivery";
 
 const amount = (value: string | number | null | undefined) => Number(value || 0);
 const percent = (part: number, whole: number) => (whole > 0 ? Math.round((part / whole) * 100) : 0);
@@ -249,7 +251,8 @@ export function LadderRungs({ rules }: { rules: CollectionRule[] }) {
 }
 
 /** Progression fields come from the server's Collections worklist contract. */
-type WorklistInvoice = CollectionsAccount["invoices"][number];
+// Phase 3 adds a sanitized `last_delivery` per invoice; absent until the backend ships it.
+type WorklistInvoice = CollectionsAccount["invoices"][number] & { last_delivery?: LastDelivery | null };
 
 function Pager({ first, last, total, onPrevious, onNext, previousDisabled, nextDisabled, testId }: {
   first: number; last: number; total: number; onPrevious: () => void; onNext: () => void; previousDisabled: boolean; nextDisabled: boolean; testId?: string;
@@ -329,6 +332,7 @@ export function WorklistTable({ worklist, onSelectClient, onPage, stageLabels = 
                               <span style={invoice.awaiting_approval ? { color: "var(--gate-ink)" } : undefined}>{nextStepText(invoice, rules, stageLabels, firmTimezone)}</span>
                               {invoice.on_hold ? <div style={{ color: "var(--gate-ink)" }}>On hold</div> : null}
                               {invoice.below_minimum ? <div className="bc-muted">Below minimum</div> : null}
+                              <LastTouch delivery={invoice.last_delivery} stageLabels={stageLabels} firmTimezone={firmTimezone} />
                             </td>
                           </tr>
                         ))}
@@ -445,7 +449,7 @@ export function WhoIsWhere({ worklist, rules = [], stageLabels = STAGE_LABELS, f
                     <td>{invoice.invoice_number}</td>
                     <td className="r bc-red">{formatMoney(invoice.balance)}</td>
                     <td className={`r${invoice.days_past_due >= 90 ? " old" : ""}`}>{invoice.days_past_due}d</td>
-                    <td>{nextStepText(invoice, rules, stageLabels, firmTimezone)}{invoice.on_hold ? <span className="bc-pill amber" style={{ marginLeft: 6 }}>Hold</span> : null}</td>
+                    <td>{nextStepText(invoice, rules, stageLabels, firmTimezone)}{invoice.on_hold ? <span className="bc-pill amber" style={{ marginLeft: 6 }}>Hold</span> : null}<LastTouch delivery={invoice.last_delivery} stageLabels={stageLabels} firmTimezone={firmTimezone} /></td>
                     <td className="r"><span className={`bc-pill ${gate ? "amber" : "navy"}`}>{gate ? "Owner/Admin" : "Staff"}</span></td>
                   </tr>
                 );
@@ -495,6 +499,7 @@ export function PreviewResults({ preview, onPage, stageLabels = STAGE_LABELS }: 
                     <span className={`bc-pill ${action.disposition === "suppressed" ? "grey" : action.disposition === "approval_required" ? "amber" : "navy"}`}>{DISPOSITION_LABELS[action.disposition] || action.disposition}</span>
                     {action.suppression_reasons.map((reason) => <div key={reason} data-suppression={reason} className="bc-small">{PREVIEW_REASON_LABELS[reason] || reason}</div>)}
                     {action.review_warnings.map((warning) => <div key={warning} data-warning={warning} className="bc-small">Note: {PREVIEW_REASON_LABELS[warning] || warning}</div>)}
+                    <PreviewAttemptNote attempt={(action as { delivery_attempt?: PreviewDeliveryAttempt | null }).delivery_attempt} />
                   </td>
                 </tr>
               ))}

@@ -162,8 +162,8 @@ export function CollectionsRulesEditor({
       <section className="bc-cfgsec" aria-label="Sender and routing">
         <h3 className="bc-sect">Sender &amp; routing</h3>
         <div className="bc-cfgcard locked">
-          <span className="bc-label">Not configurable yet</span>
-          <p className="bc-hint" style={{ margin: 0 }}>The sending address, reply-to, and test recipient are set up with the email integration in a later phase. Until then TAP Hub sends nothing.</p>
+          <span className="bc-label">Set on the server</span>
+          <p className="bc-hint" style={{ margin: 0 }}>The sending address, reply-to, and test mailbox are set on the server, never in this editor. &ldquo;Email delivery&rdquo; below shows what is configured; clients never receive email in this phase.</p>
         </div>
       </section>
 

@@ -21,6 +21,7 @@ import type {
   ReceivablesResponse,
   Viewer,
 } from "./types";
+import type { DeliveriesQuery, DeliveriesResponse, DeliveryAttemptSummary, DeliverySetup } from "./delivery";
 
 export type ApiErrorKind = "unauthorized" | "forbidden" | "not_found" | "conflict" | "invalid" | "server" | "network";
 
@@ -127,6 +128,26 @@ export function createBillingApi(fetchImpl: FetchLike) {
         ...(params.limit !== undefined ? { limit: params.limit } : {}),
         ...(params.offset !== undefined ? { offset: params.offset } : {}),
       }),
+
+    // ---- Phase 3 (test-only email delivery), Owner/Admin. Routes per the Phase 3 contract;
+    // until the backend ships they answer 404 without a code (see endpointMissing).
+    /** Readiness for test mode. Reports only; never starts sending. */
+    deliveryStatus: () => request<DeliverySetup>(fetchImpl, "/api/collections/delivery-status"),
+    /** Delivery history, newest first. */
+    deliveries: (params: DeliveriesQuery = {}) => {
+      const query = new URLSearchParams();
+      if (params.invoiceId) query.set("invoice_id", params.invoiceId);
+      if (params.status) query.set("status", params.status);
+      if (params.limit !== undefined) query.set("limit", String(params.limit));
+      if (params.offset !== undefined) query.set("offset", String(params.offset));
+      const suffix = query.toString();
+      return request<DeliveriesResponse>(fetchImpl, `/api/collections/deliveries${suffix ? `?${suffix}` : ""}`);
+    },
+    /** Retry a known transient failure. Takes no recipient or body. */
+    retryDelivery: (attemptId: string) =>
+      post<{ attempt: DeliveryAttemptSummary }>(fetchImpl, `/api/collections/deliveries/${encodeURIComponent(attemptId)}/retry`, {}),
+    /** Off-only pause. Proposed route (contract item 10 names no path yet); re-enabling is a server change. */
+    pauseAutomation: () => post<DeliverySetup>(fetchImpl, "/api/collections/automation/pause", {}),
 
     createInvoice: (input: { client_id: string; invoice_number: string; issue_date: string; due_date: string; memo?: string | null }) =>
       post<{ invoice: Invoice }>(fetchImpl, "/api/billing/invoices", input),

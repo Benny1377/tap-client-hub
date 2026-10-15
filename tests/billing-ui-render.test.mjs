@@ -625,4 +625,73 @@ check("pipeline tiles show the server's totals and the Owner/Admin queue", () =>
   assert.match(html, /Oldest invoice[\s\S]*?45<small> days<\/small>/);
 });
 
+// --- Phase 3 (test-only email delivery) UI ------------------------------------
+const deliveryPanels = loadTs("components/billing/delivery-panels.tsx");
+const missingRoute = { ok: false, status: 404, kind: "not_found", message: "Request failed (404)" };
+const setup = (overrides = {}) => ({ ok: true, status: 200, data: { mode: "test", automation_enabled: true, test_ready: true, missing: [], test_recipient_masked: "t***@example.invalid", ...overrides } });
+
+check("delivery setup shows readiness, the masked test mailbox, and an off-only pause", () => {
+  assert.match(render(h(deliveryPanels.DeliverySetupView, { result: null, onPause: noop })), /Loading email delivery status/);
+  assert.match(render(h(deliveryPanels.DeliverySetupView, { result: missingRoute, onPause: noop })), /data-delivery-unavailable[\s\S]*not available on this server yet/);
+  const ready = render(h(deliveryPanels.DeliverySetupView, { result: setup(), onPause: noop }));
+  assert.match(ready, /data-delivery-mode="test"/);
+  assert.match(ready, /data-test-ready="true"[^>]*>Ready for test sends/);
+  assert.match(ready, /data-test-recipient="true">t\*\*\*@example\.invalid/);
+  assert.match(ready, /data-confirm-action="pause-automation"[\s\S]*Pause automation/);
+  assert.doesNotMatch(ready, /Resume|Turn on|Enable automation/i, "the UI can only turn automation off");
+  const blocked = render(h(deliveryPanels.DeliverySetupView, { result: setup({ mode: "disabled", automation_enabled: false, test_ready: false, missing: ["DELIVERY_DISABLED", "TEST_RECIPIENT_MISSING"], test_recipient_masked: null }), onPause: noop }));
+  assert.match(blocked, /data-missing="DELIVERY_DISABLED"[\s\S]*Email delivery is turned off\./);
+  assert.match(blocked, /data-missing="TEST_RECIPIENT_MISSING"[\s\S]*Test mailbox is not configured\./);
+  assert.match(blocked, /data-automation-off/);
+  assert.doesNotMatch(blocked, /pause-automation/);
+});
+
+const attemptRow = (overrides = {}) => ({
+  attempt_id: "a-1", invoice_id: "inv-1", invoice_number: "TAP-1", client_id: "c-1", stage: 2, status: "accepted", reason_code: null, reason_text: null,
+  attempt_count: 1, retryable: false, created_at: "2026-10-15T14:00:00Z", updated_at: "2026-10-15T14:00:05Z", next_attempt_at: null, accepted_at: "2026-10-15T14:00:05Z", ...overrides,
+});
+const historyView = (result, extra = {}) => render(h(deliveryPanels.DeliveryHistoryView, { result, status: "", invoiceId: "", invoiceOptions, onFilter: () => {}, onPage: () => {}, onRetry: noop, ...extra }));
+
+check("delivery history uses the contract wording and offers retry only for retryable failures", () => {
+  const items = [
+    attemptRow(),
+    attemptRow({ attempt_id: "a-2", status: "failed", reason_code: "PROVIDER_RATE_LIMITED", retryable: true, accepted_at: null, next_attempt_at: "2026-10-15T15:00:00Z" }),
+    attemptRow({ attempt_id: "a-3", status: "failed", reason_code: "PROVIDER_REJECTED", retryable: false, accepted_at: null }),
+    attemptRow({ attempt_id: "a-4", status: "suppressed", reason_code: "ACTIVE_HOLD", accepted_at: null }),
+    attemptRow({ attempt_id: "a-5", status: "needs_review", reason_code: "PROVIDER_OUTCOME_UNKNOWN", accepted_at: null }),
+  ];
+  const html = historyView({ ok: true, status: 200, data: { items, pagination: { limit: 50, offset: 0, total: 5 } } });
+  assert.match(html, /data-delivery-attempt="a-1"[\s\S]*?Accepted by email provider/);
+  assert.match(html, /data-delivery-attempt="a-2" data-retryable="true"[\s\S]*?Email provider is temporarily rate-limiting requests\.[\s\S]*?>Retry</);
+  assert.doesNotMatch(html, /data-delivery-attempt="a-3"[^]*?>Retry<\/button>[^]*?data-delivery-attempt="a-4"/, "permanent rejection is not retryable");
+  assert.equal((html.match(/>Retry</g) || []).length, 1);
+  assert.match(html, /data-delivery-attempt="a-4"[\s\S]*?Not sent[\s\S]*?On hold; no email sent\./);
+  assert.match(html, /data-delivery-attempt="a-5"[\s\S]*?Needs review[\s\S]*?review before retrying/);
+  assert.match(html, /does not prove the email was delivered or read/);
+  assert.match(html, /Showing 1–5 of 5/);
+  assert.match(historyView(missingRoute), /data-delivery-unavailable/);
+  assert.match(historyView({ ok: true, status: 200, data: { items: [], pagination: { limit: 50, offset: 0, total: 0 } } }, { status: "failed" }), /No delivery attempts match these filters/);
+});
+
+check("staff never load delivery settings or history", () => {
+  const exploding = { deliveryStatus: () => { throw new Error("must not be called"); }, deliveries: () => { throw new Error("must not be called"); } };
+  for (const viewer of [staff, manager]) {
+    assert.match(render(h(deliveryPanels.DeliverySetupPanel, { api: exploding, viewer })), /Email delivery settings requires Owner\/Admin/);
+    assert.match(render(h(deliveryPanels.DeliveryHistoryPanel, { api: exploding, viewer, invoiceOptions })), /Delivery history requires Owner\/Admin/);
+  }
+});
+
+check("the call list shows each invoice's last email, and the preview shows existing attempts", () => {
+  const touched = { ...worklistAccount.invoices[0], last_delivery: { stage: 2, status: "accepted", occurred_at: "2026-10-15T03:00:00Z" } };
+  const html = render(h(worklistPanels.WorklistTable, { worklist: worklist({ accounts: [{ ...worklistAccount, invoices: [touched] }] }), onSelectClient: () => {}, onPage: () => {}, firmTimezone: "America/Chicago" }));
+  assert.match(html, /data-last-delivery="accepted"[^>]*>Last email: Accepted by email provider · 2 · Professional reminder · 2026-10-14/, "firm-timezone date");
+  assert.doesNotMatch(render(h(worklistPanels.WorklistTable, { worklist: worklist(), onSelectClient: () => {}, onPage: () => {} })), /data-last-delivery/, "absent until the backend sends it");
+  const preview = {
+    as_of_date: TODAY, automation_enabled: false, delivery_mode: "disabled",
+    actions: [{ client_id: "c-1", client_name: "Acme LLC", contact_phone: null, invoice_id: "inv-1", invoice_number: "TAP-1", balance: "1000.00", days_past_due: 45, stage: 2, action_type: "reminder_candidate", disposition: "preview_only", suppression_reasons: [], review_warnings: [], delivery_performed: false, delivery_attempt: { attempt_id: "a-1", status: "queued", reason_code: null, retryable: false, updated_at: "2026-10-15T14:00:00Z" } }],
+    pagination: { limit: 50, offset: 0, total_actions: 1, has_more: false },
+  };
+  assert.match(render(h(worklistPanels.PreviewResults, { preview, onPage: () => {} })), /data-preview-attempt="queued"[^>]*>Already attempted: Waiting to send/);
+});
+
 console.log(`billing UI render checks passed (${passed})`);
