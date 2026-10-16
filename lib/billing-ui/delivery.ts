@@ -1,10 +1,20 @@
 // Phase 3 (test-only email delivery): consumer-side types and wording.
 // Shapes follow docs/contracts/collections-phase-3-integrations.md ("Engineer A
-// review answers", contract 43f2ea2). They live here until the producer publishes
-// shared types in lib/collections-api.ts; then these should be replaced by those.
+// review answers", contract 43f2ea2). Wire-shape types are shared from
+// lib/collections-api.ts; this module keeps UI labels and display helpers.
 import type { ApiResult } from "./api";
+import type {
+  CollectionsDeliveryAttemptRef,
+  CollectionsDeliveryAttemptSummary,
+  CollectionsDeliveryHistoryResponse,
+  CollectionsDeliveryMissingSetting,
+  CollectionsDeliveryReasonCode,
+  CollectionsDeliveryStatus,
+  CollectionsDeliveryStatusResponse,
+  CollectionsLastDelivery,
+} from "@/lib/collections-api";
 
-export type DeliveryStatus = "queued" | "sending" | "accepted" | "suppressed" | "needs_review" | "failed";
+export type DeliveryStatus = CollectionsDeliveryStatus;
 
 export const DELIVERY_STATUSES: DeliveryStatus[] = ["queued", "sending", "accepted", "suppressed", "needs_review", "failed"];
 
@@ -28,7 +38,7 @@ export const DELIVERY_STATUS_TONES: Record<DeliveryStatus, "navy" | "blue" | "gr
 };
 
 /** Stable reason codes and their plain wording (contract table, word for word). */
-export const DELIVERY_REASON_LABELS: Record<string, string> = {
+export const DELIVERY_REASON_LABELS: Record<CollectionsDeliveryReasonCode, string> = {
   ACTIVE_HOLD: "On hold; no email sent.",
   UNALLOCATED_CREDIT_REVIEW: "Credit/payment needs review.",
   CONTACT_REVIEW_REQUIRED: "Choose one primary contact with an email.",
@@ -50,7 +60,7 @@ export const DELIVERY_REASON_LABELS: Record<string, string> = {
 };
 
 /** What still blocks test mode, from GET /api/collections/delivery-status `missing`. */
-export const MISSING_SETTING_LABELS: Record<string, string> = {
+export const MISSING_SETTING_LABELS: Record<CollectionsDeliveryMissingSetting, string> = {
   DELIVERY_DISABLED: "Email delivery is turned off.",
   AUTOMATION_PAUSED: "Automation is paused.",
   PROVIDER_KEY_MISSING: "Email provider is not configured.",
@@ -60,37 +70,10 @@ export const MISSING_SETTING_LABELS: Record<string, string> = {
   ENVIRONMENT_NOT_ALLOWLISTED: "This environment is not approved for test sends.",
 };
 
-/** GET /api/collections/delivery-status (Owner/Admin). Never carries secrets or a full mailbox. */
-export interface DeliverySetup {
-  mode: "disabled" | "test";
-  automation_enabled: boolean;
-  test_ready: boolean;
-  missing: string[];
-  test_recipient_masked: string | null;
-}
-
-/** One item of GET /api/collections/deliveries. No recipient, provider ID, payload, or body. */
-export interface DeliveryAttemptSummary {
-  attempt_id: string;
-  invoice_id: string;
-  invoice_number: string;
-  client_id: string;
-  stage: number;
-  status: DeliveryStatus;
-  reason_code: string | null;
-  reason_text: string | null;
-  attempt_count: number;
-  retryable: boolean;
-  created_at: string;
-  updated_at: string;
-  next_attempt_at: string | null;
-  accepted_at: string | null;
-}
-
-export interface DeliveriesResponse {
-  items: DeliveryAttemptSummary[];
-  pagination: { limit: number; offset: number; total: number };
-}
+/** Shared producer/consumer contract types; keep route wire-shapes defined once. */
+export type DeliverySetup = CollectionsDeliveryStatusResponse;
+export type DeliveryAttemptSummary = CollectionsDeliveryAttemptSummary;
+export type DeliveriesResponse = CollectionsDeliveryHistoryResponse;
 
 export interface DeliveriesQuery {
   invoiceId?: string | null;
@@ -100,20 +83,10 @@ export interface DeliveriesQuery {
 }
 
 /** Worklist invoices gain a sanitized `last_delivery` (readable by every Collections reader). */
-export interface LastDelivery {
-  stage: number;
-  status: DeliveryStatus;
-  occurred_at: string;
-}
+export type LastDelivery = CollectionsLastDelivery;
 
 /** Preview items gain the invoice/stage's existing attempt, if any, so nothing looks like a second send. */
-export interface PreviewDeliveryAttempt {
-  attempt_id: string;
-  status: DeliveryStatus;
-  reason_code: string | null;
-  retryable: boolean;
-  updated_at: string;
-}
+export type PreviewDeliveryAttempt = CollectionsDeliveryAttemptRef;
 
 export function deliveryStatusLabel(status: string) {
   return DELIVERY_STATUS_LABELS[status as DeliveryStatus] || status;

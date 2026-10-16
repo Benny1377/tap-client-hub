@@ -631,18 +631,21 @@ const missingRoute = { ok: false, status: 404, kind: "not_found", message: "Requ
 const setup = (overrides = {}) => ({ ok: true, status: 200, data: { mode: "test", automation_enabled: true, test_ready: true, missing: [], test_recipient_masked: "t***@example.invalid", ...overrides } });
 
 check("delivery setup shows readiness, the masked test mailbox, and an off-only pause", () => {
-  assert.match(render(h(deliveryPanels.DeliverySetupView, { result: null, onPause: noop })), /Loading email delivery status/);
-  assert.match(render(h(deliveryPanels.DeliverySetupView, { result: missingRoute, onPause: noop })), /data-delivery-unavailable[\s\S]*not available on this server yet/);
-  const ready = render(h(deliveryPanels.DeliverySetupView, { result: setup(), onPause: noop }));
+  assert.match(render(h(deliveryPanels.DeliverySetupView, { result: null, onPause: noop, onTestRun: noop })), /Loading email delivery status/);
+  assert.match(render(h(deliveryPanels.DeliverySetupView, { result: missingRoute, onPause: noop, onTestRun: noop })), /data-delivery-unavailable[\s\S]*not available on this server yet/);
+  const ready = render(h(deliveryPanels.DeliverySetupView, { result: setup(), onPause: noop, onTestRun: noop }));
   assert.match(ready, /data-delivery-mode="test"/);
   assert.match(ready, /data-test-ready="true"[^>]*>Ready for test sends/);
   assert.match(ready, /data-test-recipient="true">t\*\*\*@example\.invalid/);
+  assert.match(ready, /data-confirm-action="run-test-now"[\s\S]*Run test now/);
+  assert.match(ready, /synthetic fixture data only[\s\S]*no client email is sent/);
   assert.match(ready, /data-confirm-action="pause-automation"[\s\S]*Pause automation/);
   assert.doesNotMatch(ready, /Resume|Turn on|Enable automation/i, "the UI can only turn automation off");
-  const blocked = render(h(deliveryPanels.DeliverySetupView, { result: setup({ mode: "disabled", automation_enabled: false, test_ready: false, missing: ["DELIVERY_DISABLED", "TEST_RECIPIENT_MISSING"], test_recipient_masked: null }), onPause: noop }));
+  const blocked = render(h(deliveryPanels.DeliverySetupView, { result: setup({ mode: "disabled", automation_enabled: false, test_ready: false, missing: ["DELIVERY_DISABLED", "TEST_RECIPIENT_MISSING"], test_recipient_masked: null }), onPause: noop, onTestRun: noop }));
   assert.match(blocked, /data-missing="DELIVERY_DISABLED"[\s\S]*Email delivery is turned off\./);
   assert.match(blocked, /data-missing="TEST_RECIPIENT_MISSING"[\s\S]*Test mailbox is not configured\./);
   assert.match(blocked, /data-automation-off/);
+  assert.doesNotMatch(blocked, /data-confirm-action="run-test-now"/);
   assert.doesNotMatch(blocked, /pause-automation/);
 });
 

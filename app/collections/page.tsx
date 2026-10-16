@@ -28,6 +28,7 @@ export default function CollectionsPage() {
   const [tab, setTab] = useState<TabId>("insights");
   const [clientId, setClientId] = useState<string | null>(null);
   const [worklistOffset, setWorklistOffset] = useState(0);
+  const [deliveryRefreshKey, setDeliveryRefreshKey] = useState(0);
   // Two loaders: paging the call list reloads only the worklist, not holds and activity.
   const ledger = useLedger(clientId, ["holds", "events", "receivables", "rules"]);
   const calls = useLedger(clientId, ["worklist"], { worklistLimit: WORKLIST_PAGE, worklistOffset, includeMeta: false });
@@ -154,7 +155,7 @@ export default function CollectionsPage() {
           <section className="bc-card" aria-label="Delivery history" style={{ marginBottom: 20 }}>
             <h3 className="bc-sect">Delivery history</h3>
             <p className="bc-hint">Every test email attempt, newest first. Owner/Admin only; staff see each invoice&rsquo;s last email on the call list.</p>
-            <DeliveryHistoryPanel api={api} viewer={viewer} invoiceOptions={invoiceOptions} stageLabels={stageLabels} firmTimezone={firmTimezone} />
+            <DeliveryHistoryPanel api={api} viewer={viewer} invoiceOptions={invoiceOptions} stageLabels={stageLabels} firmTimezone={firmTimezone} refreshKey={deliveryRefreshKey} />
           </section>
         ) : null}
         <section className="bc-card" aria-label="Automation preview">
@@ -179,7 +180,7 @@ export default function CollectionsPage() {
           <section className="bc-cfgsec" aria-label="Email delivery">
             <h3 className="bc-sect">Email delivery (test mode)</h3>
             <p className="bc-hint">Whether test sends are ready, and what is still missing. Sending to clients is not part of this phase.</p>
-            <DeliverySetupPanel api={api} viewer={viewer} />
+            <DeliverySetupPanel api={api} viewer={viewer} onTestRunComplete={() => setDeliveryRefreshKey((current) => current + 1)} />
           </section>
         ) : null}
         <section className="bc-cfgsec" aria-label="Holds">

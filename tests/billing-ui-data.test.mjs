@@ -479,22 +479,27 @@ await check("Phase 3 delivery routes and query names follow the contract", async
     "GET /api/collections/delivery-status": [200, { mode: "disabled", automation_enabled: false, test_ready: false, missing: ["DELIVERY_DISABLED"], test_recipient_masked: null }],
     "GET /api/collections/deliveries": [200, { items: [], pagination: { limit: 50, offset: 0, total: 0 } }],
     "POST /api/collections/deliveries/a%2F1/retry": [200, { attempt: {} }],
-    "POST /api/collections/automation/pause": [200, {}],
+    "POST /api/collections/automation/test-run": [200, { run_id: "run-1" }],
+    "POST /api/collections/automation/pause": [200, { mode: "disabled" }],
   });
   const client = api.createBillingApi(fetchImpl);
   assert.equal((await client.deliveryStatus()).ok, true);
   await client.deliveries({ invoiceId: "inv-1", status: "failed", limit: 50, offset: 100 });
   await client.deliveries();
   await client.retryDelivery("a/1");
+  await client.testRun();
   await client.pauseAutomation();
   assert.deepEqual(calls.map((call) => `${call.method} ${call.url}`), [
     "GET /api/collections/delivery-status",
     "GET /api/collections/deliveries?invoice_id=inv-1&status=failed&limit=50&offset=100",
     "GET /api/collections/deliveries",
     "POST /api/collections/deliveries/a%2F1/retry",
+    "POST /api/collections/automation/test-run",
     "POST /api/collections/automation/pause",
   ]);
   assert.deepEqual(calls[3].body, {}, "retry sends no recipient or body");
+  assert.equal(calls[4].body, undefined, "test run accepts no client-controlled data");
+  assert.equal(calls[5].body, undefined, "pause accepts no request body");
 });
 
 await check("every contract status, reason code, and missing setting has plain wording", () => {

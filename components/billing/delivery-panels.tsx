@@ -54,9 +54,10 @@ export function PreviewAttemptNote({ attempt }: { attempt: PreviewDeliveryAttemp
 const NOT_INSTALLED = "Email delivery is not available on this server yet. Once the Phase 3 backend is installed, this shows whether test mode is ready.";
 
 /** Pure view of GET /api/collections/delivery-status, plus the off-only pause. */
-export function DeliverySetupView({ result, onPause }: {
+export function DeliverySetupView({ result, onPause, onTestRun }: {
   result: ApiResult<DeliverySetup> | null;
   onPause: () => Promise<ApiResult<unknown>>;
+  onTestRun: () => Promise<ApiResult<unknown>>;
 }) {
   if (!result) return <p role="status" className="bc-hint">Loading email delivery status…</p>;
   if (endpointMissing(result)) return <p className="bc-hint" data-delivery-unavailable>{NOT_INSTALLED}</p>;
@@ -91,6 +92,15 @@ export function DeliverySetupView({ result, onPause }: {
         {setup.automation_enabled ? (
           <>
             <p className="bc-hint" style={{ margin: "0 0 10px" }}>Automation is <b>on</b> for test mode. Pausing stops new work at once.</p>
+            {setup.test_ready ? (
+              <ConfirmAction
+                testId="run-test-now"
+                label="Run test now"
+                description="This uses the current server-side preview and synthetic fixture data only. The server rewrites the recipient to the configured test mailbox; no client email is sent."
+                confirmLabel="Start test run"
+                onConfirm={onTestRun}
+              />
+            ) : <p className="bc-hint" data-test-run-blocked>Run test now is unavailable until all test-mode safety checks are ready.</p>}
             <ConfirmAction
               testId="pause-automation"
               label="Pause automation"
@@ -110,22 +120,37 @@ export function DeliverySetupView({ result, onPause }: {
 }
 
 /** Loads delivery status for Owner/Admin; other roles never call the route. */
-export function DeliverySetupPanel({ api, viewer }: { api: BillingApi; viewer: Viewer | null }) {
+export function DeliverySetupPanel({ api, viewer, onTestRunComplete }: { api: BillingApi; viewer: Viewer | null; onTestRunComplete: () => void }) {
   const power = viewerIsPowerUser(viewer);
   const [result, setResult] = useState<ApiResult<DeliverySetup> | null>(null);
+  const [testRunFinished, setTestRunFinished] = useState(false);
   const load = useCallback(() => api.deliveryStatus().then(setResult), [api]);
   useEffect(() => { if (power) void load(); }, [power, load]);
   if (!power) return <p className="bc-hint"><OwnerAdminOnly action="Email delivery settings" /></p>;
   return (
-    <DeliverySetupView
-      result={result}
-      onPause={async () => {
-        const paused = await api.pauseAutomation();
-        if (endpointMissing(paused)) return { ok: false, status: 404, kind: "not_found", message: "Pausing is not available on this server yet." };
-        if (paused.ok === true) await load();
-        return paused;
-      }}
-    />
+    <>
+      <DeliverySetupView
+        result={result}
+        onTestRun={async () => {
+          setTestRunFinished(false);
+          const run = await api.testRun();
+          if (endpointMissing(run)) return { ok: false, status: 404, kind: "not_found", message: "Test runs are not available on this server yet." };
+          if (run.ok === true) {
+            setTestRunFinished(true);
+            await load();
+            onTestRunComplete();
+          }
+          return run;
+        }}
+        onPause={async () => {
+          const paused = await api.pauseAutomation();
+          if (endpointMissing(paused)) return { ok: false, status: 404, kind: "not_found", message: "Pausing is not available on this server yet." };
+          if (paused.ok === true) await load();
+          return paused;
+        }}
+      />
+      {testRunFinished ? <p role="status" className="bc-hint" data-test-run-complete>Test run finished. Delivery history is refreshing; check each attempt&rsquo;s status below.</p> : null}
+    </>
   );
 }
 
@@ -203,12 +228,13 @@ export function DeliveryHistoryView({ result, status, invoiceId, invoiceOptions,
 }
 
 /** Loads delivery history for Owner/Admin; other roles never call the route. */
-export function DeliveryHistoryPanel({ api, viewer, invoiceOptions, stageLabels, firmTimezone }: {
+export function DeliveryHistoryPanel({ api, viewer, invoiceOptions, stageLabels, firmTimezone, refreshKey = 0 }: {
   api: BillingApi;
   viewer: Viewer | null;
   invoiceOptions: Array<{ id: string; invoice_number: string }>;
   stageLabels?: StageLabels;
   firmTimezone?: string;
+  refreshKey?: number;
 }) {
   const power = viewerIsPowerUser(viewer);
   const [filters, setFilters] = useState<{ status: DeliveryStatus | ""; invoiceId: string; offset: number }>({ status: "", invoiceId: "", offset: 0 });
@@ -217,7 +243,7 @@ export function DeliveryHistoryPanel({ api, viewer, invoiceOptions, stageLabels,
     () => api.deliveries({ status: filters.status || null, invoiceId: filters.invoiceId || null, limit: HISTORY_PAGE, offset: filters.offset }).then(setResult),
     [api, filters],
   );
-  useEffect(() => { if (power) void load(); }, [power, load]);
+  useEffect(() => { if (power) void load(); }, [power, load, refreshKey]);
   if (!power) return <p className="bc-hint"><OwnerAdminOnly action="Delivery history" /></p>;
   return (
     <DeliveryHistoryView
