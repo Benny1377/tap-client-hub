@@ -497,7 +497,7 @@ await check("Phase 3 delivery routes and query names follow the contract", async
     "POST /api/collections/automation/test-run",
     "POST /api/collections/automation/pause",
   ]);
-  assert.deepEqual(calls[3].body, {}, "retry sends no recipient or body");
+  assert.equal(calls[3].body, undefined, "retry sends no recipient or body");
   assert.equal(calls[4].body, undefined, "test run accepts no client-controlled data");
   assert.equal(calls[5].body, undefined, "pause accepts no request body");
 });

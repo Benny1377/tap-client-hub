@@ -145,7 +145,7 @@ export function createBillingApi(fetchImpl: FetchLike) {
     },
     /** Retry a known transient failure. Takes no recipient or body. */
     retryDelivery: (attemptId: string) =>
-      post<{ attempt: DeliveryAttemptSummary }>(fetchImpl, `/api/collections/deliveries/${encodeURIComponent(attemptId)}/retry`, {}),
+      request<{ attempt: DeliveryAttemptSummary }>(fetchImpl, `/api/collections/deliveries/${encodeURIComponent(attemptId)}/retry`, { method: "POST" }),
     /** Owner/Admin manual test run. Uses only server-side preview, synthetic fixtures, and configured test mailbox. */
     testRun: () => request<unknown>(fetchImpl, "/api/collections/automation/test-run", { method: "POST" }),
     /** Off-only pause; the route accepts no body and re-enabling is a server configuration change. */
