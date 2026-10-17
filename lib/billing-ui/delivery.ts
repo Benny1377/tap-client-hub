@@ -75,6 +75,17 @@ export type DeliverySetup = CollectionsDeliveryStatusResponse;
 export type DeliveryAttemptSummary = CollectionsDeliveryAttemptSummary;
 export type DeliveriesResponse = CollectionsDeliveryHistoryResponse;
 
+/** POST /automation/test-run result (pinned by Engineer B in af2a52e). */
+export interface DeliveryTestRunResult {
+  run_id: string;
+  claimed: number;
+  accepted: number;
+  suppressed: number;
+  needs_review: number;
+  failed: number;
+  remaining: number;
+}
+
 export interface DeliveriesQuery {
   invoiceId?: string | null;
   status?: DeliveryStatus | null;
