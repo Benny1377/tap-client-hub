@@ -53,5 +53,24 @@ export async function GET(request: NextRequest) {
     );
   }
   const response = data as CollectionsReceivablesResponse;
+  const invoices = (response.accounts || []).flatMap((account) => account.invoices || []);
+  if (invoices.length) {
+    const latest = await db.from("collection_delivery_attempts")
+      .select("id,invoice_id,stage,status,created_at,updated_at")
+      .in("invoice_id", invoices.map((invoice) => invoice.invoice_id))
+      .order("updated_at", { ascending: false }).order("id", { ascending: false });
+    if (latest.error) {
+      return NextResponse.json({ error: "Unable to load delivery summary", code: "DELIVERY_SUMMARY_READ_FAILED" }, { status: 500, headers: { "Cache-Control": "no-store" } });
+    }
+    const byInvoice = new Map<string, NonNullable<(typeof invoices)[number]["last_delivery"]>>();
+    for (const attempt of latest.data || []) {
+      if (!byInvoice.has(attempt.invoice_id)) byInvoice.set(attempt.invoice_id, {
+        stage: attempt.stage, status: attempt.status, occurred_at: attempt.updated_at || attempt.created_at,
+      });
+    }
+    for (const invoice of invoices) invoice.last_delivery = byInvoice.get(invoice.invoice_id) || null;
+  } else {
+    for (const invoice of invoices) invoice.last_delivery = null;
+  }
   return NextResponse.json(response, { headers: { "Cache-Control": "no-store" } });
 }

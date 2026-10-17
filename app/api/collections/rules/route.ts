@@ -8,6 +8,7 @@ export const dynamic = "force-dynamic";
 const NO_STORE = { "Cache-Control": "no-store" };
 const RULE_FIELDS = new Set(["stage", "label", "days_past_due", "automatic", "enabled", "subject_template", "body_template"]);
 const SETTING_FIELDS = new Set(["timezone", "send_start", "send_end", "weekdays_only", "minimum_balance", "direct_escalation_threshold"]);
+const TEMPLATE_TOKENS = new Set(["contact_name", "invoice_number", "balance", "due_date", "days_past_due"]);
 
 function invalid(message: string) {
   return NextResponse.json({ error: message, code: "INVALID_CONFIGURATION" }, { status: 422, headers: NO_STORE });
@@ -82,6 +83,15 @@ export async function PATCH(request: Request) {
     return !(Number(rule.stage) >= 4 && rule.automatic === true);
   });
   if (!validRules) return invalid("A rule has invalid values; approval stages 4 and 5 cannot be automated");
+  for (const rule of rules) {
+    for (const field of ["subject_template", "body_template"] as const) {
+      const template = rule[field];
+      if (typeof template !== "string") continue;
+      const tokens = [...template.matchAll(/\{([^{}]+)\}/g)].map((match) => match[1]);
+      const unknown = tokens.find((token) => !TEMPLATE_TOKENS.has(token));
+      if (unknown) return NextResponse.json({ error: "Template contains an unsupported placeholder", code: "TEMPLATE_TOKEN_INVALID" }, { status: 422, headers: NO_STORE });
+    }
+  }
   if (Object.keys(settings).some((key) => !SETTING_FIELDS.has(key))) return invalid("A settings field is unsupported; sender and test-recipient setup is deferred to integrations");
   if (settings.timezone !== undefined && (typeof settings.timezone !== "string" || settings.timezone.length > 100)) return invalid("timezone must be a valid IANA timezone name");
   for (const key of ["send_start", "send_end"] as const) {

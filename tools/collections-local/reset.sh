@@ -23,7 +23,8 @@ for migration in \
   20261010140000_collections_stage_and_api_corrections.sql \
   20261011100000_collections_catch_up_policy.sql \
   20261011110000_collections_stage_context_and_timezone.sql \
-  20261011120000_collections_dynamic_rules.sql; do
+  20261011120000_collections_dynamic_rules.sql \
+  20261017120000_collections_test_delivery.sql; do
   psql "$db_url" -X -v ON_ERROR_STOP=1 -f "$project_root/supabase/migrations/$migration" >/dev/null
 done
 psql "$db_url" -X -v ON_ERROR_STOP=1 -f "$local_root/seed.sql" >/dev/null
