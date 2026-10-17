@@ -70,6 +70,37 @@ export const MISSING_SETTING_LABELS: Record<CollectionsDeliveryMissingSetting, s
   ENVIRONMENT_NOT_ALLOWLISTED: "This environment is not approved for test sends.",
 };
 
+/** Route error codes from test-run / retry (Engineer B, af2a52e), in plain words. */
+export const DELIVERY_ACTION_ERROR_LABELS: Record<string, string> = {
+  DELIVERY_NOT_READY: "Test sends aren't ready yet. The list on the left shows what is still missing.",
+  TEST_RUN_FAILED_CLOSED: "The test run stopped before sending anything because a safety check failed. Nothing was sent.",
+  OUTSIDE_SEND_WINDOW: "It's outside the firm's sending hours, so nothing was queued. Try again during the send window.",
+  DELIVERY_NOT_RETRYABLE: "This attempt can't be retried. Only temporary provider failures with tries left can be retried.",
+  DELIVERY_RETRY_CONFLICT: "This attempt changed while you were looking. The list has been refreshed.",
+  DELIVERY_ATTEMPT_NOT_FOUND: "That attempt no longer exists. The list has been refreshed.",
+};
+
+/** Replace a known route error code's server text with our wording; keep everything else. */
+export function withDeliveryActionWording<T>(result: ApiResult<T>): ApiResult<T> {
+  if (result.ok === false && result.code && DELIVERY_ACTION_ERROR_LABELS[result.code]) {
+    return { ...result, message: DELIVERY_ACTION_ERROR_LABELS[result.code] };
+  }
+  return result;
+}
+
+/** One-line summary of a finished test run; never claims delivery. */
+export function testRunSummary(run: DeliveryTestRunResult) {
+  const parts = [
+    `${run.claimed} picked up`,
+    `${run.accepted} accepted by the email provider`,
+    `${run.suppressed} not sent`,
+    `${run.needs_review} need review`,
+    `${run.failed} failed`,
+  ];
+  if (run.remaining > 0) parts.push(`${run.remaining} left for the next run`);
+  return parts.join(" · ");
+}
+
 /** Shared producer/consumer contract types; keep route wire-shapes defined once. */
 export type DeliverySetup = CollectionsDeliveryStatusResponse;
 export type DeliveryAttemptSummary = CollectionsDeliveryAttemptSummary;
