@@ -1,5 +1,5 @@
 import { createAdminClient } from "@/lib/supabase/admin";
-import { getDeliveryStatus, isSyntheticOnlyEnabled } from "@/lib/collections-delivery";
+import { getDeliveryStatus, isSyntheticOnlyEnabled, isWithinSendWindow } from "@/lib/collections-delivery";
 
 const TOKEN_VALUES = new Set(["contact_name", "invoice_number", "balance", "due_date", "days_past_due"]);
 type RunCounts = { run_id: string; claimed: number; accepted: number; suppressed: number; needs_review: number; failed: number; remaining: number };
@@ -45,7 +45,9 @@ async function sendTestEmail(input: { subject: string; body: string; to: string;
   return { status: "failed" as const, reason: "PROVIDER_REJECTED", messageId: null };
 }
 
-export async function runCollectionsTestDelivery(actor: string | null, limit = 50): Promise<RunCounts | null> {
+export const OUTSIDE_SEND_WINDOW = "OUTSIDE_SEND_WINDOW" as const;
+
+export async function runCollectionsTestDelivery(actor: string | null, limit = 50): Promise<RunCounts | typeof OUTSIDE_SEND_WINDOW | null> {
   const readiness = await getDeliveryStatus();
   if (!readiness?.test_ready || !isSyntheticOnlyEnabled()) return null;
   const db = createAdminClient();
@@ -54,6 +56,8 @@ export async function runCollectionsTestDelivery(actor: string | null, limit = 5
     db.from("collection_settings").select("minimum_balance,direct_escalation_threshold,timezone,send_start,send_end,weekdays_only").eq("id", "default").maybeSingle(),
   ]);
   if (rulesError || settingsError || !settings) return null;
+  // Outside the firm's hours nothing is created; the next eligible run picks the work up.
+  if (!isWithinSendWindow(settings)) return OUTSIDE_SEND_WINDOW;
   const ruleMap = new Map<number, { stage: number; automatic: boolean; enabled: boolean; subject_template: string; body_template: string }>(
     ((rules || []) as Array<{ stage: number; automatic: boolean; enabled: boolean; subject_template: string; body_template: string }>).map((rule) => [Number(rule.stage), rule]),
   );
@@ -104,18 +108,31 @@ export async function runCollectionsTestDelivery(actor: string | null, limit = 5
       db.from("collection_delivery_attempts").select("id,status,attempt_count,reason_code,last_error_code").eq("invoice_id", invoice.invoice_id).eq("stage", stage).maybeSingle(),
       db.from("contacts").select("id,name,email,is_primary,category").eq("client_id", account.client_id).eq("category", "client").eq("is_primary", true),
     ]);
+    // Attempts already handled (accepted, sending, needs review, failed) are not
+    // part of this run: no new send and no count.
+    if (existing && existing.status !== "suppressed" && existing.status !== "queued") continue;
+    // Pre-checks run before any reopen so a skipped attempt is never left queued.
+    const contacts = contactRows || [];
+    const preReason = !client?.is_synthetic || !sourceInvoice?.is_synthetic ? "SYNTHETIC_DATA_REQUIRED"
+      : stage <= 3 && contacts.length !== 1 ? "CONTACT_REVIEW_REQUIRED"
+      : stage <= 3 && !contacts[0].email ? "EMAIL_CONTACT_MISSING"
+      : null;
+    if (preReason) {
+      if (existing?.status === "queued") {
+        await db.from("collection_delivery_attempts").update({ status: "suppressed", reason_code: preReason, updated_at: new Date().toISOString() })
+          .eq("id", existing.id).eq("status", "queued");
+      }
+      counts.suppressed++; continue;
+    }
     let attemptId: string | null = null;
     if (existing) {
       if (existing.status === "suppressed") {
         const { data: reopened } = await db.from("collection_delivery_attempts").update({ status: "queued", reason_code: null, last_error_code: null, updated_at: new Date().toISOString() })
           .eq("id", existing.id).eq("status", "suppressed").select("id").maybeSingle();
-        attemptId = reopened?.id || null;
-      } else if (existing.status === "queued") attemptId = existing.id;
-      else { counts.suppressed++; continue; }
+        if (!reopened) continue; // Another run changed it first.
+        attemptId = reopened.id;
+      } else attemptId = existing.id;
     }
-    if (!client?.is_synthetic || !sourceInvoice?.is_synthetic) { counts.suppressed++; continue; }
-    const contacts = contactRows || [];
-    if (stage <= 3 && (contacts.length !== 1 || !contacts[0].email)) { counts.suppressed++; continue; }
     const idem = `collections:${invoice.invoice_id}:stage:${stage}`;
     if (!attemptId) {
       const { data: attempt, error: insertError } = await db.from("collection_delivery_attempts").insert({

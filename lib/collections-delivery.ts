@@ -76,3 +76,28 @@ export async function getDeliveryStatus(): Promise<CollectionsDeliveryStatusResp
 export function isSyntheticOnlyEnabled() {
   return environmentAllowlisted() && process.env.COLLECTIONS_MODE === "test";
 }
+
+export type SendWindowSettings = { timezone: string; send_start: string; send_end: string; weekdays_only: boolean };
+
+function clockTime(value: string) {
+  const [hour = "00", minute = "00", second = "00"] = String(value).split(":");
+  return `${hour.padStart(2, "0")}:${minute.padStart(2, "0")}:${second.slice(0, 2).padStart(2, "0")}`;
+}
+
+/**
+ * Mirrors the send-window check in claim_collection_test_delivery so a run
+ * outside the firm's hours stops before creating any attempt. Fails closed on
+ * an unreadable timezone.
+ */
+export function isWithinSendWindow(settings: SendWindowSettings, now = new Date()) {
+  let parts: Intl.DateTimeFormatPart[];
+  try {
+    parts = new Intl.DateTimeFormat("en-US", {
+      timeZone: settings.timezone, weekday: "short", hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23",
+    }).formatToParts(now);
+  } catch { return false; }
+  const part = (type: Intl.DateTimeFormatPartTypes) => parts.find((item) => item.type === type)?.value || "";
+  if (settings.weekdays_only && ["Sat", "Sun"].includes(part("weekday"))) return false;
+  const local = `${part("hour")}:${part("minute")}:${part("second")}`;
+  return local >= clockTime(settings.send_start) && local < clockTime(settings.send_end);
+}

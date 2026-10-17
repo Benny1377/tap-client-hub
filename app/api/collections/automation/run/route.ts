@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { timingSafeEqual } from "node:crypto";
-import { runCollectionsTestDelivery } from "@/lib/collections-test-run";
+import { OUTSIDE_SEND_WINDOW, runCollectionsTestDelivery } from "@/lib/collections-test-run";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 export const runtime = "nodejs";
@@ -37,6 +37,7 @@ export async function POST(request: NextRequest) {
   const { data: profile } = await db.from("profiles").select("id").eq("id", serviceActor).maybeSingle();
   if (!profile) return NextResponse.json({ error: "Worker service identity is not registered", code: "WORKER_IDENTITY_INVALID" }, { status: 409, headers: NO_STORE });
   const result = await runCollectionsTestDelivery(serviceActor, Number(limit));
+  if (result === OUTSIDE_SEND_WINDOW) return NextResponse.json({ error: "Outside the firm's send window; nothing was queued", code: "OUTSIDE_SEND_WINDOW" }, { status: 409, headers: NO_STORE });
   if (!result) return NextResponse.json({ error: "Test delivery is not ready", code: "DELIVERY_NOT_READY" }, { status: 409, headers: NO_STORE });
   return NextResponse.json(result, { headers: NO_STORE });
 }
