@@ -1,30 +1,63 @@
 @import "tailwindcss";
 
-/* ── TAP Client Hub Design System ──
-   Exact match to the v7 demo — Fraunces + Public Sans, muted palette. */
-:root {
-  --paper: #eef1f6;
-  --card: #ffffff;
-  --ink: #1a2340;
-  --muted: #5f667d;
-  --line: #dde2ec;
-  --teal: #1c2a5e;
-  --teal-soft: #e7ebf5;
-  --teal-ink: #16234d;
-  --amber: #b9791f;
-  --amber-soft: #f7edda;
-  --red: #a8392f;
-  --red-soft: #f6e2df;
-  --green: #2f7d4f;
-  --green-soft: #e3efe6;
-  --blue: #2c5d86;
-  --blue-soft: #e0eaf2;
-  --paid: #1c2a5e;
-  --paid-soft: #e7ebf5;
-  --shadow: 0 1px 2px rgba(26,35,64,.06), 0 8px 24px rgba(26,35,64,.10);
-  --sidebar-start: #21305f;
-  --sidebar-end: #1a2750;
-  --sidebar-width: 236px;
+/* ── PracticeOps design tokens (from practiceops_1.html) ── */
+:root{
+  --paper:#eaeef4; --card:#ffffff; --card2:#f5f7fb; --sunk:#e2e7f0;
+  --ink:#141b2b; --muted:#5a6478; --faint:#8b94a8;
+  --line:#d9dfe9; --line2:#e7ebf2;
+  --brand:#1b4a63; --brand-ink:#123545; --brand-soft:#dfeaf0; --brand-line:#b9d0da;
+  --chrome:#132433; --chrome2:#0e1b27; --chrome-ink:#e6eef3; --chrome-mut:#8fa6b6;
+  --green:#2c7350; --green-soft:#dcece2; --green-line:#b3d3c0;
+  --amber:#9c6a17; --amber-soft:#f6ecd8; --amber-line:#e2cda2;
+  --red:#a13a30; --red-soft:#f6e1de; --red-line:#e0bab4;
+  --violet:#57487d; --violet-soft:#e9e5f2;
+  --blue:#28577d; --blue-soft:#dee9f2;
+  --shadow:0 1px 2px rgba(20,27,43,.05), 0 6px 18px rgba(20,27,43,.07);
+  --shadow-lg:0 2px 6px rgba(20,27,43,.07), 0 18px 40px rgba(20,27,43,.13);
+  --r:12px; --r-lg:16px;
+  --f-disp:"Fraunces",Georgia,"Times New Roman",serif;
+  --f-ui:"Public Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-mono:"IBM Plex Mono",ui-monospace,"SFMono-Regular",Menlo,monospace;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --paper:#0d121c; --card:#161e2c; --card2:#1b2433; --sunk:#101724;
+    --ink:#e7ecf5; --muted:#98a2b6; --faint:#6f7b92;
+    --line:#28323f; --line2:#212b38;
+    --brand:#6cb0c6; --brand-ink:#9ccddd; --brand-soft:#15303c; --brand-line:#24505f;
+    --chrome:#0a121b; --chrome2:#070e15; --chrome-ink:#dfe9f0; --chrome-mut:#7e93a4;
+    --green:#59b384; --green-soft:#14291f; --green-line:#245c40;
+    --amber:#d9a55c; --amber-soft:#2a2113; --amber-line:#5c4620;
+    --red:#e08579; --red-soft:#2c1614; --red-line:#5e2c26;
+    --violet:#a094c9; --violet-soft:#211c30;
+    --blue:#7fb0d6; --blue-soft:#122335;
+    --shadow:0 1px 2px rgba(0,0,0,.4), 0 6px 18px rgba(0,0,0,.35);
+    --shadow-lg:0 2px 6px rgba(0,0,0,.45), 0 18px 40px rgba(0,0,0,.5);
+  }
+}
+:root[data-theme="dark"]{
+  --paper:#0d121c; --card:#161e2c; --card2:#1b2433; --sunk:#101724;
+  --ink:#e7ecf5; --muted:#98a2b6; --faint:#6f7b92;
+  --line:#28323f; --line2:#212b38;
+  --brand:#6cb0c6; --brand-ink:#9ccddd; --brand-soft:#15303c; --brand-line:#24505f;
+  --chrome:#0a121b; --chrome2:#070e15; --chrome-ink:#dfe9f0; --chrome-mut:#7e93a4;
+  --green:#59b384; --green-soft:#14291f; --green-line:#245c40;
+  --amber:#d9a55c; --amber-soft:#2a2113; --amber-line:#5c4620;
+  --red:#e08579; --red-soft:#2c1614; --red-line:#5e2c26;
+  --violet:#a094c9; --violet-soft:#211c30;
+  --blue:#7fb0d6; --blue-soft:#122335;
+  --shadow:0 1px 2px rgba(0,0,0,.4), 0 6px 18px rgba(0,0,0,.35);
+  --shadow-lg:0 2px 6px rgba(0,0,0,.45), 0 18px 40px rgba(0,0,0,.5);
+}
+
+/* Legacy names used by pages written before the PracticeOps design. They now
+   resolve to the design tokens, so older screens pick up the new palette. */
+:root{
+  --teal:var(--brand); --teal-soft:var(--brand-soft); --teal-ink:var(--brand-ink);
+  --navy:var(--brand); --navy-soft:var(--brand-soft); --gate-ink:var(--amber);
+  --paid:var(--brand); --paid-soft:var(--brand-soft); --grey-soft:var(--sunk);
+  --sidebar-start:var(--chrome); --sidebar-end:var(--chrome2); --sidebar-width:224px;
+  --mono:var(--f-mono);
 }
 
 /* ── Base resets ── */
@@ -55,7 +88,7 @@ main h1, main h2, main h3, main h4, main h5, main h6,
 .statcard .sn,
 .sect2,
 .suph, .suph2,
-.brand,
+
 .ccard .nm,
 .wload b,
 .top h1 {
@@ -517,7 +550,6 @@ select.pick { padding: 10px 12px; border: 1px solid var(--line); border-radius: 
 
 /* ── Billing & Collections (TAP Client Hub demo v14) ──
    Classes are prefixed bc- so they cannot collide with the rest of the app. */
-:root { --faint: #8b93a8; --line2: #e8ecf3; --navy: #1c2a5e; --navy-soft: #e7ebf5; --gate-ink: #8a5a12; }
 .bc-page { max-width: 1120px; margin: 0 auto; padding: 6px 0 40px; }
 .bc-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; flex-wrap: wrap; }
 .bc-sub { color: var(--muted); font-size: 13.5px; line-height: 1.5; max-width: 640px; }

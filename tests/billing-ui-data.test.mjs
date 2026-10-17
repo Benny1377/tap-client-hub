@@ -399,9 +399,9 @@ await check("forms keep saved values after an edit and only create forms clear",
 });
 
 await check("the app shell titles Billing and Collections; pages do not repeat the title", () => {
-  const layout = readFileSync(join(root, "app/layout.tsx"), "utf8");
-  assert.match(layout, /"\/billing": \{ title: "Billing"/);
-  assert.match(layout, /"\/collections": \{ title: "Collections"/);
+  const heads = readFileSync(join(root, "components/practiceops/apps.ts"), "utf8");
+  assert.match(heads, /"\/billing": \["Billing"/);
+  assert.match(heads, /"\/collections": \["Collections"/);
   for (const page of ["app/billing/page.tsx", "app/collections/page.tsx"]) {
     assert.doesNotMatch(readFileSync(join(root, page), "utf8"), /<h1/, `${page} leaves the title to the app shell`);
   }
