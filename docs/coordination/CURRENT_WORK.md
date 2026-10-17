@@ -2,7 +2,7 @@
 
 Last updated: 2026-10-17 Asia Kolkata
 
-Updated by: Engineer A (Phase 2 rerun on 8ba6897 and dev, Phase 3 UI review and integrated checks, Phase 4 review)
+Updated by: Engineer A (Phase 2 rerun on 8ba6897 and dev, Phase 3 backend integration review, Phase 4 contract review)
 
 ## Shared baseline
 
@@ -13,9 +13,9 @@ Updated by: Engineer A (Phase 2 rerun on 8ba6897 and dev, Phase 3 UI review and 
   - M0 Stable ownership;
   - Collections Phase 0 (read-only discovery), complete.
   - Collections Phase 1 ledger and Phase 2 Collections features, integrated local validation complete; joint branch review/merge and release gates remain.
-  - Collections Phase 3 email integration, UI branch is now available and under review; delivery remains disabled pending shared branch review and integrated backend validation; live delivery is excluded.
-  - Collections Phase 4 QuickBooks A/R PDF intake, preparation draft only; source-of-truth and reconciliation decisions are open.
-- Overall status: Phase 2 is validated on `8ba6897` itself (backend: SQL, 68/68 API/DB/audit, S1 12/12, login and Contacts browser) and on `dev` at `727ca6a` (main + `8ba6897` → `dd3472f` → `codex/collections-phase2-demo-design`; full browser pass). Phase 2 awaits joint review, then owner-approved `dev` → `main`. Phase 3 UI is at `9a04d7e` on `codex/collections-phase3-ui` (Engineer A approves `8df77f8` with the retry no-body correction); the Phase 3 backend routes are not implemented yet, so integrated route checks are BLOCKED. Phase 4 awaits owner decisions. Hosted migrations remain deferred. COL-DEP-10 and COL-DEP-12 remain deferred owner security actions.
+  - Collections Phase 3 email integration: backend `af2a52e` and UI `83e2e21` integrated and validated locally with delivery disabled (Engineer A sign-off for the disabled path); proposed backend fixes `5511876` await Engineer B; provider-backed test sending not signed off; live delivery is excluded.
+  - Collections Phase 4 QuickBooks A/R PDF intake, preparation draft; owner decisions recorded at `3f347e5`; Engineer A requested four contract changes before freeze; nothing built.
+- Overall status: Phase 2 is validated on `8ba6897` itself (backend: SQL, 68/68 API/DB/audit, S1 12/12, login and Contacts browser) and on `dev` at `727ca6a` (main + `8ba6897` → `dd3472f` → `codex/collections-phase2-demo-design`; full browser pass). Phase 2 awaits joint review, then owner-approved `dev` → `main`. Phase 3: backend `af2a52e` + UI `83e2e21` + proposed fixes `5511876` pass locally (68/68, 55/55, SQL, worker-function checks, browser) with delivery disabled; see `docs/handoffs/2026-10-17-collections-phase3-integration-review.md`. Phase 4: owner decisions recorded; Engineer A changes requested. Hosted migrations remain deferred. COL-DEP-10 and COL-DEP-12 remain deferred owner security actions.
 
 ## Current checkpoint (2026-10-17)
 
@@ -42,7 +42,9 @@ Updated by: Engineer A (Phase 2 rerun on 8ba6897 and dev, Phase 3 UI review and 
 | `codex/collections-phase2-ui-validation` | Engineer A + Codex | Phase 1/2 UI, browser validation, contract/timezone updates, configurable rules editor, local verification. | `3bec72a` (`codex/collections-phase2-integration`) | `dd3472f`; merged into `dev` after `8ba6897`; validated as part of `dev` `727ca6a` | Joint review; owner-approved `dev` → `main` |
 | `codex/collections-phase2-demo-design` | Engineer A | Phase 2 demo alignment, UI-side sign-off, post-login identity loading fix. | `dd3472f` | `19a0428`; merged into `dev` (`727ca6a`); validated as part of `dev` | Joint review; owner-approved `dev` → `main` |
 | `dev` | Engineer A | Phase 2 integration line: main + `8ba6897` → `dd3472f` → `codex/collections-phase2-demo-design`. | `210a08a` (`main`) | `727ca6a`; full rerun PASS on 2026-10-17 | Joint review; project-owner approval before `dev` → `main`; hosted migrations at release |
-| `codex/collections-phase3-ui` | Engineer A (+ Engineer B review commit) | Phase 3 delivery UI: status, off-only pause, Run test now, history/paging/filters, retry, last delivery, preview attempts; integrated check script. | `727ca6a` (`dev`) | `9a04d7e`; UI tests 46/64, tsc, lint pass; integrated route checks BLOCKED until backend routes exist | Engineer B backend routes and migration; integrated rerun; joint review |
+| `codex/collections-phase3-ui` | Engineer A (+ Engineer B review commit) | Phase 3 delivery UI: status, off-only pause, Run test now with run counts, history/paging/filters, retry, last delivery, preview attempts, route-error wording; integrated and worker check scripts. | `727ca6a` (`dev`) | `83e2e21`; UI 46/65, tsc, lint pass; integrated with `af2a52e`: 55/55, 68/68 | Joint review with the backend branch |
+| `codex/collections-phase3-backend` | Engineer B | Phase 3 routes, test-run/worker, synthetic markers, `sent` → `accepted` migration. | `727ca6a` (`dev`) | `af2a52e`; Engineer A integration sign-off for the delivery-disabled path | Findings 1–7 in the integration review; mock-provider tests |
+| `codex/collections-phase3-backend-fixes` | Engineer A (proposed) | Send-window guard before any attempt (409 `OUTSIDE_SEND_WINDOW`); pre-checks before reopening; handled attempts not counted. | `af2a52e` | `5511876`; 3/3 tests, integrated 55/55 and 68/68 | Engineer B accepts, replaces, or rejects |
 | `codex/collections-engineer-a-status` | Engineer A | This coordination update and the 2026-10-17 handoff. Documentation only. | `a4a1013` (`codex/collections-phase3-contract`) | Ready for review | Engineer B review |
 | `codex/collections-phase3-contract` | Codex prep | Phase 3 contract/prep and sandbox decision record. No provider integration. | `dd3472f` (`codex/collections-phase2-ui-validation`) | Contract at `4549344` approved by Engineer A; pause route and UI follow-up recorded locally; no provider integration | Review shared Phase 3 UI changes and QuickBooks AR PDF source-contract change separately; keep delivery disabled |
 
@@ -75,8 +77,8 @@ Updated by: Engineer A (Phase 2 rerun on 8ba6897 and dev, Phase 3 UI review and 
 ## Next coordination event
 
 1. **Phase 2:** joint Engineer A/B review of `dev` (`727ca6a`), then project-owner approval for `dev` → `main`. Hosted migrations stay deferred until release approval.
-2. **Phase 3:** Engineer B implements the routes (`delivery-status`, `deliveries` with paging/filters, retry, off-only pause, `test-run`), the `sent` → `accepted` forward-only migration, `last_delivery`/`delivery_attempt`, the synthetic-data marker, and pins the `test-run` response shape. Engineer A then reruns `tools/collections-local/validate-phase3.mjs` (currently 5 PASS, 0 FAIL, 20 BLOCKED) and a browser pass.
-3. **Phase 4:** the project owner answers the ten decisions in `docs/contracts/collections-phase-4-ar-pdf-intake.md` (Engineer A recommendations in the 2026-10-17 handoff). The contract is not frozen and nothing is built until then.
+2. **Phase 3:** Engineer B reviews `5511876` (send-window guard, reopen ordering) and the integration review findings, adds mock-provider tests, and pins the retry response, test-run counts and `OUTSIDE_SEND_WINDOW` in the contract. Engineer A then reruns `validate-phase3.mjs`, `validate-phase3-worker.sql` and the browser pass. Provider-backed test sending needs owner/operator configuration review first.
+3. **Phase 4:** Engineer B updates `docs/contracts/collections-phase-4-ar-pdf-intake.md` for Engineer A's four requested changes (stale-snapshot rule, PDF-only invoice key, permission floor, source fields) and the interim-section wording; the owner confirms fiscal year/retention. The contract is not frozen and nothing is built until then.
 4. **Deferred owner security actions:** COL-DEP-10 and COL-DEP-12 remain open.
 
 Keep real AR PDFs out of Git, fixtures, screenshots, and shared environments; keep provider delivery disabled; do not merge to `main` without project-owner approval.
