@@ -52,4 +52,47 @@ Two of Engineer A's own checks were corrected during the run (no backend change)
 - **Backend/UI integration with delivery disabled: signed off by Engineer A** on the integration above.
 - **Provider-backed test sending: not signed off.** Requires Engineer B to accept or replace `5511876`, mock-provider tests (accepted, 429, 5xx, timeout, malformed, concurrent claims), and an owner/operator configuration review before any provider key or test send.
 
+## Re-review 2026-10-18: backend `c9d486f`, contract `2b1fce4`
+
+Engineer B accepted Engineer A's proposed fixes (`5511876`) and added `c9d486f` on `codex/collections-phase3-backend-fixes`. Re-integrated locally on `codex/collections-phase3-integration` (`c9d486f` + UI `6ac9381`/`1c50db1`); the only conflict was the shared type block in `lib/collections-api.ts`, identical apart from formatting.
+
+| Finding | Resolution |
+| --- | --- |
+| 1 Send window | Accepted from `5511876`; in-database claim/context now return `OUTSIDE_SEND_WINDOW` (W8). |
+| 2 Stuck `queued` | Accepted from `5511876`; `c9d486f` also re-suppresses an already-suppressed attempt with the new reason. |
+| 3 Reason codes | New codes `STAGE_NOT_DUE` (W11), `INVOICE_NOT_ELIGIBLE`, `OUTSIDE_SEND_WINDOW`, `PROVIDER_PAYLOAD_CHANGED`; pinned with wording in the contract addendum. UI wording added in `6ac9381`. |
+| 4 Stage 4 / counts | Fixed subject and first heading `Internal Owner-escalation notice — TEST`; counts fixed in `5511876`. |
+| 5 Template escaping | Body template text and substitutions are both HTML-escaped (`lib/collections-template.ts`, 2 tests). |
+| 6 Resend idempotency | Payload SHA-256 fingerprint stored per attempt; a changed payload is never sent (`needs_review` / `PROVIDER_PAYLOAD_CHANGED`); retries allowed only within 23 hours of the first try (W13, provider tests). |
+| 7 Contract shapes | Run counts, 202 retry response and 409 `OUTSIDE_SEND_WINDOW` pinned in `2b1fce4`. |
+| Mock-provider / concurrency tests | `tests/collections-phase3-provider.test.mjs` (accepted, 429, 5xx, timeout, malformed) and `tools/collections-local/test-phase3-concurrent-claim.mjs` added. |
+
+Results on the re-integration (fresh reset with `20261018110000_collections_delivery_reason_codes.sql`):
+
+| Check | Result |
+| --- | --- |
+| Reset, 5 SQL suites, `tsc --noEmit` | PASS |
+| Phase 3 contract / fixes / provider / template tests | 5/5, 7/7, 5/5, 2/2 |
+| UI data / render; Phase 1/2, route-access, contacts, support suites | 46 / 65; PASS |
+| `validate-phase3.mjs` | 55 PASS, 0 FAIL, 0 BLOCKED |
+| `test-phase3-concurrent-claim.mjs` | PASS: one owner, replay refused, no provider call |
+| `validate-phase3-worker.sql` W1–W13 | As expected (W8 `OUTSIDE_SEND_WINDOW`, W11 `STAGE_NOT_DUE`, W13 fingerprint) |
+| `validate-phase2.mjs` | 68/68 |
+| Worker route without / with a wrong token | 401 / 401 |
+| Browser (Owner) | Setup shows delivery off with 7 missing settings; history loads (200) |
+| Database afterwards | 0 attempts; automation off; delivery disabled |
+
+Engineer A approves the Phase 3 contract addendum in `2b1fce4` and confirms backend/UI integration of `c9d486f` with delivery disabled. Provider-backed test sending still needs an owner/operator configuration review (provider key, verified sender/reply-to, test mailbox, environment allowlist) and explicit approval before the first test send.
+
+## Phase 4 contract re-review (`2b1fce4`)
+
+All four Engineer A requests are in: stale-snapshot re-blocking, PDF-only import identity and attempt key, the permission floor (Owner/Admin edit the policy; uploader/corrector cannot approve), and the source fields on the wire; the interim-section wording is fixed. Remaining before Engineer A approves the freeze:
+
+1. Pin row identity on the wire: worklist invoices, preview items and delivery history carry `invoice_id: string | null` (null for PDF-only) and `source_invoice_id: string | null`, plus one stable row key; `GET /deliveries` gains a `source_invoice_id` filter.
+2. Record that the Phase 3 attempt model and `DeliveryAttemptSummary.invoice_id` change shape (nullable `invoice_id`, new `source`/`source_invoice_id`) through a forward migration and a Phase 3 contract addendum.
+3. Add a reason code for an invoice blocked by a source discrepancy (for example `SOURCE_DISCREPANCY_BLOCKED`) so suppressed attempts explain themselves.
+4. State whether a Billing-matched row can carry `source: "pdf_import"` (PDF value selected) with both IDs present.
+
+Owner decision still open: customer linkage. Engineer A recommends requiring an imported customer to be linked to a TAP Hub client before any collection action (via an explicit, audited reviewer choice of an existing client, or the normal Add client flow). Collections contacts, holds, permissions and `last_delivery` are all keyed by client, so an import-only account would need a parallel contact and hold model.
+
 COL-DEP-10 and COL-DEP-12 remain deferred owner security actions.

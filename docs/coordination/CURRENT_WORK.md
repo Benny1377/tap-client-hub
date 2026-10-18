@@ -13,8 +13,8 @@ Updated by: Engineer A (Phase 2 rerun on 8ba6897 and dev, Phase 3 backend integr
   - M0 Stable ownership;
   - Collections Phase 0 (read-only discovery), complete.
   - Collections Phase 1 ledger and Phase 2 Collections features, integrated local validation complete; joint branch review/merge and release gates remain.
-  - Collections Phase 3 email integration: backend `af2a52e` and UI `83e2e21` integrated and validated locally with delivery disabled (Engineer A sign-off for the disabled path); proposed backend fixes `5511876` await Engineer B; provider-backed test sending not signed off; live delivery is excluded.
-  - Collections Phase 4 QuickBooks A/R PDF intake, preparation draft; owner decisions recorded at `3f347e5`; Engineer A requested four contract changes before freeze; nothing built.
+  - Collections Phase 3 email integration: backend `c9d486f` (includes Engineer A fixes `5511876`) and UI `1c50db1` integrated and validated locally with delivery disabled; contract addendum `2b1fce4` approved by Engineer A. Provider-backed test sending awaits owner/operator configuration review; live delivery is excluded.
+  - Collections Phase 4 QuickBooks A/R PDF intake: contract `2b1fce4` covers Engineer A's four requests; four wire-shape clarifications and the owner customer-linkage decision remain before freeze; nothing built.
 - Overall status: Phase 2 is validated on `8ba6897` itself (backend: SQL, 68/68 API/DB/audit, S1 12/12, login and Contacts browser) and on `dev` at `727ca6a` (main + `8ba6897` → `dd3472f` → `codex/collections-phase2-demo-design`; full browser pass). Phase 2 awaits joint review, then owner-approved `dev` → `main`. Phase 3: backend `af2a52e` + UI `83e2e21` + proposed fixes `5511876` pass locally (68/68, 55/55, SQL, worker-function checks, browser) with delivery disabled; see `docs/handoffs/2026-10-17-collections-phase3-integration-review.md`. Phase 4: owner decisions recorded; Engineer A changes requested. Hosted migrations remain deferred. COL-DEP-10 and COL-DEP-12 remain deferred owner security actions.
 
 ## Current checkpoint (2026-10-17)
@@ -77,8 +77,8 @@ Updated by: Engineer A (Phase 2 rerun on 8ba6897 and dev, Phase 3 backend integr
 ## Next coordination event
 
 1. **Phase 2:** joint Engineer A/B review of `dev` (`727ca6a`), then project-owner approval for `dev` → `main`. Hosted migrations stay deferred until release approval.
-2. **Phase 3:** Engineer B reviews `5511876` (send-window guard, reopen ordering) and the integration review findings, adds mock-provider tests, and pins the retry response, test-run counts and `OUTSIDE_SEND_WINDOW` in the contract. Engineer A then reruns `validate-phase3.mjs`, `validate-phase3-worker.sql` and the browser pass. Provider-backed test sending needs owner/operator configuration review first.
-3. **Phase 4:** Engineer B updates `docs/contracts/collections-phase-4-ar-pdf-intake.md` for Engineer A's four requested changes (stale-snapshot rule, PDF-only invoice key, permission floor, source fields) and the interim-section wording; the owner confirms fiscal year/retention. The contract is not frozen and nothing is built until then.
+2. **Phase 3:** owner/operator review of the test-send configuration (provider key, verified sender/reply-to, test mailbox, allowlisted environment) and explicit approval before the first synthetic test send; then Engineer A reruns the integration with a provider-backed test run. Joint review of `codex/collections-phase3-backend-fixes` + `codex/collections-phase3-ui` before merging to `dev`.
+3. **Phase 4:** owner decides customer linkage (Engineer A recommends: link to a TAP Hub client before any collection action); Engineer B pins the four wire-shape items in the integration review; then Engineer A approves the freeze.
 4. **Deferred owner security actions:** COL-DEP-10 and COL-DEP-12 remain open.
 
 Keep real AR PDFs out of Git, fixtures, screenshots, and shared environments; keep provider delivery disabled; do not merge to `main` without project-owner approval.
