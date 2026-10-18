@@ -175,7 +175,10 @@ const staffWl = await staffC.call("GET", "/api/collections/receivables");
 record("WL3", "Collections staff see the same source fields", ((staffWl.json?.accounts || []).flatMap((a) => a.invoices || [])).some((i) => i.source_invoice_id === sourceA && i.row_key), `${staffWl.status}`);
 
 // ---- Discrepancy resolution ------------------------------------------------------------
-const resolve = await owner.call("POST", `/api/collections/imports/invoices/${sourceB}/resolve`, { selected_source: "billing", resolution_note: "Billing reflects the payment applied after the report" });
+// Choosing the balance that drives collection actions needs `approve`, not `review` (2ccdd6c).
+const staffResolve = await staffC.call("POST", `/api/collections/imports/invoices/${sourceB}/resolve`, { selected_source: "pdf_import", resolution_note: "Staff should not be able to choose the balance" });
+record("RS0", "Collections staff (review only) cannot resolve a discrepancy", staffResolve.status === 403 && staffResolve.json?.code === "IMPORT_APPROVE_FORBIDDEN", `${staffResolve.status} ${staffResolve.json?.code}`);
+const resolve =await owner.call("POST", `/api/collections/imports/invoices/${sourceB}/resolve`, { selected_source: "billing", resolution_note: "Billing reflects the payment applied after the report" });
 record("RS1", "an authorized reviewer resolves the discrepancy by choosing Billing", resolve.status === 200 && resolve.json?.discrepancy_status === "resolved", `${resolve.status} ${resolve.json?.code || ""} ${resolve.json?.error || ""}`);
 
 // A Billing payment after the report's as-of date re-blocks the resolved invoice.
@@ -207,6 +210,17 @@ const release = holdId ? await owner.call("PATCH", "/api/collections/holds", { i
 const rem = await staffC.call("POST", "/api/collections/events", { client_id: C1, target: { source: "pdf_import", source_invoice_id: sourceA }, event_type: "reminder_logged", detail: { note: "Called about the imported invoice" } });
 const remStage = rem.json?.event?.id ? sql(`select coalesce(stage::text, 'null') || ' ' || canonical_collection_identity from tap_hub_project.collection_events where id = '${rem.json.event.id}'`) : "";
 record("EV1", "a reminder on a PDF-only invoice records its catch-up stage and canonical identity", rem.status === 201 && /^\d /.test(remStage) && remStage.endsWith(`pdf_import:${sourceA}`), `release ${release.status}; ${rem.status} ${rem.json?.code || ""} stage/identity=${remStage}`);
+
+// ---- Report contents follow the `review` permission, not just Collections access (2ccdd6c) ----
+const policy = (await owner.call("GET", "/api/collections/imports/permissions")).json?.policy;
+const narrowed = policy && await owner.call("PATCH", "/api/collections/imports/permissions", { policy: { ...policy, review: policy.review.filter((role) => role !== "collections") } });
+const noReviewList = await staffC.call("GET", "/api/collections/imports");
+const noReviewRows = await staffC.call("GET", `/api/collections/imports/${batchId}`);
+const noReviewFile = await staffC.call("GET", `/api/collections/imports/${batchId}/file`);
+const restored = policy && await owner.call("PATCH", "/api/collections/imports/permissions", { policy });
+record("AC5", "Collections staff without `review` cannot list reports, read rows or download", narrowed?.status === 200 && restored?.status === 200
+  && [noReviewList, noReviewRows, noReviewFile].every((r) => r.status === 403 && r.json?.code === "IMPORT_REVIEW_FORBIDDEN"),
+  `policy ${narrowed?.status}/${restored?.status}; list ${noReviewList.status} ${noReviewList.json?.code}, rows ${noReviewRows.status} ${noReviewRows.json?.code}, file ${noReviewFile.status} ${noReviewFile.json?.code}`);
 
 // ---- Safety -------------------------------------------------------------------------------
 const attemptsAfter = Number(sql("select count(*) from tap_hub_project.collection_delivery_attempts"));
