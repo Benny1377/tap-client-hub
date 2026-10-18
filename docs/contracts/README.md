@@ -3,9 +3,6 @@
 - [Phase 4: QuickBooks A/R PDF intake](collections-phase-4-ar-pdf-intake.md)
 - [Phase 3 source-identity addendum](collections-phase-3-source-identity-addendum.md)
 
-- [Phase 4: QuickBooks A/R PDF intake](collections-phase-4-ar-pdf-intake.md)
-- [Phase 3 source-identity addendum](collections-phase-3-source-identity-addendum.md)
-
 Create a contract before dependent implementation changes any API behavior, persistence rule, access rule, shared type, support integration, or client-visible refresh behavior.
 
 Use `Draft`, `Frozen for implementation`, `Released`, and `Superseded` as contract states.

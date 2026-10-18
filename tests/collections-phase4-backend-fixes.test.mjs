@@ -35,3 +35,14 @@ test("the source-aware event function keeps every Phase 2 event rule", () => {
   assert.match(sql, /p_event_type in \('escalation_requested','formal_notice_requested'\) and exists\(/, "holds block requests, not a sent-notice record");
   assert.match(source("tools/collections-local/reset.sh"), /20261019110000_collections_event_rules_for_source\.sql/);
 });
+
+test("multi-invoice payment changes re-block every linked snapshot through a forward migration", () => {
+  const sql = source("supabase/migrations/20261019120000_collections_reblock_multi_invoice_payments.sql");
+  const localReset = source("tools/collections-local/reset.sh");
+  const sqlTests = source("supabase/tests/collections_phase4_intake_schema.sql");
+  assert.match(sql, /for v_invoice_id in[\s\S]*select distinct pa\.invoice_id[\s\S]*pa\.payment_id = coalesce\(new\.id, old\.id\)/);
+  assert.match(sql, /collections_billing_invoice_changed_on_or_after\(v_invoice_id, i\.source_as_of\)/);
+  assert.match(sql, /billing_snapshot_stale/);
+  assert.match(localReset, /20261019120000_collections_reblock_multi_invoice_payments\.sql/);
+  assert.match(sqlTests, /Reversing a payment did not re-block every linked invoice snapshot/);
+});

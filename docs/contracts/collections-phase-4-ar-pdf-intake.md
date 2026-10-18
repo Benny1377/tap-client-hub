@@ -1,8 +1,10 @@
 # Collections Phase 4: QuickBooks A/R PDF Intake
 
-Status: **Owner decisions recorded and Engineer A approved the backend/UI contract on 2026-10-18. Implementation is in progress on `codex/collections-phase4-backend`.** This contract does not authorize a hosted migration, production import, or live delivery.
+Status: **Frozen for implementation by owner and Engineer A on 2026-10-18.** The implementation clarifications below require Engineer A review with the updated branch. This contract does not authorize a hosted migration, production import, or live delivery.
 
 ## Source and row identity
+
+The initial supported exports are the A/R Aging QuickZoom detail report and the A/R Aging Summary report. The detail layout carries transaction type/date/number, PO number, customer, terms, due date, aging, and open balance; it supplies invoice-level rows. The summary layout is aggregate cross-check evidence only. Unknown layouts and uncertain fields remain in human review. Supplied real reports are sensitive and must never be copied into Git, fixtures, screenshots, external AI services, or shared test environments.
 
 - QuickBooks A/R PDFs may be the only receivables source at launch. An approved detail report can feed Collections, but PDF data never creates or mutates Billing invoices, payments, credits, allocations, or client records.
 - Every imported customer must be explicitly linked to an existing TAP Hub client before action. No automatic name-only matching or automatic client creation. Client creation, if needed, uses the normal audited Add Client flow.
@@ -17,9 +19,25 @@ Status: **Owner decisions recorded and Engineer A approved the backend/UI contra
 - Summary/detail cross-check API: `POST /api/collections/imports/{summary_batch_id}/cross-check` accepts `{ detail_batch_id, summary_total, note }`, requires the same as-of date and reviewed detail rows, and returns both totals, difference, and `matched | mismatch`. A same-date summary report must match the selected detail batch before that detail batch can be approved. The summary total is reviewer-confirmed from the source PDF; the system does not guess financial values from layout text.
 - Preserve the original PDF in private Supabase Storage and retain it at least one complete financial year. Audit upload, parse, review, correction, approval, view/download, source selection, calculation, and supersession. Do not configure auto-deletion until fiscal-year boundaries and any longer retention are confirmed.
 - Full-file duplicates are idempotent. Exact repeated rows are not double-counted. For partial/corrected reports, preserve provenance and additional non-conflicting information; conflicting values require an explicit decision. Never silently overwrite a prior accepted value.
-- An invoice with a Billing match is compared against the Billing open balance. Show the arithmetic. Any difference blocks collection actions until an authorized reviewer explicitly selects the source/value and records a reconciliation note. A Billing payment, allocation, credit, reversal, or other balance change after the PDF as-of date automatically re-blocks the matched row and records old/new math.
+- An invoice with a Billing match is compared against the Billing open balance. Show the arithmetic. Any difference blocks collection actions until a user with the configurable `approve` permission explicitly selects the source/value and records a reconciliation note. Owner/Admin have this permission by default and may delegate it through the permission policy. A Billing payment, allocation, credit, reversal, or other balance change on or after the PDF as-of calendar date (firm timezone) automatically re-blocks the matched row and records old/new math. The PDF contains a date, not a generation timestamp, so same-day changes are conservatively treated as potentially newer than the snapshot and require review.
 - Owner/Admin alone may edit the dynamic role/action permission policy. Configured permissions cannot override the rule that a batch uploader or corrector cannot approve that same batch.
 - Preserve complete report fields and calculations for future billing metrics. This phase does not write back into Billing. No real client reports or values are permitted in synthetic tests or shared test environments. Phase 3 provider delivery remains separately disabled/test-only.
+
+## Owner decision record
+
+1. Approved A/R PDFs as input to Collections. They remain a separate source and do not write into Billing.
+2. Surface source discrepancies to the user, block the affected invoice, and allow collection actions only after an explicit, audited resolution.
+3. Use the approved report layouts and human review; do not infer values when extraction is uncertain.
+4. Preserve useful additional fields from partial duplicates, but require explicit review for conflicting values.
+5. Keep import permissions dynamic and client-configurable; Owner/Admin alone edit the policy. The uploader/corrector separation-of-duties rule cannot be overridden.
+6. Store original PDFs privately, audit access, and retain them for at least one financial year; no automatic deletion until the fiscal-year boundary and any longer retention are settled.
+7. Show the math behind source comparisons and aging differences.
+8. Preserve report data and calculations for future Billing metrics; this phase does not write to the Billing ledger.
+9. Explicitly link each imported customer to a TAP Hub client before the invoice becomes actionable. No automatic name-only matching or client creation.
+10. For discrepancy resolution, require the configurable `approve` permission (Owner/Admin by default); Owner/Admin may delegate through the permission policy. This is stricter than report review because it selects the balance used for collection actions.
+11. The PDF provides an as-of date, not a generation timestamp. Conservatively treat Billing changes on that date or later, in the firm's timezone, as stale and require review.
+
+The final two items document implementation clarifications added during backend review; Engineer A must confirm them with the fixes branch before Phase 4 integration sign-off.
 
 ## Phase 3 forward migration included with the source-aware change
 

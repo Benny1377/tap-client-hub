@@ -27,7 +27,8 @@ for migration in \
   20261017120000_collections_test_delivery.sql \
   20261018110000_collections_delivery_reason_codes.sql \
   20261019100000_collections_pdf_intake.sql \
-  20261019110000_collections_event_rules_for_source.sql; do
+  20261019110000_collections_event_rules_for_source.sql \
+  20261019120000_collections_reblock_multi_invoice_payments.sql; do
   psql "$db_url" -X -v ON_ERROR_STOP=1 -f "$project_root/supabase/migrations/$migration" >/dev/null
 done
 psql "$db_url" -X -v ON_ERROR_STOP=1 -f "$local_root/seed.sql" >/dev/null

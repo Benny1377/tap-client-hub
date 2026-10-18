@@ -3,14 +3,14 @@
 ## Current Collections status (updated 2026-10-18)
 
 - The owner reports Phase 4's revised A/R PDF intake contract has Engineer A approval. The approved decisions are recorded in `docs/contracts/collections-phase-4-ar-pdf-intake.md` and `docs/contracts/collections-phase-3-source-identity-addendum.md`.
-- Phase 4 backend implementation is underway on local, unpushed branch `codex/collections-phase4-backend`, based on `c9d486f` (`codex/collections-phase3-backend-fixes`). Nothing from this branch has been pushed or applied to hosted Supabase.
-- Phase 1/2 and delivery-disabled Phase 3 status in the history below is prior evidence and must be refreshed against the integrated branch before release. Provider-backed test sending remains unsigned; live sending is not authorized.
-- Phase 4 work includes a forward migration, private PDF Storage, upload/review/approval/access audit APIs, explicit client linking, stale-snapshot guards, source-aware holds/events/history, and PDF-selected worklist/preview data. Current known gaps and exact validation status are in `docs/handoffs/2026-10-18-collections-phase4-backend.md`.
+- Phase 4 backend is pushed at `be2aa41` on `codex/collections-phase4-backend`; integrated review found defects and follow-up fixes are being applied on that branch. No hosted migration or real PDF import has occurred.
+- Phase 1/2 and delivery-disabled Phase 3 are treated as complete for now. Provider-backed test sending remains deferred to the end of delivery; live sending is not authorized.
+- Phase 4 includes private PDF storage, upload/review/approval/access-audit APIs, explicit client linking, stale-snapshot guards, source-aware holds/events/history, and PDF-selected worklist/preview data. Follow-up review status is in `docs/handoffs/2026-10-18-collections-phase4-backend.md`.
 - Use synthetic fixtures only. The owner's supplied real AR PDFs must remain out of Git, screenshots, test databases, and shared non-production environments. Hosted migrations remain deferred.
 
 Last updated: 2026-10-18 Asia Kolkata
 
-Updated by: Codex (Phase 4 backend implementation)
+Updated by: Codex (Phase 4 backend review fixes)
 
 ## Shared baseline
 
