@@ -67,7 +67,9 @@ const attempts = () => Number(sql("select count(*) from tap_hub_project.collecti
 const settings = sql("select automation_enabled || ' ' || delivery_mode from tap_hub_project.collection_settings where id = 'default'");
 record("DB1", "automation off and delivery disabled by default", pass(settings === "false disabled"), settings);
 const constraints = sql("select string_agg(pg_get_constraintdef(oid), ' | ') from pg_constraint where conrelid = 'tap_hub_project.collection_delivery_attempts'::regclass");
-record("DB2", "one attempt per invoice/stage and a unique idempotency key", pass(/UNIQUE \(invoice_id, stage\)/.test(constraints) && /UNIQUE \(idempotency_key\)/.test(constraints)), "unique (invoice_id, stage) and (idempotency_key)");
+const uniqueIndexes = sql("select coalesce(string_agg(indexdef, ' | '), '') from pg_indexes where schemaname = 'tap_hub_project' and tablename = 'collection_delivery_attempts' and indexdef ilike '%unique%'");
+const perStage = /UNIQUE \(invoice_id, stage\)/.test(constraints) || /\(canonical_collection_identity, stage\)/.test(uniqueIndexes);
+record("DB2", "one attempt per invoice (canonical identity after Phase 4) and stage, and a unique idempotency key", pass(perStage && /UNIQUE \(idempotency_key\)/.test(constraints)), perStage && /canonical_collection_identity/.test(uniqueIndexes) ? "unique (canonical_collection_identity, stage) and (idempotency_key)" : "unique (invoice_id, stage) and (idempotency_key)");
 const grants = sql("select coalesce(string_agg(grantee || ':' || privilege_type, ','), 'none') from information_schema.role_table_grants where table_schema = 'tap_hub_project' and table_name = 'collection_delivery_attempts' and grantee in ('anon', 'authenticated')");
 const rls = sql("select relrowsecurity from pg_class where oid = 'tap_hub_project.collection_delivery_attempts'::regclass");
 record("DB3", "attempts table has RLS and no anon/authenticated grants", pass(rls === "t" && grants === "none"), `rls=${rls} grants=${grants}`);
