@@ -295,3 +295,30 @@ test("a success response without a JSON body is reported as a failure, not as nu
   assert.equal(result.ok, false);
   assert.equal(result.kind, "server");
 });
+
+test("report details can be corrected only in review and before any invoice is confirmed", () => {
+  assert.equal(imports.canCorrectMetadata({ batch: batch(), invoices: [] }), true);
+  assert.equal(imports.canCorrectMetadata({ batch: batch(), invoices: [importInvoice()] }), false);
+  assert.equal(imports.canCorrectMetadata({ batch: batch({ status: "approved" }), invoices: [] }), false);
+  assert.equal(imports.metadataNeedsReview({ report_type: "unknown", source_as_of: "2026-08-28" }), true);
+  assert.equal(imports.metadataNeedsReview({ report_type: "aging_detail", source_as_of: null }), true);
+  assert.equal(imports.metadataNeedsReview({ report_type: "aging_detail", source_as_of: "2026-08-28" }), false);
+});
+
+test("an unread layout or date opens the correction form; otherwise it is an optional fix", () => {
+  const needed = render(h(panels.MetadataCorrection, { batch: { report_type: "unknown", source_as_of: null }, onCorrect: ok }));
+  assert.match(needed, /data-metadata-correction="needed"/);
+  assert.match(needed, /The layout wasn(&#x27;|’)t recognized/);
+  assert.match(needed, /I read the report type and date from the PDF/);
+  assert.doesNotMatch(needed, /data-field="metadata_confirmed" checked/, "the confirmation is never pre-ticked");
+  const optional = render(h(panels.MetadataCorrection, { batch: { report_type: "aging_detail", source_as_of: "2026-08-28" }, onCorrect: ok }));
+  assert.match(optional, /data-metadata-correction="optional"/);
+  assert.match(optional, /Report type or date read wrong\?/);
+});
+
+test("the metadata correction call matches the contract", async () => {
+  const calls = [];
+  const api = createBillingApi(async (url, init = {}) => { calls.push(`${init.method} ${url} ${init.body}`); return new Response("{}", { status: 200 }); });
+  await api.correctImportMetadata("b-1", { report_type: "aging_detail", source_as_of: "2026-08-28" });
+  assert.deepEqual(calls, ['PATCH /api/collections/imports/b-1/metadata {"report_type":"aging_detail","source_as_of":"2026-08-28","confirmed":true}']);
+});

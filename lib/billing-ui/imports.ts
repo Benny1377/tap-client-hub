@@ -146,6 +146,8 @@ export const IMPORT_ERROR_HEADLINES: Record<string, string> = {
   IMPORT_CROSS_CHECK_CONFLICT: "These reports can't be cross-checked yet: they need the same as-of date and reviewed invoices.",
   DISCREPANCY_RESOLUTION_BLOCKED: "This invoice can't be resolved that way (for example, it has no Billing link).",
   BATCH_STATE_CONFLICT: "This report has moved on (approved or closed), so it can't be changed.",
+  BATCH_METADATA_CORRECTION_BLOCKED: "The report type and date can only be corrected before any invoice in it is confirmed.",
+  IMPORT_METADATA_CORRECTION_INVALID: "Choose the report type and enter the as-of date printed on the PDF (it must differ from what was read).",
 };
 
 /** "$1,234.50", "(1,234.50)", "-1234.5" → 1234.5 / -1234.5. Anything else is null, never a guess. */
@@ -255,6 +257,16 @@ export function earlierBalance(invoice: Pick<ImportInvoice, "source_invoice_id" 
     return { balance: String(balance), source_as_of: typeof asOf === "string" ? asOf : null, batch_id: revision.batch_id };
   }
   return null;
+}
+
+/** Report type and date can be corrected only while the report is in review and before invoice review starts. */
+export function canCorrectMetadata(detail: Pick<ImportBatchDetail, "batch" | "invoices">) {
+  return detail.batch.status === "needs_review" && detail.invoices.length === 0;
+}
+
+/** The header needs a person when the parser could not read the layout or the date. */
+export function metadataNeedsReview(batch: Pick<ImportBatch, "report_type" | "source_as_of">) {
+  return batch.report_type === "unknown" || !batch.report_type || !batch.source_as_of;
 }
 
 export const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;

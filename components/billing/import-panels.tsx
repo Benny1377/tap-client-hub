@@ -5,6 +5,7 @@ import type { ApiResult, BillingApi } from "@/lib/billing-ui/api";
 import {
   approvalChecklist,
   BATCH_STATUS_LABELS,
+  canCorrectMetadata,
   compareBalances,
   DELEGABLE_ROLES,
   DISPOSITION_LABELS,
@@ -12,6 +13,7 @@ import {
   IMPORT_ACTIONS,
   IMPORT_ERROR_HEADLINES,
   linkedBillingInvoiceId,
+  metadataNeedsReview,
   parseAmount,
   priorImportsFrom,
   parseReportDate,
@@ -275,8 +277,15 @@ function BatchReview({ api, batchId, viewer, clients, billingInvoices, batches, 
           <button type="button" className="bc-btn" onClick={() => act(() => api.parseImport(batch.id))}>Read the text</button>
         </div>
       ) : null}
-      {batch.report_type === "unknown" ? <ImportError error={{ kind: "invalid", message: "This layout isn't one of the supported QuickBooks A/R Aging reports, so it can't be approved. Export the A/R Aging detail (QuickZoom) or summary report and upload that." }} /> : null}
-      {batch.status === "needs_review" && !batch.source_as_of ? <ImportError error={{ kind: "invalid", message: "The report's as-of date couldn't be read, so its invoices can't be confirmed. Re-export the report with the date in its header." }} /> : null}
+      {batch.status === "needs_review" && metadataNeedsReview(batch) && !canCorrectMetadata(data) ? (
+        <ImportError error={{ kind: "invalid", message: "This report's type or as-of date wasn't read, and invoices are already confirmed, so it can't be corrected here. Upload a fresh export of the report." }} />
+      ) : null}
+      {canCorrectMetadata(data) ? (
+        <MetadataCorrection
+          batch={batch}
+          onCorrect={(input) => act(() => api.correctImportMetadata(batch.id, input), undefined, true)}
+        />
+      ) : null}
       {actionError ? <ImportError error={actionError} /> : null}
 
       {rows.length > 0 ? (
@@ -392,6 +401,80 @@ function OpenOriginal({ api, batchId }: { api: BillingApi; batchId: string }) {
       ) : null}
       {error ? <ImportError error={error} /> : null}
     </span>
+  );
+}
+
+/**
+ * Reviewer-confirmed report type and as-of date. Opens by itself when parsing
+ * couldn't read them; otherwise it is a collapsed "wrong details?" option.
+ */
+export function MetadataCorrection({ batch, onCorrect }: {
+  batch: Pick<ImportBatch, "report_type" | "source_as_of">;
+  onCorrect: (input: { report_type: "aging_detail" | "aging_summary"; source_as_of: string }) => Promise<ApiResult<unknown>>;
+}) {
+  const needed = metadataNeedsReview(batch);
+  const [reportType, setReportType] = useState(batch.report_type === "aging_detail" || batch.report_type === "aging_summary" ? batch.report_type : "");
+  const [asOf, setAsOf] = useState(batch.source_as_of || "");
+  const [confirmed, setConfirmed] = useState(false);
+  const [error, setError] = useState<Failure | null>(null);
+  const [pending, setPending] = useState(false);
+
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    setError(null);
+    const date = parseReportDate(asOf);
+    if (reportType !== "aging_detail" && reportType !== "aging_summary") { setError({ kind: "invalid", message: "Choose the report type printed on the PDF." }); return; }
+    if (!date) { setError({ kind: "invalid", message: "Enter the as-of date printed on the PDF (YYYY-MM-DD or MM/DD/YYYY)." }); return; }
+    if (!confirmed) { setError({ kind: "invalid", message: "Confirm you read both values from the PDF." }); return; }
+    setPending(true);
+    const result = await onCorrect({ report_type: reportType, source_as_of: date });
+    setPending(false);
+    setError(failureOf(result));
+  }
+
+  const form = (
+    <form onSubmit={submit} noValidate data-metadata-form style={{ marginTop: 8 }}>
+      <p className="bc-hint" style={{ margin: "0 0 8px" }}>
+        Read these from the PDF header. The change is logged with the values that were read, and whoever corrects them can&rsquo;t approve this report.
+        It&rsquo;s only possible before any invoice in the report is confirmed.
+      </p>
+      <div className="bc-inline" style={{ alignItems: "flex-end" }}>
+        <label className="bc-field" style={{ margin: 0, minWidth: 200 }}>
+          <span>Report type</span>
+          <select className="bc-in" data-field="report_type" value={reportType} onChange={(event) => setReportType(event.target.value as typeof reportType)}>
+            <option value="">Select…</option>
+            <option value="aging_detail">{REPORT_TYPE_LABELS.aging_detail} (QuickZoom)</option>
+            <option value="aging_summary">{REPORT_TYPE_LABELS.aging_summary}</option>
+          </select>
+        </label>
+        <label className="bc-field" style={{ margin: 0, minWidth: 160 }}>
+          <span>As of</span>
+          <input className="bc-in" data-field="source_as_of" placeholder="YYYY-MM-DD" value={asOf} onChange={(event) => setAsOf(event.target.value)} />
+        </label>
+      </div>
+      <label className="bc-inline" style={{ fontSize: 13, margin: "8px 0" }}>
+        <input type="checkbox" data-field="metadata_confirmed" checked={confirmed} onChange={(event) => setConfirmed(event.target.checked)} />
+        I read the report type and date from the PDF.
+      </label>
+      {error ? <ImportError error={error} /> : null}
+      <button type="submit" className="bc-btn" disabled={pending}>{pending ? "Saving…" : "Save report details"}</button>
+    </form>
+  );
+
+  return needed ? (
+    <section className="bc-gatebox" aria-label="Report details to confirm" data-metadata-correction="needed" style={{ marginBottom: 12 }}>
+      <h4 className="bc-sect">Confirm the report details</h4>
+      <p className="bc-hint" style={{ margin: 0 }}>
+        {batch.report_type === "unknown" || !batch.report_type ? "The layout wasn't recognized" : "The as-of date wasn't read"}, so nothing in this report can be confirmed or approved until a reviewer enters it from the PDF.
+        If it isn&rsquo;t a QuickBooks A/R Aging detail or summary report, don&rsquo;t correct it: upload the right export instead.
+      </p>
+      {form}
+    </section>
+  ) : (
+    <details className="bc-details" data-metadata-correction="optional" style={{ marginBottom: 10 }}>
+      <summary>Report type or date read wrong?</summary>
+      {form}
+    </details>
   );
 }
 
@@ -722,7 +805,7 @@ export function ApprovalBox({ detail, viewer, onApprove }: { detail: ImportBatch
           </li>
         ))}
       </ul>
-      <p className="bc-small" style={{ margin: "0 0 10px" }}>If a summary report for the same date is uploaded, it must be cross-checked against this report first.</p>
+      <p className="bc-small" style={{ margin: "0 0 10px" }}>If a summary report for the same date is uploaded, it must be cross-checked against this report first. Whoever corrected the report type or date can&rsquo;t approve it either.</p>
       <button type="button" className="bc-btn" disabled={!ready || pending} onClick={async () => { setPending(true); await onApprove(); setPending(false); }}>
         {pending ? "Approving…" : "Approve report"}
       </button>

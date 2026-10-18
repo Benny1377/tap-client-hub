@@ -222,6 +222,9 @@ export function createBillingApi(fetchImpl: FetchLike) {
       patch<{ row: { id: string; review_disposition: string } }>(fetchImpl, `/api/collections/imports/${encodeURIComponent(batchId)}`, { row_id: rowId, disposition, ...(note ? { note } : {}) }),
     reviewImportInvoice: (batchId: string, input: ImportInvoiceInput) =>
       post<{ invoice: ImportInvoice; source_invoice_id: string }>(fetchImpl, `/api/collections/imports/${encodeURIComponent(batchId)}`, input),
+    /** Reviewer-confirmed report type and as-of date when parsing couldn't read them (before any invoice is reviewed). */
+    correctImportMetadata: (batchId: string, input: { report_type: "aging_detail" | "aging_summary"; source_as_of: string }) =>
+      patch<{ batch: { id: string; status: string; report_type: string; source_as_of: string } }>(fetchImpl, `/api/collections/imports/${encodeURIComponent(batchId)}/metadata`, { ...input, confirmed: true }),
     approveImport: (batchId: string) =>
       post<{ batch: { batch_id: string; status: "approved"; invoice_count: number } }>(fetchImpl, `/api/collections/imports/${encodeURIComponent(batchId)}/approve`, {}),
     crossCheckImport: (summaryBatchId: string, input: { detail_batch_id: string; summary_total: number; note: string }) =>

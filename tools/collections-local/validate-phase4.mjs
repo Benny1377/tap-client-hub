@@ -222,6 +222,38 @@ record("AC5", "Collections staff without `review` cannot list reports, read rows
   && [noReviewList, noReviewRows, noReviewFile].every((r) => r.status === 403 && r.json?.code === "IMPORT_REVIEW_FORBIDDEN"),
   `policy ${narrowed?.status}/${restored?.status}; list ${noReviewList.status} ${noReviewList.json?.code}, rows ${noReviewRows.status} ${noReviewRows.json?.code}, file ${noReviewFile.status} ${noReviewFile.json?.code}`);
 
+// ---- Header correction when the parser can't read the layout or date (5739fe2) ----------------
+const UNKNOWN = syntheticPdf([
+  { x: 40, y: 750, text: "Synthetic Test Firm" },
+  { x: 40, y: 735, text: "Open invoices" },
+  ...row(690, ["Date", "Transaction Type", "Num", "Due Date", "Open Balance"]),
+  ...row(670, ["08/05/2026", "Invoice", "SYN-2001", "09/04/2026", "75.00"]),
+]);
+const unknownUp = await upload(owner, UNKNOWN, "synthetic-unlabelled.pdf");
+const unknownId = unknownUp.json?.batch?.id;
+const unknownParse = unknownId ? await owner.call("POST", `/api/collections/imports/${unknownId}/parse`, {}) : { status: 0, json: {} };
+const unconfirmed = await admin.call("PATCH", `/api/collections/imports/${unknownId}/metadata`, { report_type: "aging_detail", source_as_of: "2026-08-31" });
+const corrected = await admin.call("PATCH", `/api/collections/imports/${unknownId}/metadata`, { report_type: "aging_detail", source_as_of: "2026-08-31", confirmed: true });
+const metaAudit = sql(`select count(*) from tap_hub_project.collection_import_audit where batch_id = '${unknownId}' and action = 'pdf_batch_metadata_corrected' and actor is not null`);
+record("MD1", "a reviewer corrects an unread layout and date, with confirmation required and an audit row",
+  unknownParse.json?.report_type === "unknown" && !unknownParse.json?.source_as_of && unconfirmed.status === 422 && corrected.status === 200
+    && corrected.json?.batch?.report_type === "aging_detail" && corrected.json?.batch?.source_as_of === "2026-08-31" && metaAudit === "1",
+  `parsed ${unknownParse.json?.report_type}/${unknownParse.json?.source_as_of}; unconfirmed ${unconfirmed.status}; corrected ${corrected.status} ${corrected.json?.batch?.report_type} ${corrected.json?.batch?.source_as_of}; audit ${metaAudit}`);
+const unknownRows = (await owner.call("GET", `/api/collections/imports/${unknownId}`)).json?.rows || [];
+const unknownInvoiceRow = unknownRows.find((r) => /SYN-2001/.test(r.raw_text));
+const unknownReview = await owner.call("POST", `/api/collections/imports/${unknownId}`, {
+  source_row_id: unknownInvoiceRow?.id, client_id: C1, customer_name: "Example Orchard LLC", invoice_number: "SYN-2001", due_date: "2026-09-04", open_balance: 75, confirmed: true,
+});
+const lateCorrection = await admin.call("PATCH", `/api/collections/imports/${unknownId}/metadata`, { report_type: "aging_detail", source_as_of: "2026-09-01", confirmed: true });
+record("MD2", "the header can't change once an invoice in the report is confirmed", unknownReview.status === 201 && lateCorrection.status === 409 && lateCorrection.json?.code === "BATCH_METADATA_CORRECTION_BLOCKED",
+  `review ${unknownReview.status}; late correction ${lateCorrection.status} ${lateCorrection.json?.code}`);
+for (const r of unknownRows.filter((item) => item.id !== unknownInvoiceRow?.id && item.review_disposition === "unreviewed")) {
+  await owner.call("PATCH", `/api/collections/imports/${unknownId}`, { row_id: r.id, disposition: "header" });
+}
+const correctorApprove = await admin.call("POST", `/api/collections/imports/${unknownId}/approve`, {});
+record("MD3", "whoever corrected the header can't approve the report", correctorApprove.status === 409 && correctorApprove.json?.code === "IMPORT_SEPARATION_OF_DUTIES",
+  `${correctorApprove.status} ${correctorApprove.json?.code}`);
+
 // ---- Safety -------------------------------------------------------------------------------
 const attemptsAfter = Number(sql("select count(*) from tap_hub_project.collection_delivery_attempts"));
 record("SF1", "no delivery attempts were created", attemptsAfter === attemptsBefore, `attempts ${attemptsBefore} -> ${attemptsAfter}`);
