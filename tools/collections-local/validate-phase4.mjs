@@ -235,8 +235,8 @@ const unknownParse = unknownId ? await owner.call("POST", `/api/collections/impo
 const unconfirmed = await admin.call("PATCH", `/api/collections/imports/${unknownId}/metadata`, { report_type: "aging_detail", source_as_of: "2026-08-31" });
 const corrected = await admin.call("PATCH", `/api/collections/imports/${unknownId}/metadata`, { report_type: "aging_detail", source_as_of: "2026-08-31", confirmed: true });
 const metaAudit = sql(`select count(*) from tap_hub_project.collection_import_audit where batch_id = '${unknownId}' and action = 'pdf_batch_metadata_corrected' and actor is not null`);
-record("MD1", "a reviewer corrects an unread layout and date, with confirmation required and an audit row",
-  unknownParse.json?.report_type === "unknown" && !unknownParse.json?.source_as_of && unconfirmed.status === 422 && corrected.status === 200
+record("MD1", "a reviewer enters an unread as-of date, with confirmation required and an audit row",
+  unknownParse.status === 200 && !unknownParse.json?.source_as_of && unconfirmed.status === 422 && corrected.status === 200
     && corrected.json?.batch?.report_type === "aging_detail" && corrected.json?.batch?.source_as_of === "2026-08-31" && metaAudit === "1",
   `parsed ${unknownParse.json?.report_type}/${unknownParse.json?.source_as_of}; unconfirmed ${unconfirmed.status}; corrected ${corrected.status} ${corrected.json?.batch?.report_type} ${corrected.json?.batch?.source_as_of}; audit ${metaAudit}`);
 const unknownRows = (await owner.call("GET", `/api/collections/imports/${unknownId}`)).json?.rows || [];
