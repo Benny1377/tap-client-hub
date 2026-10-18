@@ -343,7 +343,12 @@ function BatchReview({ api, batchId, viewer, clients, billingInvoices, batches, 
       ) : null}
 
       {batch.report_type === "aging_detail" && batch.status === "needs_review" ? (
-        <ApprovalBox detail={data} viewer={viewer} onApprove={() => act(() => api.approveImport(batch.id), onCollectionsChanged)} />
+        <ApprovalBox
+          detail={data}
+          viewer={viewer}
+          pendingSummaries={batches.filter((item) => item.report_type === "aging_summary" && item.status === "needs_review" && item.source_as_of === batch.source_as_of)}
+          onApprove={() => act(() => api.approveImport(batch.id), onCollectionsChanged)}
+        />
       ) : null}
       {batch.status === "approved" ? (
         <div className="bc-source" role="note" data-batch-approved style={{ marginTop: 16 }}>
@@ -790,7 +795,7 @@ export function ConfirmedInvoices({ invoices, revisions = [], clientNames, billi
   );
 }
 
-export function ApprovalBox({ detail, viewer, onApprove }: { detail: ImportBatchDetail; viewer: Viewer | null; onApprove: () => Promise<ApiResult<unknown>> }) {
+export function ApprovalBox({ detail, viewer, pendingSummaries = [], onApprove }: { detail: ImportBatchDetail; viewer: Viewer | null; pendingSummaries?: ImportBatch[]; onApprove: () => Promise<ApiResult<unknown>> }) {
   const checks = approvalChecklist(detail, viewer?.id || null);
   const ready = checks.every((check) => check.ok);
   const [pending, setPending] = useState(false);
@@ -805,6 +810,11 @@ export function ApprovalBox({ detail, viewer, onApprove }: { detail: ImportBatch
           </li>
         ))}
       </ul>
+      {pendingSummaries.length ? (
+        <p className="bc-small" data-pending-summary style={{ margin: "0 0 6px", color: "var(--gate-ink)" }}>
+          Summary report{pendingSummaries.length === 1 ? "" : "s"} for this date: {pendingSummaries.map((item) => item.original_filename).join(", ")}. Open it and compare totals; this report can be approved once they match.
+        </p>
+      ) : null}
       <p className="bc-small" style={{ margin: "0 0 10px" }}>If a summary report for the same date is uploaded, it must be cross-checked against this report first. Whoever corrected the report type or date can&rsquo;t approve it either.</p>
       <button type="button" className="bc-btn" disabled={!ready || pending} onClick={async () => { setPending(true); await onApprove(); setPending(false); }}>
         {pending ? "Approving…" : "Approve report"}
@@ -814,7 +824,10 @@ export function ApprovalBox({ detail, viewer, onApprove }: { detail: ImportBatch
 }
 
 export function CrossCheckForm({ api, batch, batches, onDone }: { api: BillingApi; batch: ImportBatch; batches: ImportBatch[]; onDone: () => Promise<void> }) {
-  const details = batches.filter((item) => item.report_type === "aging_detail" && item.source_as_of === batch.source_as_of && item.id !== batch.id);
+  // The server compares against a detail report that is still in review: the cross-check
+  // gates that report's approval, so an approved one can't be checked any more.
+  const sameDate = batches.filter((item) => item.report_type === "aging_detail" && item.source_as_of === batch.source_as_of && item.id !== batch.id);
+  const details = sameDate.filter((item) => item.status === "needs_review");
   const [detailId, setDetailId] = useState(batch.metadata?.detail_cross_check?.detail_batch_id || "");
   const [total, setTotal] = useState("");
   const [note, setNote] = useState("");
@@ -847,7 +860,13 @@ export function CrossCheckForm({ api, batch, batches, onDone }: { api: BillingAp
           <span className={`bc-pill ${last.status === "matched" ? "green" : "red"}`}>{last.status === "matched" ? "Matches" : "Doesn't match"}</span>
         </div>
       ) : null}
-      {details.length === 0 ? <p className="bc-small">No detail report with this as-of date has been uploaded yet.</p> : (
+      {details.length === 0 ? (
+        <p className="bc-small" data-cross-check-empty>
+          {sameDate.length
+            ? "The detail report for this date is already approved, so there is nothing left to cross-check. Cross-check before approving the detail report next time."
+            : "No detail report with this as-of date has been uploaded yet. Upload it, confirm its invoices, then compare totals here before approving it."}
+        </p>
+      ) : (
         <form onSubmit={submit} noValidate>
           <label className="bc-field"><span>Detail report</span>
             <select className="bc-in" value={detailId} onChange={(event) => setDetailId(event.target.value)}>

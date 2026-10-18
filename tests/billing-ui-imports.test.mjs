@@ -322,3 +322,28 @@ test("the metadata correction call matches the contract", async () => {
   await api.correctImportMetadata("b-1", { report_type: "aging_detail", source_as_of: "2026-08-28" });
   assert.deepEqual(calls, ['PATCH /api/collections/imports/b-1/metadata {"report_type":"aging_detail","source_as_of":"2026-08-28","confirmed":true}']);
 });
+
+const deliveryPanels = loadTs("components/billing/delivery-panels.tsx");
+
+test("an accepted delivery never shows a next try; a failed one does", () => {
+  const item = (overrides) => ({ attempt_id: "a-1", invoice_id: "inv-1", source_invoice_id: null, source: "billing", row_key: "collection:billing:inv-1", canonical_collection_identity: "billing:inv-1", source_batch_id: null, source_as_of: null, discrepancy_status: "none",
+    invoice_number: "LOCAL-002", stage: 3, status: "accepted", reason_code: null, reason_text: null, attempt_count: 1, retryable: false, created_at: "2026-10-18T20:04:00Z", accepted_at: "2026-10-18T20:04:00Z", next_attempt_at: "2026-10-18T20:04:00Z", ...overrides });
+  const view = (items) => render(h(deliveryPanels.DeliveryHistoryView, { result: { ok: true, status: 200, data: { items, pagination: { limit: 50, offset: 0, total: items.length } } }, status: "", invoiceId: "", invoiceOptions: [], onFilter: () => {}, onPage: () => {}, onRetry: ok }));
+  assert.doesNotMatch(view([item({})]), /Next try/);
+  assert.match(view([item({ status: "failed", reason_code: "PROVIDER_RATE_LIMITED", accepted_at: null, retryable: true })]), /Next try/);
+});
+
+test("the cross-check offers only same-date detail reports still in review", () => {
+  const summary = batch({ id: "b-sum", report_type: "aging_summary" });
+  const approvedOnly = render(h(panels.CrossCheckForm, { api: {}, batch: summary, batches: [summary, batch({ status: "approved" })], onDone: async () => {} }));
+  assert.match(approvedOnly, /data-cross-check-empty/);
+  assert.match(approvedOnly, /already approved/);
+  assert.doesNotMatch(approvedOnly, /Compare totals/);
+});
+
+test("a detail report's approval box names a same-date summary still to cross-check", () => {
+  const detail = { batch: batch(), rows: [row("r1", "invoice")], invoices: [importInvoice()], revisions: [] };
+  const html = render(h(panels.ApprovalBox, { detail, viewer: { id: "u-approver", role: "admin", modules: [] }, pendingSummaries: [batch({ id: "b-sum", report_type: "aging_summary", original_filename: "summary.pdf" })], onApprove: ok }));
+  assert.match(html, /data-pending-summary/);
+  assert.match(html, /summary\.pdf/);
+});

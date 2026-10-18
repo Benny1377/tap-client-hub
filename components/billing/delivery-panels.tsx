@@ -222,7 +222,7 @@ export function DeliveryHistoryView({ result, status, invoiceId, invoiceOptions,
                         <DeliveryStatusPill status={item.status} />
                         {item.accepted_at ? <div className="bc-small">{formatFirmDateTime(item.accepted_at, firmTimezone)}</div> : null}
                       </td>
-                      <td className="bc-muted">{deliveryReasonLabel(item.reason_code, item.reason_text) || "—"}{item.next_attempt_at ? <div className="bc-small">Next try {formatFirmDateTime(item.next_attempt_at, firmTimezone)}</div> : null}</td>
+                      <td className="bc-muted">{deliveryReasonLabel(item.reason_code, item.reason_text) || "—"}{item.next_attempt_at && (item.status === "failed" || item.status === "queued") ? <div className="bc-small">Next try {formatFirmDateTime(item.next_attempt_at, firmTimezone)}</div> : null}</td>
                       <td className="r">{item.attempt_count}</td>
                       <td>{item.status === "failed" && item.retryable ? <ActionButton quiet label="Retry" onAction={() => onRetry(item.attempt_id)} /> : null}</td>
                     </tr>
