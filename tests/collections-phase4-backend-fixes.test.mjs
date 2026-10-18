@@ -52,3 +52,10 @@ test("the parse route's deploy trace includes the pdfjs worker it imports at run
   assert.match(config, /outputFileTracingIncludes:/);
   assert.ok(config.includes(String.raw`"/api/collections/imports/\\[id\\]/parse": ["./node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs"]`));
 });
+
+test("the batch review read returns each imported invoice's client and Billing links for the review UI", () => {
+  const route = source("app/api/collections/imports/[id]/route.ts");
+  assert.match(route, /select\("id,source_invoice_id,proposed_linked_invoice_id,/);
+  assert.match(route, /collection_source_invoice_identities"\)\.select\("source_invoice_id,client_id,linked_invoice_id,selected_source"\)/);
+  assert.match(route, /invoices: reviewedInvoices/);
+});
