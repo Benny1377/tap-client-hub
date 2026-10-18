@@ -44,7 +44,7 @@ export async function GET(request: NextRequest) {
       attempt_id: row.id, invoice_id: row.invoice_id, invoice_number: invoice?.invoice_number || "",
       client_id: row.client_id, stage: row.stage, status: row.status, reason_code: code,
       reason_text: deliveryReasonText(code), attempt_count: attemptCount,
-      retryable: row.status === "failed" && isRetryableDelivery(code, attemptCount),
+      retryable: row.status === "failed" && isRetryableDelivery(code, attemptCount, row.created_at),
       created_at: row.created_at, updated_at: row.updated_at,
       next_attempt_at: row.next_attempt_at, accepted_at: row.accepted_at,
     };

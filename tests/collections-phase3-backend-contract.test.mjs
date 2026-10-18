@@ -28,8 +28,10 @@ test("machine worker is token-only and requires a registered service actor", () 
 
 test("provider code only targets the server-configured test mailbox and uses idempotency", () => {
   const text = source("lib/collections-test-run.ts");
+  const provider = source("lib/collections-provider.ts");
   assert.match(text, /COLLECTIONS_TEST_RECIPIENT/);
-  assert.match(text, /Idempotency-Key/);
+  assert.match(provider, /Idempotency-Key/);
+  assert.match(text, /record_collection_test_payload_fingerprint/);
   assert.match(text, /isSyntheticOnlyEnabled/);
   assert.doesNotMatch(text, /invoice\.contact_email|account\.contact_email/);
 });

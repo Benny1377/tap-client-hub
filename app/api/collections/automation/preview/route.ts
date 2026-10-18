@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireBillingPowerUser } from "@/lib/billing-access";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { isRetryableDelivery } from "@/lib/collections-delivery";
 import type { CollectionsAutomationPreviewResponse, CollectionsDeliveryAttemptRef, CollectionsPreviewAction } from "@/lib/collections-api";
 
 export const runtime = "nodejs";
@@ -144,11 +145,11 @@ export async function POST(request: NextRequest) {
   const actions = allActions.slice(offset, offset + limit);
   if (actions.length) {
     const { data: attempts, error: attemptError } = await db.from("collection_delivery_attempts")
-      .select("id,invoice_id,stage,status,reason_code,last_error_code,attempt_count,updated_at")
+      .select("id,invoice_id,stage,status,reason_code,last_error_code,attempt_count,created_at,updated_at")
       .in("invoice_id", actions.map((action) => action.invoice_id));
     if (attemptError) return apiError("Unable to load existing delivery attempts", "PREVIEW_DELIVERIES_READ_FAILED", 500);
-    const byInvoiceStage = new Map<string, { id: string; status: string; reason_code: string | null; last_error_code: string | null; attempt_count: number; updated_at: string }>(
-      ((attempts || []) as Array<{ id: string; invoice_id: string; stage: number; status: string; reason_code: string | null; last_error_code: string | null; attempt_count: number; updated_at: string }>)
+    const byInvoiceStage = new Map<string, { id: string; status: string; reason_code: string | null; last_error_code: string | null; attempt_count: number; created_at: string; updated_at: string }>(
+      ((attempts || []) as Array<{ id: string; invoice_id: string; stage: number; status: string; reason_code: string | null; last_error_code: string | null; attempt_count: number; created_at: string; updated_at: string }>)
         .map((attempt) => [`${attempt.invoice_id}:${attempt.stage}`, attempt]),
     );
     for (const action of actions) {
@@ -157,7 +158,7 @@ export async function POST(request: NextRequest) {
         attempt_id: attempt.id,
         status: attempt.status as CollectionsDeliveryAttemptRef["status"],
         reason_code: (attempt.reason_code || attempt.last_error_code || null) as CollectionsDeliveryAttemptRef["reason_code"],
-        retryable: attempt.status === "failed" && Number(attempt.attempt_count || 0) < 5 && ["PROVIDER_RATE_LIMITED", "PROVIDER_TEMPORARY_FAILURE"].includes(attempt.reason_code || attempt.last_error_code || ""),
+        retryable: attempt.status === "failed" && isRetryableDelivery(attempt.reason_code || attempt.last_error_code, Number(attempt.attempt_count || 0), attempt.created_at),
         updated_at: attempt.updated_at,
       } : null;
     }

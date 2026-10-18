@@ -10,6 +10,9 @@ const MESSAGES: Record<string, string> = {
   RULE_DISABLED: "This reminder stage is turned off.",
   APPROVAL_REQUIRED: "Owner/Admin approval is required.",
   ATTEMPT_ALREADY_EXISTS: "This invoice stage already has an attempt.",
+  STAGE_NOT_DUE: "This reminder stage is not due yet.",
+  INVOICE_NOT_ELIGIBLE: "This invoice is not open and eligible for collection.",
+  OUTSIDE_SEND_WINDOW: "Outside the firm's configured send window.",
   DELIVERY_DISABLED: "Email delivery is disabled.",
   PROVIDER_KEY_MISSING: "Email provider is not configured.",
   SENDER_NOT_VERIFIED: "Sender address is not verified.",
@@ -19,6 +22,7 @@ const MESSAGES: Record<string, string> = {
   PROVIDER_TEMPORARY_FAILURE: "Email provider temporarily failed.",
   PROVIDER_REJECTED: "Email provider rejected the request.",
   PROVIDER_OUTCOME_UNKNOWN: "Provider outcome is unknown; review before retrying.",
+  PROVIDER_PAYLOAD_CHANGED: "Message content changed since the prior attempt; review required.",
   ATTEMPT_LIMIT_REACHED: "Retry limit reached.",
 };
 
@@ -26,8 +30,11 @@ export function deliveryReasonText(code: string | null | undefined) {
   return code ? MESSAGES[code] || null : null;
 }
 
-export function isRetryableDelivery(code: string | null | undefined, count: number) {
-  return count < 5 && (code === "PROVIDER_RATE_LIMITED" || code === "PROVIDER_TEMPORARY_FAILURE");
+export function isRetryableDelivery(code: string | null | undefined, count: number, createdAt: string | null | undefined, now = Date.now()) {
+  const created = createdAt ? Date.parse(createdAt) : Number.NaN;
+  const withinProviderIdempotencyWindow = Number.isFinite(created) && created <= now && now - created < 23 * 60 * 60 * 1000;
+  return count < 5 && withinProviderIdempotencyWindow
+    && (code === "PROVIDER_RATE_LIMITED" || code === "PROVIDER_TEMPORARY_FAILURE");
 }
 
 function maskedAddress(value: string | undefined) {

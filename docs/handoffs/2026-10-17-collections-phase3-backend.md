@@ -1,10 +1,10 @@
 # Collections Phase 3 backend implementation handoff
 
-Status: implementation branch only; not yet locally database-tested, Engineer B producer-approved, or pushed.
+Status: Phase 3 delivery-disabled integration was signed off by Engineer A at UI `83e2e21` + backend `af2a52e`. Follow-up hardening is validated locally but remains uncommitted/unpushed; provider-backed test sending is still not approved.
 
 Branch base: `dev` at `727ca6a` (Phase 2 integrated baseline).
-Implementation branch: `codex/collections-phase3-backend`.
-Contract reference: `codex/collections-phase3-contract` at `3f347e5`.
+Implementation branch: `codex/collections-phase3-backend` at `af2a52e`; follow-up work is on `codex/collections-phase3-backend-hardening`, based on Engineer A's proposed fixes at `5511876`.
+Contract reference: `codex/collections-phase3-contract` at `3f347e5`, with response/reason-code addendum in progress.
 
 ## Implemented in this branch
 
@@ -13,6 +13,10 @@ Contract reference: `codex/collections-phase3-contract` at `3f347e5`.
 - Test-only Resend adapter, HTML escaping and placeholder allowlist enforcement, configured-recipient-only routing, provider idempotency key, bounded attempts, and fail-closed environment/readiness checks.
 - Worklist `last_delivery`, preview `delivery_attempt`, synthetic markers on local fixtures, and shared Phase 3 API types.
 - `POST /api/collections/automation/test-run` returns `{ run_id, claimed, accepted, suppressed, needs_review, failed, remaining }`; this pins the response shape raised in the consumer review.
+- Engineer A's send-window and suppressed-reopen fixes: requests outside the firm window return `409 OUTSIDE_SEND_WINDOW` before creating attempts; blocked queued attempts return to `suppressed`; already handled attempts are skipped.
+- Fixed stage-4 subject and first body heading: `Internal Owner-escalation notice — TEST`. Both body template text and substitutions are HTML-escaped.
+- Forward-only migration `20261018110000_collections_delivery_reason_codes.sql`: precise `STAGE_NOT_DUE`, `INVOICE_NOT_ELIGIBLE`, and `OUTSIDE_SEND_WINDOW` database codes; per-attempt SHA-256 provider-payload fingerprint prevents a changed retry body from reaching Resend.
+- Provider adapter is injectable; mock tests cover acceptance, 429, 5xx, timeout, malformed response, stable key/payload retry, and escaping/token rules. A local-only two-connection test proves that only one concurrent claim can own an attempt.
 
 ## Required server-only configuration names
 
@@ -31,12 +35,10 @@ Database `delivery_mode` must also be `test`, and `automation_enabled` must be t
 
 ## Validation still required
 
-Static checks completed: TypeScript typecheck, targeted ESLint, five backend contract checks, and `git diff --check` pass.
+Validation completed on a fresh disposable local reset: all five SQL suites; 18/18 Phase 3 backend/fix/provider/template tests; concurrent claim test; TypeScript typecheck; targeted ESLint; `git diff --check`. Automation was restored to disabled and no provider calls were made. Engineer A previously reported Phase 2 68/68 and Phase 3 55/55 on the integrated UI/backend branch; those authenticated route/browser suites were not rerun here.
 
-1. Run the local SQL suites and Phase 2 68-check suite on a disposable local database after the migration is reviewed. Do not run `tools/collections-local/reset.sh` against a database containing data that must be kept; reset is destructive.
-2. Run Engineer A's `tools/collections-local/validate-phase3.mjs` after merging/rebasing the UI branch, initially with delivery disabled. Require zero provider calls and zero new attempts from the blocked test-run path.
-3. Add mock-provider tests for accepted, 429, 5xx, timeout/unknown, and malformed responses; test concurrent claims, transient retry, suppression reopening, token escaping, and no recipient fallback.
-4. Validate Owner/Admin, staff, anonymous, and worker-token access. Validate audit actor values for pause, retry, manual run, and machine run.
-5. Review stage 4/5 behavior with Engineer A: stage 4 sends a synthetic internal review notification only to the configured test mailbox; stage 5 is sent there only after an explicit `formal_notice_approved` event and never writes `formal_notice_sent`.
+1. Engineer A should rebase/review this hardening branch and rerun the integrated Phase 2 68-check suite, Phase 3 55-check suite, and browser/access matrix.
+2. Review the Phase 3 contract addendum for the retry response, exact run-count shape, refusal codes, payload-fingerprint behavior, and Resend idempotency caveat.
+3. Complete the Owner/Operator configuration review. Do not add a provider key or make a provider-backed test send until the owner explicitly approves that gate.
 
 No hosted migration, real provider request, production recipient, scheduler, or live-client send was performed as part of this implementation.

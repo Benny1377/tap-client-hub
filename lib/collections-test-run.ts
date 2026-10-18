@@ -1,7 +1,8 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getDeliveryStatus, isSyntheticOnlyEnabled, isWithinSendWindow } from "@/lib/collections-delivery";
+import { resendPayloadFingerprint, sendResendEmail } from "@/lib/collections-provider";
+import { renderCollectionsTemplate } from "@/lib/collections-template";
 
-const TOKEN_VALUES = new Set(["contact_name", "invoice_number", "balance", "due_date", "days_past_due"]);
 type RunCounts = { run_id: string; claimed: number; accepted: number; suppressed: number; needs_review: number; failed: number; remaining: number };
 type WorklistInvoice = {
   invoice_id: string; invoice_number: string; balance: string; days_past_due: number; due_date: string;
@@ -12,37 +13,21 @@ type WorklistAccount = { client_id: string; invoices: WorklistInvoice[] };
 type Candidate = { account: WorklistAccount; invoice: WorklistInvoice; stage: number };
 type WorklistPage = { accounts?: WorklistAccount[]; pagination?: { total_accounts?: number } };
 
-function escapeHtml(value: string) {
-  return value.replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]!);
-}
-function render(template: string, values: Record<string, string>) {
-  const tokens = [...template.matchAll(/\{([^{}]+)\}/g)].map((match) => match[1]);
-  if (tokens.some((token) => !TOKEN_VALUES.has(token) || values[token] === undefined)) throw new Error("TEMPLATE_TOKEN_INVALID");
-  return template.replace(/\{([^{}]+)\}/g, (_match, key: string) => escapeHtml(values[key]));
-}
 function stripTags(value: string) { return value.replace(/<[^>]*>/g, ""); }
 
-async function sendTestEmail(input: { subject: string; body: string; to: string; idempotencyKey: string }) {
+function providerRequest(input: { subject: string; body: string; to: string; idempotencyKey: string }) {
   const key = process.env.COLLECTIONS_RESEND_API_KEY!;
   const from = `${process.env.COLLECTIONS_SENDER_NAME || "TAP Collections Test"} <${process.env.COLLECTIONS_SENDER_EMAIL}>`;
-  let response: Response;
-  try {
-    response = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json", "Idempotency-Key": input.idempotencyKey },
-      body: JSON.stringify({ from, to: [input.to], reply_to: process.env.COLLECTIONS_REPLY_TO, subject: input.subject, html: input.body, text: stripTags(input.body) }),
-      signal: AbortSignal.timeout(12_000),
-    });
-  } catch { return { status: "needs_review" as const, reason: "PROVIDER_OUTCOME_UNKNOWN", messageId: null }; }
-  if (response.ok) {
-    try {
-      const result = await response.json() as { id?: string };
-      return result.id ? { status: "accepted" as const, reason: null, messageId: result.id } : { status: "needs_review" as const, reason: "PROVIDER_OUTCOME_UNKNOWN", messageId: null };
-    } catch { return { status: "needs_review" as const, reason: "PROVIDER_OUTCOME_UNKNOWN", messageId: null }; }
-  }
-  if (response.status === 429) return { status: "failed" as const, reason: "PROVIDER_RATE_LIMITED", messageId: null };
-  if (response.status >= 500) return { status: "failed" as const, reason: "PROVIDER_TEMPORARY_FAILURE", messageId: null };
-  return { status: "failed" as const, reason: "PROVIDER_REJECTED", messageId: null };
+  return {
+    apiKey: key,
+    from,
+    to: input.to,
+    replyTo: process.env.COLLECTIONS_REPLY_TO,
+    subject: input.subject,
+    html: input.body,
+    text: stripTags(input.body),
+    idempotencyKey: input.idempotencyKey,
+  };
 }
 
 export const OUTSIDE_SEND_WINDOW = "OUTSIDE_SEND_WINDOW" as const;
@@ -118,9 +103,11 @@ export async function runCollectionsTestDelivery(actor: string | null, limit = 5
       : stage <= 3 && !contacts[0].email ? "EMAIL_CONTACT_MISSING"
       : null;
     if (preReason) {
-      if (existing?.status === "queued") {
-        await db.from("collection_delivery_attempts").update({ status: "suppressed", reason_code: preReason, updated_at: new Date().toISOString() })
-          .eq("id", existing.id).eq("status", "queued");
+      if (existing && ["queued", "suppressed"].includes(existing.status)) {
+        const { error: suppressError } = await db.from("collection_delivery_attempts")
+          .update({ status: "suppressed", reason_code: preReason, updated_at: new Date().toISOString() })
+          .eq("id", existing.id).in("status", ["queued", "suppressed"]);
+        if (suppressError) return null;
       }
       counts.suppressed++; continue;
     }
@@ -164,13 +151,26 @@ export async function runCollectionsTestDelivery(actor: string | null, limit = 5
     let subject: string;
     let body: string;
     try {
-      subject = render(String(rule.subject_template), values).replace(/[\r\n\x00-\x1f]/g, " ").slice(0, 180);
-      body = `<div><strong>TEST ONLY — synthetic data</strong><br>${render(String(rule.body_template), values).replace(/\n/g, "<br>")}</div>`;
+      subject = (stage === 4 ? "Internal Owner-escalation notice — TEST" : renderCollectionsTemplate(String(rule.subject_template), values))
+        .replace(/[\r\n\x00-\x1f]/g, " ").slice(0, 180);
+      const renderedText = renderCollectionsTemplate(String(rule.body_template), values, true).replace(/\n/g, "<br>");
+      const stageHeader = stage === 4 ? "<strong>Internal Owner-escalation notice — TEST</strong><br>" : "";
+      body = `<div>${stageHeader}<strong>TEST ONLY — synthetic data</strong><br>${renderedText}</div>`;
     } catch {
       await db.from("collection_delivery_attempts").update({ status: "suppressed", reason_code: "RULE_DISABLED", updated_at: new Date().toISOString() }).eq("id", attemptId);
       counts.suppressed++; continue;
     }
-    const delivery = await sendTestEmail({ subject, body, to: process.env.COLLECTIONS_TEST_RECIPIENT!, idempotencyKey: idem });
+    const request = providerRequest({ subject, body, to: process.env.COLLECTIONS_TEST_RECIPIENT!, idempotencyKey: idem });
+    const fingerprint = resendPayloadFingerprint(request);
+    const { data: fingerprintRecorded, error: fingerprintError } = await db.rpc("record_collection_test_payload_fingerprint", {
+      p_attempt_id: attemptId, p_fingerprint: fingerprint, p_actor: actor,
+    });
+    if (fingerprintError || fingerprintRecorded !== true) {
+      await db.from("collection_delivery_attempts").update({ status: "needs_review", reason_code: "PROVIDER_PAYLOAD_CHANGED", updated_at: new Date().toISOString() }).eq("id", attemptId);
+      counts.needs_review++;
+      continue;
+    }
+    const delivery = await sendResendEmail(request);
     if (delivery.status === "accepted") {
       const { error } = await db.rpc("accept_collection_delivery", { p_attempt_id: attemptId, p_provider_message_id: delivery.messageId, p_actor: actor });
       if (error) {

@@ -16,11 +16,11 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
   if (!UUID.test(id)) return NextResponse.json({ error: "Attempt id must be a UUID", code: "INVALID_ATTEMPT_ID" }, { status: 422, headers: NO_STORE });
   const db = createAdminClient();
   const { data: attempt, error: readError } = await db.from("collection_delivery_attempts")
-    .select("id,status,reason_code,last_error_code,attempt_count").eq("id", id).maybeSingle();
+    .select("id,status,reason_code,last_error_code,attempt_count,created_at").eq("id", id).maybeSingle();
   if (readError) return NextResponse.json({ error: "Unable to read delivery attempt", code: "DELIVERY_ATTEMPT_READ_FAILED" }, { status: 500, headers: NO_STORE });
   if (!attempt) return NextResponse.json({ error: "Delivery attempt not found", code: "DELIVERY_ATTEMPT_NOT_FOUND" }, { status: 404, headers: NO_STORE });
   const reason = attempt.reason_code || attempt.last_error_code;
-  if (attempt.status !== "failed" || !isRetryableDelivery(reason, Number(attempt.attempt_count || 0))) {
+  if (attempt.status !== "failed" || !isRetryableDelivery(reason, Number(attempt.attempt_count || 0), attempt.created_at)) {
     return NextResponse.json({ error: "This delivery is not eligible for retry", code: "DELIVERY_NOT_RETRYABLE" }, { status: 409, headers: NO_STORE });
   }
   const { data, error } = await db.from("collection_delivery_attempts").update({
