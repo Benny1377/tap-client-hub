@@ -471,4 +471,76 @@ await check("stage labels cover the five ladder steps", () => {
   assert.equal(vm.stageLabel(null), "—");
 });
 
+// --- Phase 3 (test-only email delivery), consumer side ------------------------
+const delivery = loadTs("lib/billing-ui/delivery.ts");
+
+await check("Phase 3 delivery routes and query names follow the contract", async () => {
+  const { fetchImpl, calls } = fakeFetch({
+    "GET /api/collections/delivery-status": [200, { mode: "disabled", automation_enabled: false, test_ready: false, missing: ["DELIVERY_DISABLED"], test_recipient_masked: null }],
+    "GET /api/collections/deliveries": [200, { items: [], pagination: { limit: 50, offset: 0, total: 0 } }],
+    "POST /api/collections/deliveries/a%2F1/retry": [200, { attempt: {} }],
+    "POST /api/collections/automation/test-run": [200, { run_id: "run-1" }],
+    "POST /api/collections/automation/pause": [200, { mode: "disabled" }],
+  });
+  const client = api.createBillingApi(fetchImpl);
+  assert.equal((await client.deliveryStatus()).ok, true);
+  await client.deliveries({ invoiceId: "inv-1", status: "failed", limit: 50, offset: 100 });
+  await client.deliveries();
+  await client.retryDelivery("a/1");
+  await client.testRun();
+  await client.pauseAutomation();
+  assert.deepEqual(calls.map((call) => `${call.method} ${call.url}`), [
+    "GET /api/collections/delivery-status",
+    "GET /api/collections/deliveries?invoice_id=inv-1&status=failed&limit=50&offset=100",
+    "GET /api/collections/deliveries",
+    "POST /api/collections/deliveries/a%2F1/retry",
+    "POST /api/collections/automation/test-run",
+    "POST /api/collections/automation/pause",
+  ]);
+  assert.equal(calls[3].body, undefined, "retry sends no recipient or body");
+  assert.equal(calls[4].body, undefined, "test run accepts no client-controlled data");
+  assert.equal(calls[5].body, undefined, "pause accepts no request body");
+});
+
+await check("every contract status, reason code, and missing setting has plain wording", () => {
+  assert.deepEqual(delivery.DELIVERY_STATUSES, ["queued", "sending", "accepted", "suppressed", "needs_review", "failed"]);
+  assert.equal(delivery.deliveryStatusLabel("accepted"), "Accepted by email provider");
+  assert.doesNotMatch(delivery.DELIVERY_STATUS_LABELS.accepted, /\bdelivered\b|\bread\b|\bsent\b/i, "acceptance never claims delivery");
+  const codes = ["ACTIVE_HOLD", "UNALLOCATED_CREDIT_REVIEW", "CONTACT_REVIEW_REQUIRED", "EMAIL_CONTACT_MISSING", "BELOW_MINIMUM_BALANCE", "RULE_DISABLED", "APPROVAL_REQUIRED", "ATTEMPT_ALREADY_EXISTS", "DELIVERY_DISABLED", "PROVIDER_KEY_MISSING", "SENDER_NOT_VERIFIED", "TEST_RECIPIENT_MISSING", "SYNTHETIC_DATA_REQUIRED", "PROVIDER_RATE_LIMITED", "PROVIDER_TEMPORARY_FAILURE", "PROVIDER_REJECTED", "PROVIDER_OUTCOME_UNKNOWN", "ATTEMPT_LIMIT_REACHED",
+    // Addendum 2b1fce4
+    "STAGE_NOT_DUE", "INVOICE_NOT_ELIGIBLE", "OUTSIDE_SEND_WINDOW", "PROVIDER_PAYLOAD_CHANGED"];
+  assert.deepEqual(Object.keys(delivery.DELIVERY_REASON_LABELS).sort(), [...codes].sort());
+  assert.equal(delivery.deliveryReasonLabel("OUTSIDE_SEND_WINDOW"), "Outside the firm's configured send window.");
+  assert.notEqual(delivery.DELIVERY_REASON_LABELS.OUTSIDE_SEND_WINDOW, delivery.DELIVERY_REASON_LABELS.RULE_DISABLED, "a closed window is not a disabled rule");
+  for (const code of ["DELIVERY_DISABLED", "AUTOMATION_PAUSED", "PROVIDER_KEY_MISSING", "SENDER_NOT_VERIFIED", "REPLY_TO_MISSING", "TEST_RECIPIENT_MISSING", "ENVIRONMENT_NOT_ALLOWLISTED"]) {
+    assert.notEqual(delivery.missingSettingLabel(code), code, `${code} has wording`);
+  }
+  assert.equal(delivery.deliveryReasonLabel("NEW_CODE", "Server text"), "Server text", "unknown codes fall back to the server's text");
+  assert.equal(delivery.deliveryReasonLabel("NEW_CODE", null), "NEW_CODE");
+});
+
+await check("a missing Phase 3 route is told apart from a real not-found", async () => {
+  const { fetchImpl } = fakeFetch({
+    "GET /api/collections/delivery-status": [404, null],
+    "POST /api/collections/deliveries/x/retry": [404, { error: "Delivery attempt not found", code: "NOT_FOUND" }],
+  });
+  const client = api.createBillingApi(fetchImpl);
+  assert.equal(delivery.endpointMissing(await client.deliveryStatus()), true);
+  assert.equal(delivery.endpointMissing(await client.retryDelivery("x")), false);
+});
+
+await check("only accepted, queued, sending, and needs-review attempts block a new send in the preview", () => {
+  const attempt = (status) => ({ attempt_id: "a", status, reason_code: null, retryable: false, updated_at: "2026-10-15T00:00:00Z" });
+  for (const status of ["accepted", "queued", "sending", "needs_review"]) assert.equal(delivery.attemptBlocksNewSend(attempt(status)), true, status);
+  for (const status of ["suppressed", "failed"]) assert.equal(delivery.attemptBlocksNewSend(attempt(status)), false, status);
+  assert.equal(delivery.attemptBlocksNewSend(null), false);
+  // Route error codes get our wording; unknown codes keep the server text.
+  for (const code of ["DELIVERY_NOT_READY", "TEST_RUN_FAILED_CLOSED", "OUTSIDE_SEND_WINDOW", "DELIVERY_NOT_RETRYABLE", "DELIVERY_RETRY_CONFLICT", "DELIVERY_ATTEMPT_NOT_FOUND"]) {
+    const worded = delivery.withDeliveryActionWording({ ok: false, status: 409, kind: "conflict", message: "server text", code });
+    assert.equal(worded.message, delivery.DELIVERY_ACTION_ERROR_LABELS[code], code);
+  }
+  assert.equal(delivery.withDeliveryActionWording({ ok: false, status: 500, kind: "server", message: "server text", code: "OTHER" }).message, "server text");
+  assert.equal(delivery.withDeliveryActionWording({ ok: true, status: 200, data: 1 }).ok, true);
+});
+
 console.log(`billing UI data checks passed (${passed})`);

@@ -9,6 +9,7 @@ import { ClientPicker, OwnerAdminOnly, SectionView } from "@/components/billing/
 import { ActiveHoldBanner, ActivityPanel, DecisionsPanel, HoldsPanel, type InvoiceOption } from "@/components/billing/collections-panels";
 import { AutomationPreviewPanel, LadderRungs, LadderSummary, MoneyByStage, PipelineBanner, PipelineTiles, WhoIsWhere, WorklistSummary, WorklistTable } from "@/components/billing/worklist-panels";
 import { CollectionsRulesEditor } from "@/components/billing/collections-rules-editor";
+import { DeliveryHistoryPanel, DeliverySetupPanel } from "@/components/billing/delivery-panels";
 
 const WORKLIST_PAGE = 50;
 const TABS = [
@@ -27,6 +28,7 @@ export default function CollectionsPage() {
   const [tab, setTab] = useState<TabId>("insights");
   const [clientId, setClientId] = useState<string | null>(null);
   const [worklistOffset, setWorklistOffset] = useState(0);
+  const [deliveryRefreshKey, setDeliveryRefreshKey] = useState(0);
   // Two loaders: paging the call list reloads only the worklist, not holds and activity.
   const ledger = useLedger(clientId, ["holds", "events", "receivables", "rules"]);
   const calls = useLedger(clientId, ["worklist"], { worklistLimit: WORKLIST_PAGE, worklistOffset, includeMeta: false });
@@ -149,6 +151,13 @@ export default function CollectionsPage() {
             {(rows) => <ActivityPanel events={rows} {...eventProps} />}
           </SectionView>
         </section>
+        {power ? (
+          <section className="bc-card" aria-label="Delivery history" style={{ marginBottom: 20 }}>
+            <h3 className="bc-sect">Delivery history</h3>
+            <p className="bc-hint">Every test email attempt, newest first. Owner/Admin only; staff see each invoice&rsquo;s last email on the call list.</p>
+            <DeliveryHistoryPanel api={api} viewer={viewer} invoiceOptions={invoiceOptions} stageLabels={stageLabels} firmTimezone={firmTimezone} refreshKey={deliveryRefreshKey} />
+          </section>
+        ) : null}
         <section className="bc-card" aria-label="Automation preview">
           <h3 className="bc-sect">Automation preview</h3>
           <AutomationPreviewPanel viewer={viewer} runPreview={(params) => api.preview(params)} stageLabels={stageLabels} />
@@ -167,6 +176,13 @@ export default function CollectionsPage() {
             <p className="bc-hint"><OwnerAdminOnly action="Changing the ladder, wording, or guardrails" /></p>
           </section>
         )}
+        {power ? (
+          <section className="bc-cfgsec" aria-label="Email delivery">
+            <h3 className="bc-sect">Email delivery (test mode)</h3>
+            <p className="bc-hint">Whether test sends are ready, and what is still missing. Sending to clients is not part of this phase.</p>
+            <DeliverySetupPanel api={api} viewer={viewer} onTestRunComplete={() => setDeliveryRefreshKey((current) => current + 1)} />
+          </section>
+        ) : null}
         <section className="bc-cfgsec" aria-label="Holds">
           <h3 className="bc-sect">On hold — never chased</h3>
           <p className="bc-hint">Disputes, payment plans, and anyone a person should handle. A hold blocks escalation and formal-notice steps for its client or invoice.</p>

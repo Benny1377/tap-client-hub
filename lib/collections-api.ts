@@ -1,35 +1,5 @@
 export type Money = string;
 
-export type CollectionsDeliveryStatus = "queued" | "sending" | "accepted" | "suppressed" | "needs_review" | "failed";
-export type CollectionsDeliveryReasonCode =
-  | "ACTIVE_HOLD" | "UNALLOCATED_CREDIT_REVIEW" | "CONTACT_REVIEW_REQUIRED" | "EMAIL_CONTACT_MISSING"
-  | "BELOW_MINIMUM_BALANCE" | "RULE_DISABLED" | "APPROVAL_REQUIRED" | "ATTEMPT_ALREADY_EXISTS"
-  | "DELIVERY_DISABLED" | "PROVIDER_KEY_MISSING" | "SENDER_NOT_VERIFIED" | "TEST_RECIPIENT_MISSING"
-  | "SYNTHETIC_DATA_REQUIRED" | "PROVIDER_RATE_LIMITED" | "PROVIDER_TEMPORARY_FAILURE"
-  | "PROVIDER_REJECTED" | "PROVIDER_OUTCOME_UNKNOWN" | "PROVIDER_PAYLOAD_CHANGED" | "ATTEMPT_LIMIT_REACHED"
-  | "STAGE_NOT_DUE" | "INVOICE_NOT_ELIGIBLE" | "OUTSIDE_SEND_WINDOW";
-export type CollectionsDeliveryAttemptRef = {
-  attempt_id: string; status: CollectionsDeliveryStatus; reason_code: CollectionsDeliveryReasonCode | null;
-  retryable: boolean; updated_at: string;
-};
-export type CollectionsLastDelivery = { stage: 1 | 2 | 3 | 4 | 5; status: CollectionsDeliveryStatus; occurred_at: string };
-export type CollectionsDeliveryAttemptSummary = {
-  attempt_id: string; invoice_id: string; invoice_number: string; client_id: string; stage: 1 | 2 | 3 | 4 | 5;
-  status: CollectionsDeliveryStatus; reason_code: CollectionsDeliveryReasonCode | null; reason_text: string | null;
-  attempt_count: number; retryable: boolean; created_at: string; updated_at: string;
-  next_attempt_at: string | null; accepted_at: string | null;
-};
-export type CollectionsDeliveryHistoryResponse = {
-  items: CollectionsDeliveryAttemptSummary[]; pagination: { limit: number; offset: number; total: number };
-};
-export type CollectionsDeliveryMissingSetting =
-  | "DELIVERY_DISABLED" | "AUTOMATION_PAUSED" | "PROVIDER_KEY_MISSING" | "SENDER_NOT_VERIFIED"
-  | "REPLY_TO_MISSING" | "TEST_RECIPIENT_MISSING" | "ENVIRONMENT_NOT_ALLOWLISTED";
-export type CollectionsDeliveryStatusResponse = {
-  mode: "disabled" | "test"; automation_enabled: boolean; test_ready: boolean;
-  missing: CollectionsDeliveryMissingSetting[]; test_recipient_masked: string | null;
-};
-
 export type CollectionsAging = {
   current: Money;
   days_1_30: Money;
@@ -49,6 +19,85 @@ export type CollectionsAwaitingApproval = {
   event_type: "escalation_requested" | "formal_notice_requested";
   stage: 4 | 5;
   requested_at: string;
+};
+
+export type CollectionsDeliveryStatus = "queued" | "sending" | "accepted" | "suppressed" | "needs_review" | "failed";
+
+export type CollectionsDeliveryReasonCode =
+  | "ACTIVE_HOLD"
+  | "UNALLOCATED_CREDIT_REVIEW"
+  | "CONTACT_REVIEW_REQUIRED"
+  | "EMAIL_CONTACT_MISSING"
+  | "BELOW_MINIMUM_BALANCE"
+  | "RULE_DISABLED"
+  | "APPROVAL_REQUIRED"
+  | "ATTEMPT_ALREADY_EXISTS"
+  | "DELIVERY_DISABLED"
+  | "PROVIDER_KEY_MISSING"
+  | "SENDER_NOT_VERIFIED"
+  | "TEST_RECIPIENT_MISSING"
+  | "SYNTHETIC_DATA_REQUIRED"
+  | "PROVIDER_RATE_LIMITED"
+  | "PROVIDER_TEMPORARY_FAILURE"
+  | "PROVIDER_REJECTED"
+  | "PROVIDER_OUTCOME_UNKNOWN"
+  | "PROVIDER_PAYLOAD_CHANGED"
+  | "ATTEMPT_LIMIT_REACHED"
+  | "STAGE_NOT_DUE"
+  | "INVOICE_NOT_ELIGIBLE"
+  | "OUTSIDE_SEND_WINDOW";
+
+export type CollectionsDeliveryAttemptRef = {
+  attempt_id: string;
+  status: CollectionsDeliveryStatus;
+  reason_code: CollectionsDeliveryReasonCode | null;
+  retryable: boolean;
+  updated_at: string;
+};
+
+export type CollectionsLastDelivery = {
+  stage: 1 | 2 | 3 | 4 | 5;
+  status: CollectionsDeliveryStatus;
+  occurred_at: string;
+};
+
+export type CollectionsDeliveryAttemptSummary = {
+  attempt_id: string;
+  invoice_id: string;
+  invoice_number: string;
+  client_id: string;
+  stage: 1 | 2 | 3 | 4 | 5;
+  status: CollectionsDeliveryStatus;
+  reason_code: CollectionsDeliveryReasonCode | null;
+  reason_text: string | null;
+  attempt_count: number;
+  retryable: boolean;
+  created_at: string;
+  updated_at: string;
+  next_attempt_at: string | null;
+  accepted_at: string | null;
+};
+
+export type CollectionsDeliveryHistoryResponse = {
+  items: CollectionsDeliveryAttemptSummary[];
+  pagination: { limit: number; offset: number; total: number };
+};
+
+export type CollectionsDeliveryMissingSetting =
+  | "DELIVERY_DISABLED"
+  | "AUTOMATION_PAUSED"
+  | "PROVIDER_KEY_MISSING"
+  | "SENDER_NOT_VERIFIED"
+  | "REPLY_TO_MISSING"
+  | "TEST_RECIPIENT_MISSING"
+  | "ENVIRONMENT_NOT_ALLOWLISTED";
+
+export type CollectionsDeliveryStatusResponse = {
+  mode: "disabled" | "test";
+  automation_enabled: boolean;
+  test_ready: boolean;
+  missing: CollectionsDeliveryMissingSetting[];
+  test_recipient_masked: string | null;
 };
 
 export type CollectionsRule = {
@@ -104,7 +153,7 @@ export type CollectionsInvoice = {
   credit_review_required: boolean;
   contact_review_required: boolean;
   below_minimum: boolean;
-  last_delivery?: CollectionsLastDelivery | null;
+  last_delivery: CollectionsLastDelivery | null;
 };
 
 export type CollectionsAccount = {
