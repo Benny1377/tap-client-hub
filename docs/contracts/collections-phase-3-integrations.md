@@ -1,6 +1,6 @@
 # Contract: Collections Phase 3 Integrations
 
-State: **Draft — review and owner decisions required; not frozen for implementation.**
+State: **Approved for test-only implementation. Delivery-disabled backend/UI integration was signed off on 2026-10-18; provider-backed test sending is still gated. This addendum pins retry/run response shapes and reason codes before any test send.**
 
 - Producer: Engineer B (provider adapter, queue/worker, persistence, access policy).
 - Consumer: Engineer A (Collections UI and integrated testing).
@@ -65,14 +65,14 @@ Exact paths and schemas require Engineer A/Engineer B review before implementati
 
 | Operation | Proposed request and response | Access |
 | --- | --- | --- |
-| `POST /api/collections/automation/run` | Optional `{ "limit": number }` (default 50, max 200). Returns run identifier and counts for claimed, accepted, suppressed, needs-review, failed, and remaining attempts. No arbitrary recipient or production as-of-date input. | Machine identity only; never app-user cookie or public/anonymous. |
+| `POST /api/collections/automation/run` | Optional `{ "limit": number }` (default 50, max 200). On success returns exactly `{ run_id, claimed, accepted, suppressed, needs_review, failed, remaining }`; `run_id` is a UUID and all counts are non-negative integers. `claimed` counts attempts atomically moved to `sending`; outcome counts are subsequent outcomes for this run; `remaining` counts worklist candidates beyond this run's batch limit. No arbitrary recipient or production as-of-date input. | Machine identity only; never app-user cookie or public/anonymous. |
 | `GET /api/collections/deliveries` | Query filters: `invoice_id` (optional UUID), `status` (optional single allowed status), `limit` (default 50, max 200), and `offset` (default 0, min 0). Returns `{ items: DeliveryAttemptSummary[], pagination: { limit, offset, total } }`, ordered by `created_at DESC, attempt_id DESC`. Exact item fields are defined below; no raw recipient, provider payload, key, or full rendered body. | Owner/Admin only. |
 | `GET /api/collections/delivery-status` | Returns effective mode, readiness, stable missing-configuration codes, and a masked test address; never returns credentials or full addresses. | Owner/Admin only. |
 | `POST /api/collections/automation/pause` | Empty request body; atomically turns automation off, writes an actor-attributed audit record, and returns the same `CollectionsDeliveryStatusResponse` shape as `GET /delivery-status`. There is no unpause operation; re-enabling requires explicit server/deployment configuration. | Owner/Admin only. |
-| `POST /api/collections/automation/test-run` | Owner/Admin “Run test now” using the current server-side preview, synthetic fixtures only, and the configured test mailbox. No recipient/body/as-of-date override. Worker rechecks all guards. | Owner/Admin only; test mode and all safety gates required. |
-| `POST /api/collections/deliveries/{id}/retry` | No recipient/body input. Only a known provider-rejected failure may be retried; uncertain provider outcome is `needs_review`, not blindly retried. Reuses the same invoice/stage idempotency identity. | Owner/Admin only, audited. |
+| `POST /api/collections/automation/test-run` | Owner/Admin “Run test now” using the current server-side preview, synthetic fixtures only, and the configured test mailbox. No recipient/body/as-of-date override. On success returns exactly the run response shape above. If invoked outside the firm send window, return HTTP 409 `{ error, code: "OUTSIDE_SEND_WINDOW" }` before creating attempts. | Owner/Admin only; test mode and all safety gates required. |
+| `POST /api/collections/deliveries/{id}/retry` | No recipient/body input. Only a known provider-rejected failure may be retried; uncertain provider outcome is `needs_review`, not blindly retried. Reuses the same invoice/stage idempotency identity. A successful queue action returns HTTP 202 `{ attempt_id, status: "queued" }`. | Owner/Admin only, audited. |
 
-Response money remains decimal strings. All APIs are `no-store`, return stable machine-readable error codes, and do not expose database exception details. Exact pagination, validation, and error schemas will be frozen after review.
+The machine worker also returns HTTP 409 `{ error, code: "OUTSIDE_SEND_WINDOW" }` before creating attempts when run outside the configured firm window. Response money remains decimal strings. All APIs are `no-store`, return stable machine-readable error codes, and do not expose database exception details. `OUTSIDE_SEND_WINDOW` is distinct from `RULE_DISABLED`, which means the stage/rule is disabled.
 
 ## Delivery state, idempotency, and failure semantics
 
@@ -81,6 +81,7 @@ Response money remains decimal strings. All APIs are `no-store`, return stable m
 - Provider submission occurs outside the database transaction. Persist the attempt transition and sanitized provider message ID/result; never claim database atomicity across the network request.
 - A provider acceptance response means **accepted by the provider**, not delivered to or read by the recipient. Bounce/delivery receipts require a separately reviewed webhook contract.
 - Retry only known transient/rejected outcomes using the same idempotency key where supported. Timeouts or ambiguous acceptance become `needs_review` unless provider idempotency can safely resolve the outcome.
+- [Resend's idempotency documentation](https://resend.com/docs/dashboard/emails/idempotency-keys) documents same-key/same-payload retries as idempotent for 24 hours. It does not specify whether 429/5xx responses are cached and replayed; therefore implementation must keep the key and payload stable to avoid duplicates and must not infer provider behavior from a mock. Persist only a SHA-256 fingerprint of the exact request payload. If a retry would change the payload, do not call the provider; mark the attempt `needs_review` with `PROVIDER_PAYLOAD_CHANGED`. Retryable failures may be retried only within 23 hours of attempt creation, leaving a safety buffer before provider key expiry; older failures remain non-retryable and require review. Treat timeout/malformed acceptance as `needs_review`.
 - Use bounded exponential backoff, a maximum attempt count, and a dead-letter/Owner review state. Final values are pending provider-limit review.
 - Do not log API keys, auth headers, verification codes, full HTML/text bodies, raw client email, or customer financial details. Persist recipient hash only where it is sufficient for audit; any raw address retention needs an explicit privacy decision.
 - Audit actor is the authenticated Owner/Admin for configuration/retry operations and the service identity for worker transitions. Keep audit records attributable and transactionally tied to database state changes.
@@ -90,7 +91,7 @@ Response money remains decimal strings. All APIs are `no-store`, return stable m
 - All user-facing routes resolve identity on the server and enforce Owner/Admin checks independently of the proxy/sidebar.
 - The worker rejects missing/invalid machine credentials and cannot be invoked by `anon`, unassigned staff, or a normal authenticated staff cookie.
 - Provider credentials are server-only and distinct from user-controlled rule templates. The rules editor cannot set provider, sender, reply-to, test recipient, or delivery mode.
-- Escape template substitutions for HTML and produce a plain-text alternative. Allow only an explicit template token list; reject unknown tokens and prevent headers/URLs from being injected through substitutions.
+- Treat editable body templates as plain text: HTML-escape the template text and each substitution before wrapping it in the application's minimal email markup; produce a plain-text alternative. Allow only an explicit token list; reject unknown tokens and prevent headers/URLs from being injected through substitutions. Stage 4's subject and first body heading are fixed as `Internal Owner-escalation notice — TEST`, independent of the configurable template.
 - Test mode may contact only the approved test mailbox and only with synthetic fixture data. Live-client data disclosure to an external processor is outside this draft.
 - Separate legal/compliance review must approve customer-facing copy, required disclosures, opt-out/consent behavior, retention, and applicable jurisdictional controls before any live-send contract is considered.
 
@@ -116,7 +117,7 @@ Required before Phase 3 can be released in test mode:
 
 Production/live send remains a separate gate: owner/client approval of provider, sender/reply-to, message copy, contact/consent rules, test evidence, monitoring, disable/rollback plan, migration target, and actual deployment configuration. No production migration or send is authorized by this draft.
 
-## Owner / reviewer decisions required to freeze
+## Owner decision record
 
 | ID | Decision | Recommended default for discussion | Status |
 | --- | --- | --- | --- |
@@ -146,7 +147,7 @@ These answer the consumer/API questions raised in the UI review. They remain sub
    | `needs_review` | Needs review | Outcome is uncertain or requires human action; never blindly retry. |
    | `failed` | Failed | Provider rejected or a known failure occurred. Retry only when `retryable=true`. |
 
-   Use `accepted` consistently instead of `sent`; stage progression counts `accepted`, never a claim of delivery. Retry is true only for known transient failures with attempts remaining (for example `PROVIDER_RATE_LIMITED` or `PROVIDER_TEMPORARY_FAILURE`). It is false for accepted, queued, sending, suppressed, needs-review, permanent rejection, unknown outcome, and exhausted attempts.
+   Use `accepted` consistently instead of `sent`; stage progression counts `accepted`, never a claim of delivery. Retry is true only for known transient failures with attempts remaining (for example `PROVIDER_RATE_LIMITED` or `PROVIDER_TEMPORARY_FAILURE`) and while the attempt is younger than 23 hours. It is false for accepted, queued, sending, suppressed, needs-review, permanent rejection, unknown outcome, expired idempotency window, and exhausted attempts.
 
    Stable reason codes and UI wording:
 
@@ -170,6 +171,10 @@ These answer the consumer/API questions raised in the UI review. They remain sub
    | `PROVIDER_REJECTED` | Email provider rejected the request. |
    | `PROVIDER_OUTCOME_UNKNOWN` | Provider outcome is unknown; review before retrying. |
    | `ATTEMPT_LIMIT_REACHED` | Retry limit reached. |
+   | `STAGE_NOT_DUE` | This reminder stage is not due yet. |
+   | `INVOICE_NOT_ELIGIBLE` | This invoice is not open and eligible for collection. |
+   | `OUTSIDE_SEND_WINDOW` | Outside the firm's configured send window. |
+   | `PROVIDER_PAYLOAD_CHANGED` | Message content changed since the prior attempt; review required. |
 
 2. **Delivery status endpoint.** `GET /api/collections/delivery-status` returns `{ mode: "disabled" | "test", automation_enabled: boolean, test_ready: boolean, missing: MissingDeliverySetting[], test_recipient_masked: string | null }`. `test_ready` is true only when test mode is explicitly configured, the test key is present, sender/reply-to are verified, a test mailbox is set, and the active environment is allowlisted as non-production. `missing` uses stable codes including `DELIVERY_DISABLED`, `AUTOMATION_PAUSED`, `PROVIDER_KEY_MISSING`, `SENDER_NOT_VERIFIED`, `REPLY_TO_MISSING`, `TEST_RECIPIENT_MISSING`, and `ENVIRONMENT_NOT_ALLOWLISTED`. Never reveal the secret or full mailbox. This reports readiness; it does not start sending.
 
@@ -179,9 +184,9 @@ These answer the consumer/API questions raised in the UI review. They remain sub
 
 5. **Stage 5 test notice.** A test notice sent to the test mailbox does **not** create `formal_notice_sent` and does not satisfy the formal-notice stage. Keep the current manual “Record notice sent” action for an actual separately approved notice sent to the client, linked to its approval event; it remains Owner/Admin-only and duplicate recording is rejected. Stage 5 test attempts stay visible only as test delivery attempts.
 
-6. **Stage 4 notification.** Stage 4 is an internal Owner-escalation notification, not a customer email. During test phase, send synthetic content only to the configured test mailbox and label it as a test notification. Do not address client contacts. The in-app review item remains available whether email is configured or not.
+6. **Stage 4 notification.** Stage 4 is an internal Owner-escalation notification, not a customer email. During test phase, send synthetic content only to the configured test mailbox. Its subject and first body heading are the fixed text `Internal Owner-escalation notice — TEST`; configurable stage copy may follow but cannot replace that label. Do not address client contacts. The in-app review item remains available whether email is configured or not.
 
-7. **Template placeholders.** The initial allowlist is `{contact_name}`, `{invoice_number}`, `{balance}`, `{due_date}`, and `{days_past_due}`. Unknown tokens in `PATCH /api/collections/rules` return HTTP 422 with `TEMPLATE_TOKEN_INVALID`; missing or invalid required values fail closed before queueing. Escape substitutions for HTML and never permit placeholders in headers, recipient, URLs, or provider configuration.
+7. **Template placeholders.** The initial allowlist is `{contact_name}`, `{invoice_number}`, `{balance}`, `{due_date}`, and `{days_past_due}`. Unknown tokens in `PATCH /api/collections/rules` return HTTP 422 with `TEMPLATE_TOKEN_INVALID`; missing or invalid required values fail closed before queueing. The body template and substitutions are both escaped as HTML text; only application-owned fixed markup is emitted. Never permit placeholders in headers, recipient, URLs, or provider configuration.
 
 8. **Sanitized worklist last touch.** Add nullable `last_delivery` to each invoice: `{ stage, status, occurred_at }`, with firm-timezone rendering in the UI. It contains no recipient, provider ID, body, or raw error. It is readable by all roles that already have Collections worklist read access. It reflects the latest automated delivery attempt; manual event history remains in the existing events interface.
 
@@ -193,8 +198,8 @@ These answer the consumer/API questions raised in the UI review. They remain sub
 
 ## Approval record
 
-- Project owner: P3-D1–D8 and the Owner/Admin “Run test now” trigger approved on 2026-10-14. Engineer A/B review/approval remains pending.
-- Engineer A consumer review: approved on `4549344` (2026-10-14); this pagination-envelope clarification is an addendum for review.
-- Engineer B producer review: pending.
-- Approval date: pending.
+- Project owner: P3-D1–D8 and the Owner/Admin “Run test now” trigger approved on 2026-10-14.
+- Engineer A consumer review: contract approved on `4549344` (2026-10-14); backend/UI integration signed off on 2026-10-18 at UI `83e2e21` against backend `af2a52e`, with delivery disabled. This response/reason-code addendum still needs consumer review.
+- Backend implementation: owner implementation commit `af2a52e`; follow-up hardening and contract addendum are in progress. Provider-backed test sending is not approved.
+- Approval date: initial contract 2026-10-14; delivery-disabled integration 2026-10-18.
 - Contract Change Requests: none yet.

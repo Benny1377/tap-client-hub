@@ -1,6 +1,6 @@
 # Collections Phase 4: QuickBooks A/R PDF Intake (Preparation Draft)
 
-State: **Preparation draft; owner decisions recorded 2026-10-17. Engineering A/B review and final confirmation of fiscal-year/longer-retention policy remain before freeze.**
+State: **Owner decision recorded on 2026-10-18: PDF-only invoices may enter Collections using an immutable import identity, without a Billing invoice match. Revised backend/API contract is in progress and still needs Engineer A/B review before freeze. Whether a PDF-only customer must map to a TAP Hub client remains open.**
 
 Owner: Project owner (Tejas Wilavanya)
 Proposed producer: Engineer B (upload, extraction, validation, persistence, access policy)
@@ -8,7 +8,7 @@ Proposed consumer: Engineer A (upload/review/reconciliation UI)
 
 ## Objective
 
-Prepare an auditable intake path for QuickBooks Accounts Receivable PDF reports. The owner selected PDFs as the intended upload format and confirmed that an approved PDF import may provide input to Collections actions. Imported records remain a separate, traceable source; intake and approval must not silently write to or overwrite the Billing ledger. The source-selection and conflict rules below still need to be frozen.
+Prepare an auditable intake path for QuickBooks Accounts Receivable PDF reports. The owner selected PDFs as the intended upload format and confirmed that an approved PDF import may provide input to Collections actions. Imported records remain a separate, traceable source; intake and approval must not silently write to or overwrite the Billing ledger. Source selection and conflict handling follow the owner decisions below.
 
 Uploading or parsing a PDF must not create or edit Billing invoices, payments, allocations, or client records. Once a batch is reviewed and approved, eligible imported receivables may feed Collections according to the final source-selection contract. Collection events and their source snapshot must remain auditable.
 
@@ -33,9 +33,10 @@ In scope for a first intake slice, subject to contract approval:
 - Match report customers/invoices to TAP Hub records only with approved stable identifiers (initial candidate: client code plus invoice number); never auto-match by customer name alone. Ambiguous or missing matches require human review.
 - Provide a side-by-side comparison against TAP Hub Billing, with explicit differences and a reviewer decision for each unresolved conflict.
 - After batch approval, expose eligible, source-attributed receivables to the Collections worklist/preview and existing rule evaluation. This does not authorize live email delivery; Phase 3 delivery remains disabled and test-only until separately released.
+- Every worklist invoice and preview item carries `source: "billing" | "pdf_import"`, `source_batch_id: string | null`, `source_as_of: string | null` (ISO date), and `discrepancy_status: "none" | "blocked" | "resolved"`. For Billing-sourced rows, batch/as-of are null. For PDF-sourced rows, they identify the selected approved batch and its report date. `blocked` means no collection action or delivery attempt may proceed until a user resolves the issue; `resolved` means an authorized user explicitly selected a source/value; `none` means no unresolved discrepancy was detected.
 - Detect full-file and row-level duplicates. Preserve provenance for repeated rows; do not double-count exact duplicates. On partial duplicates, record and use additional non-conflicting rows/fields after review; conflicting values for the same identity/field require an explicit resolution rather than silent overwrite.
 - Keep every upload, parse result, reviewer correction, approval, access, source selection, calculation, and later supersession auditable.
-- Make upload/review/approval permissions configurable by the client rather than hard-coded. Enforce every configured permission server-side and for Storage access, audit permission changes, and prevent a user's configuration from granting themself unauthorized access.
+- Make upload/review/approval permissions configurable by the client rather than hard-coded. Owner/Admin only may edit the permission policy. Enforce every configured permission server-side and for Storage access, audit permission changes, and prevent a user's configuration from granting themself unauthorized access. Irrespective of configurable roles, an actor who uploaded or corrected a batch cannot approve that batch.
 
 Explicitly out of scope for the first intake slice unless a separate contract is approved:
 
@@ -45,11 +46,25 @@ Explicitly out of scope for the first intake slice unless a separate contract is
 - QuickBooks API/OAuth/webhook integration, direct QuickBooks account access, or unattended polling.
 - Importing the supplied real reports into local or shared test databases.
 
-## Interim safe behavior while source/conflict decisions remain open
+## Source and conflict behavior approved by the owner
 
 Treat an uploaded PDF as an **untrusted, dated snapshot** until its batch has been reviewed and approved. Owner approved using PDFs as input to Collections actions. When an imported value conflicts with Billing, surface the discrepancy to an authorized user and block that invoice from collection actions until the user resolves which value/source applies. Once resolved, the selected source/value may feed the collection action; never silently choose a winner. Do not write the selected value back to Billing.
 
-This is a proposed fail-closed default pending the remaining owner decision; it is not yet the final source-resolution rule.
+This is the approved fail-closed source-resolution rule, not an open owner decision. The behavior for a PDF invoice with no matching Billing invoice is tracked separately below.
+
+## Stale PDF snapshot rule
+
+An approved batch is still a dated snapshot, not a live Billing balance. If Billing records a payment allocation, credit, reversal, or other balance-changing ledger event for a matched invoice after the end of `source_as_of` in the firm's timezone, automatically set that invoice's `discrepancy_status` to `blocked` and return it to **needs review**. Until an authorized reviewer reconciles the newer Billing activity with the imported snapshot and explicitly resolves the discrepancy, the invoice is excluded from collection actions and no new delivery attempt may be created. Show the before/after amounts and calculation that caused the block. Approval of the original batch does not override this later stale-snapshot block.
+
+## PDF invoices absent from Billing — owner decision recorded; customer linkage open
+
+An approved PDF invoice that has no matching Billing invoice may enter Collections. It remains a separate imported receivable and must never be materialized as a Billing invoice. The stable identity is a generated `source_invoice_id` assigned during staging and retained across corrected/superseding report versions once a reviewer has confirmed the row identity. Before that confirmation, the row remains in review and is ineligible for collection actions.
+
+The attempt uniqueness key is `(source, source_invoice_id, stage)`: Billing attempts use `source = billing` and `invoice_id`; imported attempts use `source = pdf_import` and `source_invoice_id`. `source_invoice_id` is immutable and independent of batch version; `source_batch_id` points to the currently approved snapshot. Worklist row IDs, preview IDs, `last_delivery`, attempt history, and duplicate prevention use that same source identity. Import-only invoice numbers are not globally unique and must not be used as a key by themselves. Exact file duplicates are idempotent; partial/corrected reports update the source invoice only through explicit review, preserve all source-row provenance, and never erase history.
+
+The owner clarified on 2026-10-18 that QuickBooks may be the only source of invoice/receivables data at launch; therefore an invoice does not need a Billing match. The stable invoice identity and attempt keys above are approved contract direction.
+
+Customer linkage is still an implementation decision requiring owner confirmation: may an imported customer with no TAP Hub client record become an import-only Collections account, or must a reviewer link it to an existing TAP Hub client before collection actions? Customer-name-only automatic matching is prohibited either way. Do not create a Billing invoice or mutate a client record implicitly. Until this is resolved, retain unlinked customers in review and do not make them actionable.
 
 ## Owner decision record and remaining decisions
 
@@ -61,16 +76,15 @@ Decisions recorded from the owner on 2026-10-17:
 4. **Summary/detail:** Use detail rows for invoice-level intake and the summary report as a cross-check when available. Pair by as-of date; disagreements must be shown and reviewed, not normalized away.
 5. **Dates/aging:** Use the report's as-of date when clear and reviewer-confirm it when uncertain. Preserve reported aging and calculate a comparison using due date and the firm's Houston timezone; show the math and flag differences.
 6. **Duplicates/corrections:** Detect full-file and partial/row duplicates. Preserve provenance, avoid double counting, and record/use additional non-conflicting information. Conflicting values need explicit review. Corrected reports are new, auditable versions that supersede rather than erase history.
-7. **Permissions:** Keep role/action permissions dynamic and client-configurable. Initial default is Collections staff upload/review and Owner/Admin approval, but an authorized Owner/Admin should be able to change the policy. Enforce server-side and audit changes.
+7. **Permissions:** Keep role/action permissions dynamic and client-configurable. Initial default is Collections staff upload/review and Owner/Admin approval. Only Owner/Admin may edit the permission policy; every change is server-enforced and audited. No actor who uploaded or corrected a batch may approve that same batch, regardless of any configurable permission grant.
 8. **Storage/audit:** Retain original PDFs for future audits in a proposed private Supabase Storage bucket and record access. Keep them for at least one complete financial year. Do not auto-delete until the client's fiscal-year boundary and any longer retention requirement are confirmed.
 9. **Credits/negative/zero:** Represent these visibly and show the calculation math. Do not silently apply credits or create accounting entries.
 10. **Billing/future metrics:** Preserve the full source fields, calculations, source identity, row/page provenance, and audit trail so the information can be tracked in Billing and metrics in a future phase. The first intake slice does not write to the Billing ledger; any such write path needs its own contract.
 
 Remaining contract-review items:
 
-- Engineering A/B review the discrepancy-resolution flow, field/source selection, source attribution on later collection actions, and the configurable permission model.
-- Confirm the client's fiscal-year boundary and whether any longer retention requirement applies before configuring automatic deletion. Until then, retain indefinitely rather than auto-delete early.
-- Engineering A/B review the storage/RLS/audit design, duplicate merge semantics, and proposed source-resolution behavior.
+- Engineering A/B review the source identity and import-only attempt flow, stale-snapshot re-blocking, source fields on the wire, uploader/corrector approval prohibition, storage/RLS/audit design, and duplicate merge semantics.
+- The owner approved retention for at least one complete financial year. Confirm the exact fiscal-year boundary and any longer requirement before configuring automatic deletion; until then retain indefinitely rather than auto-delete early.
 
 ## Proposed validation gates
 
@@ -85,4 +99,4 @@ Remaining contract-review items:
 
 ## Readiness and handoff
 
-Phase 4 is ready for Engineering A/B contract review. After they review discrepancy resolution, dynamic authorization, Storage/audit, and retention, confirm the fiscal-year boundary/any longer retention rule before configuring deletion. Then freeze the source/reconciliation contract, define APIs and private Storage lifecycle, and create synthetic fixtures. Keep the supplied real PDFs out of Git, fixtures, screenshots, external AI services, and shared non-production environments.
+Phase 4 is not ready to freeze until the customer-linkage decision is resolved and Engineering A/B approves the revised contract. PDF-only invoices without a Billing match are allowed under the approved import-identity direction. The owner has approved at least one complete financial year of retention; do not configure deletion until the fiscal-year boundary and any longer requirement are confirmed. After approval, define APIs and private Storage lifecycle, then create synthetic fixtures. Keep the supplied real PDFs out of Git, fixtures, screenshots, external AI services, and shared non-production environments.
