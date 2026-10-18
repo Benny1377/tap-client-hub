@@ -69,10 +69,8 @@ assert.match(layout, /canAccessPathname\(role, userModules, pathname\)/);
 assert.match(layout, /router\.replace\(firstAllowedRoute/);
 assert.match(read("components/practiceops/ops-rail.tsx"), /router\.push\(item\.href\)/, "the Operations rail navigates by item href");
 assert.match(layout, /Loading page access/);
-// PracticeOps shell: the launch pad and "not set up yet" pages are open to every
-// signed-in user; Clients moved to /clients and still needs the Clients module.
+// PracticeOps shell: the launch pad is open to every signed-in user; Clients moved to /clients and still needs the Clients module.
 assert.equal(policy.canAccessPathname("staff", [], "/"), true);
-assert.equal(policy.canAccessPathname("staff", [], "/apps/c360"), true);
 assert.equal(policy.canAccessPathname("staff", [], "/clients"), false);
 assert.equal(policy.canAccessPathname("staff", ["Clients"], "/clients"), true);
 assert.equal(policy.firstAllowedRoute("staff", ["Clients"]), "/clients");

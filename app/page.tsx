@@ -18,6 +18,8 @@ function greeting(now: Date) {
   return hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
 }
 
+const TILES = APPS.filter(app => app.tile);
+
 /** The launch pad: the first page after sign-in, with one tile per app. */
 export default function LaunchPad() {
   const router = useRouter();
@@ -71,7 +73,7 @@ export default function LaunchPad() {
     ops: clients ? [[clients.total.toLocaleString(), "Clients"], [clients.business.toLocaleString(), "Business"], [clients.personal.toLocaleString(), "Personal"]] : [],
     bill: ar ? [[formatMoney(ar.outstanding), "Outstanding"], [String(ar.open), "Open invoices"]] : [],
     coll: ar ? [[String(ar.overdue), "Overdue"], [`${ar.oldestDays}d`, "Oldest"]] : [],
-    c360: [], desk: [], onb: [], docs: [], train: [], help: [],
+    help: [],
   }), [clients, ar]);
 
   const pulse: Array<[string, string, string, React.CSSProperties?]> = [];
@@ -81,13 +83,13 @@ export default function LaunchPad() {
     pulse.push(["Outstanding AR", formatMoney(ar.outstanding), `oldest ${ar.oldestDays} days`, { color: "var(--red)" }]);
     pulse.push(["Overdue", String(ar.overdue), "invoices past their due date", { color: "var(--amber)" }]);
   }
-  const openable = APPS.filter(app => app.built && canOpenApp(app, allowedModules));
+  const openable = TILES.filter(app => canOpenApp(app, allowedModules));
   if (!ar) pulse.push(["Your apps", String(openable.length), "open to you from this launch pad"]);
 
-  const hidden = APPS.filter(app => app.built && !canOpenApp(app, allowedModules));
+  const hidden = TILES.filter(app => !canOpenApp(app, allowedModules));
 
   function open(app: AppDef) {
-    if (app.built && !canOpenApp(app, allowedModules)) {
+    if (!canOpenApp(app, allowedModules)) {
       setNotice(`${app.name} isn't part of your access. Ask an owner or admin if you need it.`);
       return;
     }
@@ -126,9 +128,9 @@ export default function LaunchPad() {
       )}
 
       <div className="tiles">
-        {APPS.map(app => {
+        {TILES.map(app => {
           const allowed = canOpenApp(app, allowedModules);
-          if (app.built && !allowed) {
+          if (!allowed) {
             return (
               <button key={app.id} className="tile locked" onClick={() => open(app)}>
                 <span className="t-flag lock"><Icon name="lock" style={{ display: "grid", width: 11, height: 11 }} /> Not in this role</span>
@@ -136,17 +138,6 @@ export default function LaunchPad() {
                 <span className="t-name">{app.name}</span>
                 <span className="t-desc">{app.desc}</span>
                 <span className="t-unlock">Ask an owner or admin for access →</span>
-              </button>
-            );
-          }
-          if (!app.built) {
-            return (
-              <button key={app.id} className="tile locked" onClick={() => open(app)}>
-                <span className="t-flag core">Coming soon</span>
-                <span className="t-ico"><Icon name={app.icon} style={{ display: "grid" }} /></span>
-                <span className="t-name">{app.name}</span>
-                <span className="t-desc">{app.desc}</span>
-                <span className="t-unlock" style={{ color: "var(--muted)" }}>Not set up for {FIRM.name} yet</span>
               </button>
             );
           }
@@ -178,7 +169,6 @@ export default function LaunchPad() {
 
       <div className="padfoot">
         <span>PracticeOps · {FIRM.name} · {FIRM.city}</span>
-        <span>Tiles marked “Coming soon” are planned apps that are not set up yet.</span>
       </div>
 
       <div className={`toast${notice ? " show" : ""}`} role="status">{notice}</div>

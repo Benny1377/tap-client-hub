@@ -96,9 +96,8 @@ export function moduleForPathname(pathname: string): string | null {
 }
 
 export function isPublicOrSelfServicePath(pathname: string) {
-  // "/" is the PracticeOps launch pad and /apps/* are the "not set up yet" pages
-  // for unbuilt apps; neither shows module data, so every signed-in user may open them.
-  return pathname === "/" || pathname.startsWith("/apps/") || pathname === "/settings" || pathname.startsWith("/login") || pathname.startsWith("/auth");
+  // "/" is the PracticeOps launch pad; it shows no module data, so every signed-in user may open it.
+  return pathname === "/" || pathname === "/settings" || pathname.startsWith("/login") || pathname.startsWith("/auth");
 }
 
 export function canAccessPathname(role: unknown, modules: unknown, pathname: string) {

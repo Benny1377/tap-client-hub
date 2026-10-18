@@ -2,7 +2,7 @@
 // page heads. Copy follows practiceops_1.html; routes and module gates are ours.
 import type { IconName } from "./icons";
 
-export type AppId = "ops" | "c360" | "bill" | "coll" | "desk" | "onb" | "docs" | "train" | "help";
+export type AppId = "ops" | "bill" | "coll" | "help";
 
 export interface AppDef {
   id: AppId;
@@ -10,12 +10,12 @@ export interface AppDef {
   icon: IconName;
   desc: string;
   core?: boolean;
-  /** Where the tile opens. Apps without a backend open their "not set up yet" page. */
+  /** Where the app opens. */
   href: string;
   /** Modules that unlock the tile; any one is enough. Empty means everyone signed in. */
   modules: string[];
-  /** False for apps the design shows but this project has not built. */
-  built: boolean;
+  /** Shown as a launch-pad tile. Help & Support is reached from the top bar instead. */
+  tile: boolean;
 }
 
 export const OPS_MODULES = [
@@ -24,23 +24,13 @@ export const OPS_MODULES = [
 ];
 
 export const APPS: AppDef[] = [
-  { id: "ops", name: "Operations", icon: "grid", core: true, href: "", modules: OPS_MODULES, built: true,
+  { id: "ops", name: "Operations", icon: "grid", core: true, href: "", modules: OPS_MODULES, tile: true,
     desc: "Every client, every service, one owner — plus the worklists, timesheet and vault the team runs on." },
-  { id: "c360", name: "Client 360", icon: "target", href: "/apps/c360", modules: [], built: false,
-    desc: "One client on one screen: services, hours, cost, revenue and margin." },
-  { id: "bill", name: "Billing", icon: "receipt", href: "/billing", modules: ["Billing"], built: true,
+  { id: "bill", name: "Billing", icon: "receipt", href: "/billing", modules: ["Billing"], tile: true,
     desc: "Price each client once. Invoices assemble themselves, and a deposit closes them." },
-  { id: "coll", name: "Collections", icon: "bolt", href: "/collections", modules: ["Collections"], built: true,
+  { id: "coll", name: "Collections", icon: "bolt", href: "/collections", modules: ["Collections"], tile: true,
     desc: "The receivables ladder: who owes what, which reminder is next, and what needs a person." },
-  { id: "desk", name: "Front Desk", icon: "phone", href: "/apps/desk", modules: [], built: false,
-    desc: "A voice agent answering the phone in the firm's name — and what still needs a person." },
-  { id: "onb", name: "Client Onboarding", icon: "arrowin", href: "/apps/onb", modules: [], built: false,
-    desc: "Signed to live: documents, access, services configured, first cycle clean." },
-  { id: "docs", name: "Client Doc Portal", icon: "doc", href: "/apps/docs", modules: [], built: false,
-    desc: "Each client's document list, built from last year's return — they tick it off, you watch it fill in." },
-  { id: "train", name: "Team Training", icon: "book", href: "/apps/train", modules: [], built: false,
-    desc: "How to run the system, by module, with progress tracked per person." },
-  { id: "help", name: "Help & Support", icon: "life", href: "/support", modules: ["Support"], built: true,
+  { id: "help", name: "Help & Support", icon: "life", href: "/support", modules: ["Support"], tile: false,
     desc: "Raise a ticket, track it, and search what's already been answered." },
 ];
 
@@ -100,8 +90,7 @@ export const YEAR_PATHS = ["/fin", "/pr", "/stx", "/t9", "/rend", "/tax"];
 /** Which app a pathname belongs to, for the top-bar breadcrumb. */
 export function appForPath(pathname: string): AppDef | null {
   if (OPS_PATHS.includes(pathname)) return APPS[0];
-  if (pathname.startsWith("/apps/")) return APPS.find(app => app.href === pathname) || null;
-  return APPS.find(app => app.built && app.href && (pathname === app.href || pathname.startsWith(`${app.href}/`))) || null;
+  return APPS.find(app => app.href && (pathname === app.href || pathname.startsWith(`${app.href}/`))) || null;
 }
 
 export function canOpenApp(app: AppDef, allowedModules: string[]) {

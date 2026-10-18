@@ -149,7 +149,7 @@ export default function RootLayout({
   const canUseLightweightClientData = ["/workload", "/time", "/vault"].includes(pathname);
   const app = appForPath(pathname);
   const isOps = OPS_PATHS.includes(pathname);
-  const ownsFrame = pathname === "/" || pathname.startsWith("/apps/");
+  const ownsFrame = pathname === "/";
   const head = PAGE_HEADS[pathname];
   const firstName = (userName || userEmail).split(/[\s@]/)[0];
   const session = useMemo(
@@ -249,6 +249,11 @@ export default function RootLayout({
                 ) : (userName || userEmail) ? (
                   <div className="tb-firm" aria-label="Signed-in user"><b>{userName || userEmail}</b>{userName ? userEmail : ""}</div>
                 ) : null}
+                {allowedModules.includes("Support") && (
+                  <a className="tb-site" href="/support" onClick={(e) => { e.preventDefault(); router.push("/support"); }}>
+                    <span className="tbl">Help</span>
+                  </a>
+                )}
                 <a className="tb-site" href="/settings" onClick={(e) => { e.preventDefault(); router.push("/settings"); }}>
                   <span className="tbl">Settings</span>
                 </a>
