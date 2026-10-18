@@ -90,7 +90,7 @@ export async function runCollectionsTestDelivery(actor: string | null, limit = 5
     const [{ data: client }, { data: sourceInvoice }, { data: existing }, { data: contactRows }] = await Promise.all([
       db.from("clients").select("id,is_synthetic").eq("id", account.client_id).maybeSingle(),
       db.from("invoices").select("id,is_synthetic").eq("id", invoice.invoice_id).maybeSingle(),
-      db.from("collection_delivery_attempts").select("id,status,attempt_count,reason_code,last_error_code").eq("invoice_id", invoice.invoice_id).eq("stage", stage).maybeSingle(),
+      db.from("collection_delivery_attempts").select("id,status,attempt_count,reason_code,last_error_code").eq("canonical_collection_identity", `billing:${invoice.invoice_id}`).eq("stage", stage).maybeSingle(),
       db.from("contacts").select("id,name,email,is_primary,category").eq("client_id", account.client_id).eq("category", "client").eq("is_primary", true),
     ]);
     // Attempts already handled (accepted, sending, needs review, failed) are not
@@ -120,10 +120,11 @@ export async function runCollectionsTestDelivery(actor: string | null, limit = 5
         attemptId = reopened.id;
       } else attemptId = existing.id;
     }
-    const idem = `collections:${invoice.invoice_id}:stage:${stage}`;
+    const idem = `collections:billing:${invoice.invoice_id}:stage:${stage}`;
     if (!attemptId) {
       const { data: attempt, error: insertError } = await db.from("collection_delivery_attempts").insert({
-        client_id: account.client_id, invoice_id: invoice.invoice_id, stage, status: "queued", idempotency_key: idem,
+        client_id: account.client_id, invoice_id: invoice.invoice_id, source: "billing", source_invoice_id: null,
+        canonical_collection_identity: `billing:${invoice.invoice_id}`, stage, status: "queued", idempotency_key: idem,
         reason_code: null, actor,
       }).select("id").maybeSingle();
       if (insertError || !attempt) { counts.suppressed++; continue; }

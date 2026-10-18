@@ -1,5 +1,7 @@
 # TAP Client Hub Handoffs
 
+- [Collections Phase 4 backend handoff](2026-10-18-collections-phase4-backend.md)
+
 A handoff is required when one engineer's work is consumed by another engineer or changes a shared boundary.
 
 Record:

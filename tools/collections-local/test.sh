@@ -14,7 +14,8 @@ for test_file in \
   collections_phase1_security_and_audit.sql \
   collections_phase1_audit_actor.sql \
   collections_phase2_stage_regressions.sql \
-  collections_phase2_configuration.sql; do
+  collections_phase2_configuration.sql \
+  collections_phase4_intake_schema.sql; do
   echo "Running $test_file"
   psql "$db_url" -X -v ON_ERROR_STOP=1 -f "$project_root/supabase/tests/$test_file" >/dev/null
 done

@@ -7,14 +7,17 @@ export type CollectionsDeliveryReasonCode =
   | "DELIVERY_DISABLED" | "PROVIDER_KEY_MISSING" | "SENDER_NOT_VERIFIED" | "TEST_RECIPIENT_MISSING"
   | "SYNTHETIC_DATA_REQUIRED" | "PROVIDER_RATE_LIMITED" | "PROVIDER_TEMPORARY_FAILURE"
   | "PROVIDER_REJECTED" | "PROVIDER_OUTCOME_UNKNOWN" | "PROVIDER_PAYLOAD_CHANGED" | "ATTEMPT_LIMIT_REACHED"
-  | "STAGE_NOT_DUE" | "INVOICE_NOT_ELIGIBLE" | "OUTSIDE_SEND_WINDOW";
+  | "STAGE_NOT_DUE" | "INVOICE_NOT_ELIGIBLE" | "OUTSIDE_SEND_WINDOW" | "SOURCE_DISCREPANCY_BLOCKED";
 export type CollectionsDeliveryAttemptRef = {
   attempt_id: string; status: CollectionsDeliveryStatus; reason_code: CollectionsDeliveryReasonCode | null;
   retryable: boolean; updated_at: string;
 };
 export type CollectionsLastDelivery = { stage: 1 | 2 | 3 | 4 | 5; status: CollectionsDeliveryStatus; occurred_at: string };
 export type CollectionsDeliveryAttemptSummary = {
-  attempt_id: string; invoice_id: string; invoice_number: string; client_id: string; stage: 1 | 2 | 3 | 4 | 5;
+  attempt_id: string; invoice_id: string | null; source_invoice_id: string | null; source: "billing" | "pdf_import";
+  row_key: string; canonical_collection_identity: string; source_batch_id: string | null; source_as_of: string | null;
+  discrepancy_status: "none" | "blocked" | "resolved";
+  invoice_number: string; client_id: string; stage: 1 | 2 | 3 | 4 | 5;
   status: CollectionsDeliveryStatus; reason_code: CollectionsDeliveryReasonCode | null; reason_text: string | null;
   attempt_count: number; retryable: boolean; created_at: string; updated_at: string;
   next_attempt_at: string | null; accepted_at: string | null;
@@ -87,7 +90,14 @@ export type CollectionsSettingsUpdate = {
 };
 
 export type CollectionsInvoice = {
-  invoice_id: string;
+  invoice_id: string | null;
+  source_invoice_id: string | null;
+  source: "billing" | "pdf_import";
+  row_key: string;
+  canonical_collection_identity: string;
+  source_batch_id: string | null;
+  source_as_of: string | null;
+  discrepancy_status: "none" | "blocked" | "resolved";
   invoice_number: string;
   issue_date: string;
   due_date: string;
@@ -159,14 +169,23 @@ export type CollectionsPreviewAction = {
   client_name: string;
   /** Kept visible for internal phone follow-up when client email is unavailable. */
   contact_phone: string | null;
-  invoice_id: string;
+  invoice_id: string | null;
+  source_invoice_id: string | null;
+  source: "billing" | "pdf_import";
+  row_key: string;
+  canonical_collection_identity: string;
+  source_batch_id: string | null;
+  source_as_of: string | null;
+  discrepancy_status: "none" | "blocked" | "resolved";
+  reason_code?: CollectionsDeliveryReasonCode | null;
+  reason_text?: string | null;
   invoice_number: string;
   balance: Money;
   days_past_due: number;
   stage: 1 | 2 | 3 | 4 | 5;
   action_type: "reminder_candidate" | "owner_escalation_review" | "formal_notice_approval_review";
   disposition: "suppressed" | "preview_only" | "approval_required";
-  suppression_reasons: Array<"active_hold" | "unallocated_credit_review" | "below_minimum_balance" | "contact_review_required">;
+  suppression_reasons: Array<"active_hold" | "unallocated_credit_review" | "below_minimum_balance" | "contact_review_required" | "source_discrepancy_blocked">;
   review_warnings: Array<"unallocated_credit_review" | "email_contact_missing" | "below_minimum_balance">;
   delivery_attempt: CollectionsDeliveryAttemptRef | null;
   delivery_performed: false;

@@ -13,6 +13,7 @@ const MESSAGES: Record<string, string> = {
   STAGE_NOT_DUE: "This reminder stage is not due yet.",
   INVOICE_NOT_ELIGIBLE: "This invoice is not open and eligible for collection.",
   OUTSIDE_SEND_WINDOW: "Outside the firm's configured send window.",
+  SOURCE_DISCREPANCY_BLOCKED: "Imported balance differs from Billing; review required.",
   DELIVERY_DISABLED: "Email delivery is disabled.",
   PROVIDER_KEY_MISSING: "Email provider is not configured.",
   SENDER_NOT_VERIFIED: "Sender address is not verified.",
