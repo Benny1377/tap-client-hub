@@ -15,6 +15,7 @@ function fail(error: string, code: string, status: number) {
 export async function GET() {
   const access = await requireCollectionsAccess();
   if (access.response) return access.response;
+  if (!await canUseCollectionsImport(access.identity!, "review")) return fail("You are not allowed to view A/R reports", "IMPORT_REVIEW_FORBIDDEN", 403);
   const db = createAdminClient();
   const { data, error } = await db.from("collection_import_batches")
     .select("id,original_filename,report_type,source_as_of,status,uploaded_by,parsed_at,approved_by,approved_at,supersedes_batch_id,created_at,updated_at")

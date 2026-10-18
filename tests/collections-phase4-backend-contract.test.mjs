@@ -67,6 +67,16 @@ test("review APIs and UI-facing rows use stable source identity and explicitly s
   assert.match(resolver, /resolve_collection_import_discrepancy/);
 });
 
+test("raw imported report contents require review permission and balance selection requires approval permission", () => {
+  const list = source("app/api/collections/imports/route.ts");
+  const detail = source("app/api/collections/imports/[id]/route.ts");
+  const resolve = source("app/api/collections/imports/invoices/[sourceInvoiceId]/resolve/route.ts");
+  assert.match(list, /export async function GET\(\)[\s\S]*canUseCollectionsImport\(access\.identity!, "review"\)/);
+  assert.match(detail, /export async function GET[\s\S]*canUseCollectionsImport\(access\.identity!, "review"\)/);
+  assert.match(resolve, /canUseCollectionsImport\(access\.identity!, "approve"\)/);
+  assert.match(resolve, /IMPORT_APPROVE_FORBIDDEN/);
+});
+
 test("same-date summary reports require a reviewer-confirmed, auditable detail-total match", () => {
   const crossCheck = source("app/api/collections/imports/[id]/cross-check/route.ts");
   const review = source("app/api/collections/imports/[id]/route.ts");

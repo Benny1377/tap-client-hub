@@ -6,12 +6,12 @@ import { createAdminClient } from "@/lib/supabase/admin";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 const NO_STORE = { "Cache-Control": "no-store" };
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 export async function POST(request: Request, context: { params: Promise<{ sourceInvoiceId: string }> }) {
   const access = await requireCollectionsAccess();
   if (access.response) return access.response;
-  if (!await canUseCollectionsImport(access.identity!, "review")) return NextResponse.json({ error: "You are not allowed to resolve A/R discrepancies", code: "IMPORT_REVIEW_FORBIDDEN" }, { status: 403, headers: NO_STORE });
+  if (!await canUseCollectionsImport(access.identity!, "approve")) return NextResponse.json({ error: "You are not allowed to approve a balance source for Collections", code: "IMPORT_APPROVE_FORBIDDEN" }, { status: 403, headers: NO_STORE });
   const { sourceInvoiceId } = await context.params;
   if (!UUID.test(sourceInvoiceId)) return NextResponse.json({ error: "Invalid source invoice id", code: "INVALID_SOURCE_INVOICE_ID" }, { status: 422, headers: NO_STORE });
   let body: { selected_source?: unknown; resolution_note?: unknown };

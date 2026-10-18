@@ -11,6 +11,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-
 export async function GET(_request: Request, context: { params: Promise<{ id: string }> }) {
   const access = await requireCollectionsAccess();
   if (access.response) return access.response;
+  if (!await canUseCollectionsImport(access.identity!, "review")) return NextResponse.json({ error: "You are not allowed to view A/R report contents", code: "IMPORT_REVIEW_FORBIDDEN" }, { status: 403, headers: NO_STORE });
   const { id } = await context.params;
   if (!UUID.test(id)) return NextResponse.json({ error: "Invalid batch id", code: "INVALID_BATCH_ID" }, { status: 422, headers: NO_STORE });
   const db = createAdminClient();
