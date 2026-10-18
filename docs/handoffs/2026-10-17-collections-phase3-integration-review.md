@@ -95,4 +95,10 @@ All four Engineer A requests are in: stale-snapshot re-blocking, PDF-only import
 
 Owner decision still open: customer linkage. Engineer A recommends requiring an imported customer to be linked to a TAP Hub client before any collection action (via an explicit, audited reviewer choice of an existing client, or the normal Add client flow). Collections contacts, holds, permissions and `last_delivery` are all keyed by client, so an import-only account would need a parallel contact and hold model.
 
+## Phase 4 contract approval (`a07223c`, 2026-10-18)
+
+Engineer A (UI/consumer) approves `docs/contracts/collections-phase-4-ar-pdf-intake.md` at `a07223c`. Every Engineer A request across `2b1fce4`, `083aa89`, `c2b5c0a` and `a07223c` is in: stale-snapshot re-blocking; PDF-only import identity; the permission floor; source fields, `row_key` and `canonical_collection_identity` on the wire; one row per invoice; deduplication across Billing↔PDF source switches; source-aware holds, events, approvals and "Record notice sent"; `SOURCE_DISCREPANCY_BLOCKED`; immutable canonical identity once history exists, with a late link adding only an alias; and the owner decision that imported customers are linked to a TAP Hub client before any action.
+
+Notes for implementation, not blocking the freeze: dual-history link reconciliation stays blocked pending a separately reviewed procedure; the Phase 3 forward migration, shared types, history filters, source-aware APIs and UI row keys ship in one wave; confirm the fiscal-year boundary before configuring automatic deletion. Engineer B producer approval and the freeze are recorded in the contract by Engineer B.
+
 COL-DEP-10 and COL-DEP-12 remain deferred owner security actions.
