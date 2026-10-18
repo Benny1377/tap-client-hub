@@ -46,3 +46,61 @@ test("multi-invoice payment changes re-block every linked snapshot through a for
   assert.match(localReset, /20261019120000_collections_reblock_multi_invoice_payments\.sql/);
   assert.match(sqlTests, /Reversing a payment did not re-block every linked invoice snapshot/);
 });
+
+test("the parse route's deploy trace includes the pdfjs worker it imports at runtime", () => {
+  const config = source("next.config.ts");
+  assert.match(config, /outputFileTracingIncludes:/);
+  assert.ok(config.includes(String.raw`"/api/collections/imports/\\[id\\]/parse": ["./node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs"]`));
+});
+
+test("the batch review read returns each imported invoice's client and Billing links for the review UI", () => {
+  const route = source("app/api/collections/imports/[id]/route.ts");
+  assert.match(route, /select\("id,source_invoice_id,proposed_linked_invoice_id,/);
+  assert.match(route, /collection_source_invoice_identities"\)\.select\("source_invoice_id,client_id,linked_invoice_id,selected_source"\)/);
+  assert.match(route, /invoices: reviewedInvoices/);
+});
+
+test("report metadata corrections are reviewer-confirmed, audited, and block the corrector from approval", () => {
+  const route = source("app/api/collections/imports/[id]/metadata/route.ts");
+  const migration = source("supabase/migrations/20261019130000_collections_import_batch_metadata_correction.sql");
+  const approval = source("app/api/collections/imports/[id]/approve/route.ts");
+  const reset = source("tools/collections-local/reset.sh");
+  assert.match(route, /canUseCollectionsImport\(access\.identity!, "review"\)/);
+  assert.match(route, /body\.confirmed !== true/);
+  assert.match(route, /correct_collection_import_batch_metadata/);
+  assert.match(migration, /pdf_batch_metadata_corrected/);
+  assert.match(migration, /reviewer_confirmed', true/);
+  assert.match(migration, /pdf_batch_metadata_corrected/);
+  assert.match(migration, /report metadata cannot change after invoice review has begun/);
+  assert.match(approval, /batch corrector cannot approve/i);
+  assert.match(reset, /20261019130000_collections_import_batch_metadata_correction\.sql/);
+});
+
+test("users with both Billing and Collections receive either matching import-policy grant", () => {
+  const helper = source("lib/collections-import.ts");
+  assert.match(helper, /policyRoles\.some\(\(role\) => allowed\.includes\(role\)\)/);
+  assert.match(helper, /identity\.modules\.includes\("Collections"\)/);
+  assert.match(helper, /identity\.modules\.includes\("Billing"\)/);
+  assert.doesNotMatch(helper, /identity\.modules\.includes\("Collections"\) \? "collections"/);
+});
+
+test("the test runner never sends a Billing invoice whose linked A/R report balance is blocked", () => {
+  const run = source("lib/collections-test-run.ts");
+  assert.match(run, /async function sourceDiscrepancyBlocked\(/);
+  assert.match(run, /\.eq\("linked_invoice_id", invoiceId\)/);
+  assert.match(run, /\.in\("review_status", \["approved", "blocked"\]\)\.order\("updated_at", \{ ascending: false \}\)/);
+  assert.match(run, /if \(identityError\) return true;[\s\S]*if \(snapshotError\) return true;/, "fails closed");
+  const check = run.indexOf('? "SOURCE_DISCREPANCY_BLOCKED"');
+  assert.ok(check > 0 && check < run.indexOf('db.rpc("claim_collection_test_delivery"'), "checked before the attempt is claimed");
+});
+
+test("the database claim independently blocks delivery for a linked discrepancy snapshot", () => {
+  const migration = source("supabase/migrations/20261019140000_collections_test_delivery_source_discrepancy.sql");
+  const localReset = source("tools/collections-local/reset.sh");
+  assert.match(migration, /create or replace function tap_hub_project\.claim_collection_test_delivery/);
+  assert.match(migration, /s\.linked_invoice_id = v_attempt\.invoice_id/);
+  assert.match(migration, /i\.review_status in \('approved', 'blocked'\)/);
+  assert.match(migration, /distinct on \(i\.source_invoice_id\)[\s\S]*i\.updated_at desc/);
+  assert.match(migration, /return 'SOURCE_DISCREPANCY_BLOCKED'/);
+  assert.match(localReset, /20261019140000_collections_test_delivery_source_discrepancy\.sql/);
+});

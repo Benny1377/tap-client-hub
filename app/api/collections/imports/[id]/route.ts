@@ -18,19 +18,28 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
   const [{ data: batch, error: batchError }, { data: rows, error: rowsError }, { data: invoices, error: invoicesError }] = await Promise.all([
     db.from("collection_import_batches").select("id,original_filename,report_type,source_as_of,status,uploaded_by,parsed_at,approved_by,approved_at,supersedes_batch_id,metadata,created_at,updated_at").eq("id", id).maybeSingle(),
     db.from("collection_import_rows").select("id,source_invoice_id,page_number,row_number,raw_text,parsed_fields,duplicate_of,exact_duplicate,review_disposition,created_at").eq("batch_id", id).order("page_number").order("row_number"),
-    db.from("collection_import_invoices").select("id,source_invoice_id,invoice_number,customer_name,customer_external_id,transaction_type,transaction_date,due_date,terms,po_number,reported_aging,open_balance,source_as_of,source_row_key,review_status,discrepancy_status,row_data,created_at,updated_at").eq("batch_id", id).order("created_at"),
+    db.from("collection_import_invoices").select("id,source_invoice_id,proposed_linked_invoice_id,invoice_number,customer_name,customer_external_id,transaction_type,transaction_date,due_date,terms,po_number,reported_aging,open_balance,source_as_of,source_row_key,review_status,discrepancy_status,row_data,created_at,updated_at").eq("batch_id", id).order("created_at"),
   ]);
   if (batchError || rowsError || invoicesError) return NextResponse.json({ error: "Unable to load import review", code: "IMPORT_REVIEW_READ_FAILED" }, { status: 500, headers: NO_STORE });
   if (!batch) return NextResponse.json({ error: "Import batch not found", code: "BATCH_NOT_FOUND" }, { status: 404, headers: NO_STORE });
   const sourceInvoiceIds = Array.from(new Set((invoices || []).map((invoice) => invoice.source_invoice_id)));
-  const { data: revisions, error: revisionsError } = sourceInvoiceIds.length
-    ? await db.from("collection_import_invoice_revisions").select("id,batch_id,source_invoice_id,actor,snapshot,created_at")
-      .in("source_invoice_id", sourceInvoiceIds).order("created_at", { ascending: false })
-    : { data: [], error: null };
+  const [{ data: revisions, error: revisionsError }, { data: identities, error: identitiesError }] = sourceInvoiceIds.length
+    ? await Promise.all([
+      db.from("collection_import_invoice_revisions").select("id,batch_id,source_invoice_id,actor,snapshot,created_at")
+        .in("source_invoice_id", sourceInvoiceIds).order("created_at", { ascending: false }),
+      db.from("collection_source_invoice_identities").select("source_invoice_id,client_id,linked_invoice_id,selected_source")
+        .in("source_invoice_id", sourceInvoiceIds),
+    ])
+    : [{ data: [], error: null }, { data: [], error: null }];
   if (revisionsError) return NextResponse.json({ error: "Unable to load prior reviewed values", code: "IMPORT_REVISION_READ_FAILED" }, { status: 500, headers: NO_STORE });
+  if (identitiesError) return NextResponse.json({ error: "Unable to load imported invoice links", code: "IMPORT_IDENTITY_READ_FAILED" }, { status: 500, headers: NO_STORE });
+  // The reviewer needs to see which client and Billing invoice each row is tied to,
+  // and the Billing balance math, without a second request per invoice.
+  const identityById = new Map((identities || []).map(({ source_invoice_id: sourceId, ...identity }) => [sourceId, identity]));
+  const reviewedInvoices = (invoices || []).map((invoice) => ({ ...invoice, identity: identityById.get(invoice.source_invoice_id) || null }));
   try { await recordImportAudit({ batchId: id, actor: access.identity!.id, action: "pdf_review_opened" }); }
   catch { return NextResponse.json({ error: "Unable to record report access", code: "IMPORT_AUDIT_WRITE_FAILED" }, { status: 500, headers: NO_STORE }); }
-  return NextResponse.json({ batch, rows: rows || [], invoices: invoices || [], revisions: revisions || [] }, { headers: NO_STORE });
+  return NextResponse.json({ batch, rows: rows || [], invoices: reviewedInvoices, revisions: revisions || [] }, { headers: NO_STORE });
 }
 
 export async function PATCH(request: Request, context: { params: Promise<{ id: string }> }) {
