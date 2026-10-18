@@ -48,14 +48,6 @@ const SUPPORT_TABS = [
   { label: "Support inbox", href: "/support/inbox", role: "admin" },
 ];
 
-const VIEW_AS_OPTIONS: Array<[string, string]> = [
-  ["owner", "Owner"],
-  ["admin", "Admin"],
-  ["manager", "Manager"],
-  ["staff", "Staff"],
-  ["offshore", "Offshore"],
-];
-
 function YearSelect() {
   const current = new Date().getFullYear();
   const selected = new URLSearchParams(typeof window !== "undefined" ? window.location.search : "").get("year") || String(current);
@@ -94,7 +86,6 @@ export default function RootLayout({
   // (staff, no modules) would send every user to the fallback page.
   const [accessKnown, setAccessKnown] = useState(false);
   const [role, setRole] = useState<string>("staff");
-  const [realRole, setRealRole] = useState<string>("staff");
   const [userModules, setUserModules] = useState<string[]>([]);
   const [userName, setUserName] = useState("");
   const [userEmail, setUserEmail] = useState("");
@@ -113,10 +104,8 @@ export default function RootLayout({
       })
       .then(data => {
         if (cancelled) return;
-        const resolvedRole = normalizeRole(data.role);
-        setRealRole(resolvedRole);
         setAccessKnown(true);
-        setRole(resolvedRole);
+        setRole(normalizeRole(data.role));
         setUserModules(Array.isArray(data.modules) ? data.modules : []);
         setUserName(String(data.name || ""));
         setUserEmail(String(data.email || ""));
@@ -151,10 +140,9 @@ export default function RootLayout({
   const isOps = OPS_PATHS.includes(pathname);
   const ownsFrame = pathname === "/";
   const head = PAGE_HEADS[pathname];
-  const firstName = (userName || userEmail).split(/[\s@]/)[0];
   const session = useMemo(
-    () => ({ role, realRole, allowedModules, userName, userEmail }),
-    [role, realRole, allowedModules, userName, userEmail],
+    () => ({ role, allowedModules, userName, userEmail }),
+    [role, allowedModules, userName, userEmail],
   );
 
   const pageHead = head ? (
@@ -230,25 +218,9 @@ export default function RootLayout({
               )}
               <div className="tb-right">
                 <div className="tb-firm"><b>{FIRM.name}</b>{FIRM.city}</div>
-                {(realRole === "admin" || realRole === "owner") ? (
-                  <div className="rolewrap">
-                    <label htmlFor="rolesel">Viewing as</label>
-                    <select
-                      id="rolesel"
-                      value={role}
-                      onChange={(e) => {
-                        setRole(e.target.value);
-                        document.cookie = `tap_demo_role=${e.target.value}; path=/; max-age=86400; SameSite=Lax`;
-                      }}
-                    >
-                      {VIEW_AS_OPTIONS.map(([value, label]) => (
-                        <option key={value} value={value}>{label}{firstName ? ` — ${firstName}` : ""}</option>
-                      ))}
-                    </select>
-                  </div>
-                ) : (userName || userEmail) ? (
+                {(userName || userEmail) && (
                   <div className="tb-firm" aria-label="Signed-in user"><b>{userName || userEmail}</b>{userName ? userEmail : ""}</div>
-                ) : null}
+                )}
                 {allowedModules.includes("Support") && (
                   <a className="tb-site" href="/support" onClick={(e) => { e.preventDefault(); router.push("/support"); }}>
                     <span className="tbl">Help</span>

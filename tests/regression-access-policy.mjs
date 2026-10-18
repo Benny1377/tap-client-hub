@@ -75,6 +75,8 @@ assert.equal(policy.canAccessPathname("staff", [], "/clients"), false);
 assert.equal(policy.canAccessPathname("staff", ["Clients"], "/clients"), true);
 assert.equal(policy.firstAllowedRoute("staff", ["Clients"]), "/clients");
 assert.doesNotMatch(layout, /useState\(\(\) =>[\s\S]{0,500}tap_demo_role/);
+// The "Viewing as" picker was removed: it changed only the menus, never the server's permissions.
+assert.doesNotMatch(layout, /Viewing as|tap_demo_role=\$\{/, "no client-side role switcher");
 
 const meRoute = read("app/api/me/route.ts");
 assert.match(meRoute, /resolveAccessIdentity/);
