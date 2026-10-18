@@ -2,11 +2,13 @@
 --   psql postgresql://postgres:postgres@127.0.0.1:55322/postgres -X -A -t -F ' | ' -f tools/collections-local/validate-phase3-worker.sql
 -- Expected: W1 t/sending 1, W2 t, W3 t/t/1/accepted, W4 completed_stage 3, W5 DELIVERY_DISABLED,
 -- W6 SYNTHETIC_DATA_REQUIRED, W7 ACTIVE_HOLD, W9 EMAIL_CONTACT_MISSING, W10 APPROVAL_REQUIRED,
--- W11 refused, W12 0 grants and the pause error. W8 shows the code returned outside the send window.
+-- W8 OUTSIDE_SEND_WINDOW, W11 STAGE_NOT_DUE (codes from migration 20261018110000), W12 0 grants and
+-- the pause error, W13 fingerprint: first t, same t, changed f, malformed rejected.
 -- Phase 3 worker RPC checks against the LOCAL harness only (port 55322).
 -- Every block runs inside BEGIN ... ROLLBACK: nothing persists and no provider
 -- is called (these are database functions only).
-\set ON_ERROR_STOP on
+-- W12 and W13 deliberately trigger errors, so keep going after one.
+\set ON_ERROR_STOP off
 \set owner '00000000-0000-4000-8000-000000000001'
 \set inv1 '20000000-0000-4000-8000-000000000001'
 \set cli1 '10000000-0000-4000-8000-000000000001'
@@ -103,4 +105,20 @@ rollback;
 begin;
 select 'W12 pause with unknown actor';
 select tap_hub_project.pause_collections_automation('99999999-0000-4000-8000-000000000000');
+rollback;
+
+-- W13: payload fingerprint (migration 20261018110000). A retry may only reuse the
+-- idempotency key with the identical payload; a changed payload is refused.
+begin;
+:setup
+insert into tap_hub_project.collection_delivery_attempts (id, client_id, invoice_id, stage, status, idempotency_key, actor)
+values ('30000000-0000-4000-8000-00000000000d', :'cli1', :'inv1', 3, 'queued', 'collections:test:w13', :'owner');
+select tap_hub_project.claim_collection_test_delivery('30000000-0000-4000-8000-00000000000d', :'owner') is null as claimed \gset w13_
+select 'W13 first fingerprint stored', tap_hub_project.record_collection_test_payload_fingerprint('30000000-0000-4000-8000-00000000000d', repeat('a', 64), :'owner');
+select 'W13 same payload accepted', tap_hub_project.record_collection_test_payload_fingerprint('30000000-0000-4000-8000-00000000000d', repeat('a', 64), :'owner');
+select 'W13 changed payload refused', tap_hub_project.record_collection_test_payload_fingerprint('30000000-0000-4000-8000-00000000000d', repeat('b', 64), :'owner') = false;
+rollback;
+begin;
+select 'W13 malformed fingerprint';
+select tap_hub_project.record_collection_test_payload_fingerprint('30000000-0000-4000-8000-00000000000d', 'not-a-digest', null);
 rollback;
