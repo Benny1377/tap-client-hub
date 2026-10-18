@@ -30,7 +30,7 @@ test("the source-aware event function keeps every Phase 2 event rule", () => {
   const sql = source("supabase/migrations/20261019110000_collections_event_rules_for_source.sql");
   assert.match(sql, /reminder stage must be 1, 2, or 3/);
   assert.match(sql, /get_billing_invoice_balances\(collections_firm_today\(\)\)/, "Billing catch-up stage");
-  assert.match(sql, /collection_import_invoices i[\s\S]*due_date/, "PDF catch-up stage from the reviewed due date");
+  assert.match(sql, /select i\.due_date into v_due from collection_import_invoices i/, "PDF catch-up stage from the reviewed due date");
   assert.match(sql, /add a note describing when and how the notice was sent/);
   assert.match(sql, /p_event_type in \('escalation_requested','formal_notice_requested'\) and exists\(/, "holds block requests, not a sent-notice record");
   assert.match(source("tools/collections-local/reset.sh"), /20261019110000_collections_event_rules_for_source\.sql/);
