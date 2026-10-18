@@ -78,6 +78,8 @@ export interface ImportInvoiceInput {
   reported_aging?: number | null;
   open_balance: number;
   linked_invoice_id?: string | null;
+  /** Reuse the stable identity of the same invoice from an earlier report. */
+  existing_source_invoice_id?: string | null;
   confirmed: true;
   row_data?: Record<string, unknown>;
 }
@@ -239,6 +241,22 @@ export function linkedBillingInvoiceId(invoice: ImportInvoice): string | null {
   return invoice.identity?.linked_invoice_id || invoice.proposed_linked_invoice_id || null;
 }
 
+/**
+ * The most recent earlier reviewed value of an invoice whose balance differs from
+ * now: an earlier report's snapshot or a correction made before. Null if unchanged.
+ */
+export function earlierBalance(invoice: Pick<ImportInvoice, "source_invoice_id" | "open_balance">, revisions: ImportBatchDetail["revisions"]) {
+  for (const revision of revisions) {
+    if (revision.source_invoice_id !== invoice.source_invoice_id) continue;
+    const balance = revision.snapshot?.open_balance;
+    if (balance === undefined || balance === null) continue;
+    if (compareBalances(String(balance), invoice.open_balance).matches) continue;
+    const asOf = revision.snapshot?.source_as_of;
+    return { balance: String(balance), source_as_of: typeof asOf === "string" ? asOf : null, batch_id: revision.batch_id };
+  }
+  return null;
+}
+
 export const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
 
 /** Checks the browser can make before uploading; the server re-checks the signature. */
@@ -247,4 +265,63 @@ export function uploadProblem(file: { name: string; size: number; type: string }
   if (file.size < 8) return "That file is empty.";
   if (file.size > MAX_UPLOAD_BYTES) return "Reports must be under 25 MB.";
   return null;
+}
+
+/** An invoice already imported from an earlier approved report, as the call list shows it. */
+export interface PriorImport {
+  source_invoice_id: string;
+  client_id: string;
+  invoice_number: string;
+  balance: string;
+  source_as_of: string | null;
+  /** Set when the imported invoice is linked to a Billing invoice. */
+  invoice_id: string | null;
+}
+
+type WorklistLike = { accounts?: Array<{ client_id: string; invoices: Array<{ source_invoice_id?: string | null; invoice_id?: string | null; invoice_number: string; balance: string; source_as_of?: string | null }> }> };
+
+/** Every call-list row that came from an approved report (report-only or linked to Billing). */
+export function priorImportsFrom(worklist: WorklistLike | null): PriorImport[] {
+  return (worklist?.accounts || []).flatMap((account) => account.invoices.flatMap((invoice) => invoice.source_invoice_id ? [{
+    source_invoice_id: invoice.source_invoice_id, client_id: account.client_id, invoice_number: invoice.invoice_number,
+    balance: invoice.balance, source_as_of: invoice.source_as_of ?? null, invoice_id: invoice.invoice_id ?? null,
+  }] : []));
+}
+
+const sameNumber = (a: string | null | undefined, b: string | null | undefined) =>
+  Boolean(a && b && a.trim().toLocaleLowerCase() === b.trim().toLocaleLowerCase());
+
+/**
+ * An earlier import that looks like the same invoice: same client and either the same
+ * invoice number or the same Billing invoice. Only a suggestion; the reviewer decides.
+ */
+export function suggestPriorImport(candidates: PriorImport[], clientId: string | null | undefined, invoiceNumber: string | null | undefined, linkedInvoiceId: string | null | undefined) {
+  if (!clientId) return null;
+  const forClient = candidates.filter((candidate) => candidate.client_id === clientId);
+  return forClient.find((candidate) => linkedInvoiceId && candidate.invoice_id === linkedInvoiceId)
+    || forClient.find((candidate) => sameNumber(candidate.invoice_number, invoiceNumber))
+    || null;
+}
+
+export type ImportAction = "upload" | "review" | "approve";
+export type ImportPolicyRole = "owner" | "admin" | "collections" | "billing";
+export type ImportPolicy = Record<ImportAction, ImportPolicyRole[]>;
+
+export const IMPORT_ACTIONS: Array<{ action: ImportAction; label: string; hint: string }> = [
+  { action: "upload", label: "Upload reports", hint: "Add a PDF; it is stored privately and read for review." },
+  { action: "review", label: "Review reports", hint: "Open reports and their lines, confirm invoices, classify lines, cross-check totals." },
+  { action: "approve", label: "Approve and choose balances", hint: "Put a report's invoices on the call list and pick the balance when the report and Billing differ." },
+];
+
+/** Roles whose import access the policy decides. Owner and Admin always have every import action. */
+export const DELEGABLE_ROLES: Array<{ role: ImportPolicyRole; label: string }> = [
+  { role: "collections", label: "Collections staff" },
+  { role: "billing", label: "Billing staff" },
+];
+
+/** Toggle one role for one action; Owner/Admin stay in every action. */
+export function togglePolicy(policy: ImportPolicy, action: ImportAction, role: ImportPolicyRole, on: boolean): ImportPolicy {
+  const next = { ...policy, [action]: on ? Array.from(new Set([...(policy[action] || []), role])) : (policy[action] || []).filter((item) => item !== role) };
+  for (const key of Object.keys(next) as ImportAction[]) next[key] = Array.from(new Set(["owner", "admin", ...next[key]])) as ImportPolicyRole[];
+  return next;
 }

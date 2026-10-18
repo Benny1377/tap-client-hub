@@ -10,6 +10,7 @@ import {
   holdBlocks,
   holdExpiryPassed,
   holdInForce,
+  invoiceScope,
   noticesAwaitingSend,
   formatFirmDate,
   formatFirmDateTime,
@@ -22,11 +23,31 @@ import { ActionButton, LedgerForm, OwnerAdminOnly, type FormValues } from "./ui"
 
 type Mutation = Promise<ApiResult<unknown>>;
 
-/** An open invoice the user can attach a hold or Collections activity to. */
+/**
+ * An open invoice the user can attach a hold or Collections activity to. A Billing
+ * invoice's id is its invoice id; a report-only invoice (Phase 4) uses
+ * `pdf_import:<source_invoice_id>` and carries its source fields.
+ */
 export interface InvoiceOption {
   id: string;
   invoice_number: string;
   client_id: string;
+  source?: "billing" | "pdf_import";
+  source_invoice_id?: string | null;
+  source_as_of?: string | null;
+}
+
+export const PDF_OPTION_PREFIX = "pdf_import:";
+
+/** How a hold or event names its invoice; null when it covers the whole client. */
+function targetLabel(item: Pick<CollectionHold, "invoice_id" | "invoice_number" | "source_invoice_id" | "canonical_collection_identity" | "source">, invoiceNumbers: Record<string, string>) {
+  if (!invoiceScope(item)) return null;
+  const number = item.invoice_number || (item.invoice_id ? invoiceNumbers[item.invoice_id] || item.invoice_id : item.source_invoice_id ? invoiceNumbers[`${PDF_OPTION_PREFIX}${item.source_invoice_id}`] : null) || "imported invoice";
+  return !item.invoice_id && item.source_invoice_id ? `${number} (A/R report)` : number;
+}
+
+function optionLabel(option: InvoiceOption) {
+  return option.source === "pdf_import" ? `${option.invoice_number} (A/R report${option.source_as_of ? ` as of ${option.source_as_of}` : ""})` : option.invoice_number;
 }
 
 export function ActiveHoldBanner({ holds, clientId, clientNames, invoiceNumbers, today }: {
@@ -41,7 +62,8 @@ export function ActiveHoldBanner({ holds, clientId, clientNames, invoiceNumbers,
   const byClient = new Map<string, Set<string>>();
   for (const hold of active) {
     const scopes = byClient.get(hold.client_id) || new Set<string>();
-    scopes.add(hold.invoice_id ? `invoice ${hold.invoice_number || invoiceNumbers[hold.invoice_id] || hold.invoice_id}` : "whole client");
+    const label = targetLabel(hold, invoiceNumbers);
+    scopes.add(label ? `invoice ${label}` : "whole client");
     byClient.set(hold.client_id, scopes);
   }
   const scopes = [...byClient.entries()].map(([id, parts]) => {
@@ -81,7 +103,7 @@ export function HoldsPanel({ holds, clientId, clientNames, invoiceOptions, viewe
             <div>
               <div className="n">{clientNames[hold.client_id] || hold.client_id}</div>
               <div data-hold-scope className="bc-small">
-                {hold.invoice_id ? `Invoice ${hold.invoice_number || invoiceNumbers[hold.invoice_id] || hold.invoice_id} only` : "Whole client"}
+                {targetLabel(hold, invoiceNumbers) ? `Invoice ${targetLabel(hold, invoiceNumbers)} only` : "Whole client"}
               </div>
             </div>
             <div>
@@ -109,7 +131,7 @@ export function HoldsPanel({ holds, clientId, clientNames, invoiceOptions, viewe
                 key={`hold-${clientId}-${today}`}
                 fields={[
                   { name: "reason", label: "Reason", type: "textarea" },
-                  { name: "invoice_id", label: "Applies to", type: "select", optional: true, options: clientInvoices.map((option) => ({ value: option.id, label: `Invoice ${option.invoice_number} only` })) },
+                  { name: "invoice_id", label: "Applies to", type: "select", optional: true, options: clientInvoices.map((option) => ({ value: option.id, label: `Invoice ${optionLabel(option)} only` })) },
                   { name: "expires_on", label: "Review by", type: "date", optional: true },
                 ]}
                 initialValues={{ client_id: clientId, reason: "", invoice_id: "", expires_on: "" }}
@@ -145,9 +167,9 @@ interface EventsProps {
 
 function eventLabels({ invoiceOptions, clientNames, firmTimezone = "America/Chicago" }: Pick<EventsProps, "invoiceOptions" | "clientNames" | "firmTimezone">) {
   const invoiceNumbers = Object.fromEntries(invoiceOptions.map((option) => [option.id, option.invoice_number]));
-  const invoiceLabel = (event: CollectionEvent) => event.invoice_number || (event.invoice_id ? invoiceNumbers[event.invoice_id] || event.invoice_id : null);
+  const invoiceLabel = (event: CollectionEvent) => targetLabel(event, invoiceNumbers);
   const describe = (event: CollectionEvent) =>
-    `${clientNames[event.client_id] || event.client_id}${event.invoice_id ? ` · invoice ${invoiceLabel(event)}` : ""} · ${formatFirmDate(event.occurred_at, firmTimezone)}`;
+    `${clientNames[event.client_id] || event.client_id}${invoiceLabel(event) ? ` · invoice ${invoiceLabel(event)}` : ""} · ${formatFirmDate(event.occurred_at, firmTimezone)}`;
   return { invoiceNumbers, invoiceLabel, describe };
 }
 
@@ -219,7 +241,7 @@ export function ActivityPanel(props: EventsProps) {
   const clientWideHold = clientId ? holdBlocks(holds, today, clientId, null) : false;
   const clientInvoices = invoiceOptions.filter((option) => option.client_id === clientId);
   const heldInvoices = clientWideHold ? [] : [...new Set(
-    activeHolds(holds, today, clientId).filter((hold) => hold.invoice_id).map((hold) => hold.invoice_number || invoiceNumbers[hold.invoice_id as string] || (hold.invoice_id as string)),
+    activeHolds(holds, today, clientId).flatMap((hold) => { const label = targetLabel(hold, invoiceNumbers); return label ? [label] : []; }),
   )];
 
   return (
@@ -243,7 +265,7 @@ export function ActivityPanel(props: EventsProps) {
                   <tr key={event.id} data-event-row={event.id}>
                     <td className="bc-small" style={{ whiteSpace: "nowrap" }}>{formatFirmDateTime(event.occurred_at, firmTimezone)}</td>
                     <td>{clientNames[event.client_id] || event.client_id}</td>
-                    <td className="bc-nowrap">{event.invoice_id ? invoiceLabel(event) || "—" : "All"}</td>
+                    <td className="bc-nowrap">{invoiceLabel(event) || "All"}</td>
                     <td>
                       {EVENT_LABELS[event.event_type] || event.event_type}
                       {event.event_type === "reminder_logged" && event.stage ? <div className="bc-small">Ladder {stageLabel(event.stage, stageLabels)}</div> : null}
@@ -270,7 +292,7 @@ export function ActivityPanel(props: EventsProps) {
               key={`event-${clientId}`}
               fields={[
                 { name: "event_type", label: "Activity", type: "select", options: LOGGABLE_EVENT_TYPES.map((type) => ({ value: type, label: EVENT_LABELS[type] })) },
-                { name: "invoice_id", label: "Invoice", type: "select", optional: true, options: clientInvoices.map((option) => ({ value: option.id, label: option.invoice_number })) },
+                { name: "invoice_id", label: "Invoice", type: "select", optional: true, options: clientInvoices.map((option) => ({ value: option.id, label: optionLabel(option) })) },
                 { name: "note", label: "Details", type: "textarea", optional: true },
               ]}
               initialValues={{ client_id: clientId, event_type: "", invoice_id: "", note: "" }}

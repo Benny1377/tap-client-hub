@@ -124,6 +124,8 @@ export interface DeliveryTestRunResult {
 
 export interface DeliveriesQuery {
   invoiceId?: string | null;
+  /** Report-only invoice (Phase 4); sent as source_invoice_id. */
+  sourceInvoiceId?: string | null;
   status?: DeliveryStatus | null;
   limit?: number;
   offset?: number;

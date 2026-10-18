@@ -6,19 +6,27 @@ import {
   approvalChecklist,
   BATCH_STATUS_LABELS,
   compareBalances,
+  DELEGABLE_ROLES,
   DISPOSITION_LABELS,
+  earlierBalance,
+  IMPORT_ACTIONS,
   IMPORT_ERROR_HEADLINES,
   linkedBillingInvoiceId,
   parseAmount,
+  priorImportsFrom,
   parseReportDate,
   REPORT_TYPE_LABELS,
   reviewProgress,
   rowCells,
+  suggestPriorImport,
+  togglePolicy,
   uploadProblem,
+  type PriorImport,
   type ClassifyDisposition,
   type ImportBatch,
   type ImportBatchDetail,
   type ImportInvoice,
+  type ImportPolicy,
   type ImportRow,
 } from "@/lib/billing-ui/imports";
 import type { ClientOption, Receivable, Viewer } from "@/lib/billing-ui/types";
@@ -59,6 +67,13 @@ export interface ImportsPanelProps {
 export function ImportsPanel({ api, viewer, clients, billingInvoices, onCollectionsChanged }: ImportsPanelProps) {
   const [batches, setBatches] = useState<Load<ImportBatch[]>>({ status: "loading" });
   const [selected, setSelected] = useState<string | null>(null);
+  const [priorImports, setPriorImports] = useState<PriorImport[]>([]);
+
+  // Earlier approved imports, so a repeat invoice in a newer report can keep its identity.
+  const loadPriorImports = useCallback(async () => {
+    const result = await api.worklist({ limit: 200 });
+    if (result.ok) setPriorImports(priorImportsFrom(result.data));
+  }, [api]);
 
   const loadBatches = useCallback(async () => {
     const result = await api.imports();
@@ -69,6 +84,9 @@ export function ImportsPanel({ api, viewer, clients, billingInvoices, onCollecti
     let current = true;
     api.imports().then((result) => {
       if (current) setBatches(result.ok ? { status: "ready", data: result.data.batches } : { status: "error", error: failureOf(result)! });
+    });
+    api.worklist({ limit: 200 }).then((result) => {
+      if (current && result.ok) setPriorImports(priorImportsFrom(result.data));
     });
     return () => { current = false; };
   }, [api]);
@@ -122,8 +140,9 @@ export function ImportsPanel({ api, viewer, clients, billingInvoices, onCollecti
           clients={clients}
           billingInvoices={billingInvoices}
           batches={list}
+          priorImports={priorImports}
           onBatchChanged={loadBatches}
-          onCollectionsChanged={onCollectionsChanged}
+          onCollectionsChanged={() => { onCollectionsChanged(); void loadPriorImports(); }}
           onClose={() => setSelected(null)}
         />
       ) : null}
@@ -186,12 +205,13 @@ interface BatchReviewProps {
   clients: ClientOption[];
   billingInvoices: Receivable[];
   batches: ImportBatch[];
+  priorImports: PriorImport[];
   onBatchChanged: () => Promise<void>;
   onCollectionsChanged: () => void;
   onClose: () => void;
 }
 
-function BatchReview({ api, batchId, viewer, clients, billingInvoices, batches, onBatchChanged, onCollectionsChanged, onClose }: BatchReviewProps) {
+function BatchReview({ api, batchId, viewer, clients, billingInvoices, batches, priorImports, onBatchChanged, onCollectionsChanged, onClose }: BatchReviewProps) {
   const [detail, setDetail] = useState<Load<ImportBatchDetail>>({ status: "loading" });
   const [mapping, setMapping] = useState<string | null>(null);
   const [actionError, setActionError] = useState<Failure | null>(null);
@@ -231,6 +251,8 @@ function BatchReview({ api, batchId, viewer, clients, billingInvoices, batches, 
   const clientNames = Object.fromEntries(clients.map((client) => [client.id, client.name]));
   const billingById = new Map(billingInvoices.map((invoice) => [invoice.id, invoice]));
   const invoiceBySource = new Map(invoices.map((invoice) => [invoice.source_invoice_id, invoice]));
+  // One report line per imported invoice: an identity already used in this report isn't offered again.
+  const matchable = priorImports.filter((item) => !invoiceBySource.has(item.source_invoice_id));
 
   return (
     <section className="bc-card" aria-label={`Review ${batch.original_filename}`} data-import-review={batch.id} data-batch-status={batch.status}>
@@ -287,8 +309,10 @@ function BatchReview({ api, batchId, viewer, clients, billingInvoices, batches, 
                     mappingForm={mapping === row.id ? (
                       <InvoiceMappingForm
                         row={row}
+                        existing={row.source_invoice_id ? invoiceBySource.get(row.source_invoice_id) : undefined}
                         clients={clients}
                         billingInvoices={billingInvoices}
+                        priorImports={matchable}
                         onCancel={() => setMapping(null)}
                         onSubmit={(input) => act(() => api.reviewImportInvoice(batch.id, input), () => setMapping(null), true)}
                       />
@@ -302,7 +326,7 @@ function BatchReview({ api, batchId, viewer, clients, billingInvoices, batches, 
       ) : null}
 
       {invoices.length > 0 ? (
-        <ConfirmedInvoices invoices={invoices} clientNames={clientNames} billingById={billingById} />
+        <ConfirmedInvoices invoices={invoices} revisions={data.revisions} clientNames={clientNames} billingById={billingById} />
       ) : null}
 
       {batch.report_type === "aging_summary" ? (
@@ -456,16 +480,32 @@ export function validateMapping(values: Record<string, string>) {
   return errors;
 }
 
-export function InvoiceMappingForm({ row, clients, billingInvoices, onSubmit, onCancel }: {
+/** A correction starts from what the reviewer confirmed before (never from a guess); it must be re-confirmed. */
+function confirmedValues(existing: ImportInvoice | undefined): Record<string, string> {
+  if (!existing) return {};
+  const text = (value: string | number | null | undefined) => (value === null || value === undefined ? "" : String(value));
+  return {
+    client_id: text(existing.identity?.client_id), customer_name: existing.customer_name, invoice_number: text(existing.invoice_number),
+    transaction_type: text(existing.transaction_type), transaction_date: text(existing.transaction_date), due_date: text(existing.due_date),
+    terms: text(existing.terms), po_number: text(existing.po_number), reported_aging: text(existing.reported_aging),
+    open_balance: text(existing.open_balance), linked_invoice_id: text(linkedBillingInvoiceId(existing)),
+  };
+}
+
+export function InvoiceMappingForm({ row, existing, clients, billingInvoices, priorImports = [], onSubmit, onCancel }: {
   row: ImportRow;
+  /** The invoice this line was already confirmed as, when correcting it. */
+  existing?: ImportInvoice;
   clients: ClientOption[];
   billingInvoices: Receivable[];
+  /** Invoices from earlier approved reports this line could be a newer snapshot of. */
+  priorImports?: PriorImport[];
   onSubmit: (input: Parameters<BillingApi["reviewImportInvoice"]>[1]) => Promise<ApiResult<unknown>>;
   onCancel: () => void;
 }) {
   const formId = useId();
   const cells = rowCells(row);
-  const [values, setValues] = useState<Record<string, string>>({});
+  const [values, setValues] = useState<Record<string, string>>(() => confirmedValues(existing));
   const [mappedFrom, setMappedFrom] = useState<Record<string, number>>({});
   const [active, setActive] = useState<MappingField>("customer_name");
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -476,6 +516,20 @@ export function InvoiceMappingForm({ row, clients, billingInvoices, onSubmit, on
   const linked = clientInvoices.find((invoice) => invoice.id === values.linked_invoice_id) || null;
   const pdfBalance = parseAmount(values.open_balance || "");
   const comparison = linked && pdfBalance !== null ? compareBalances(pdfBalance, linked.balance) : null;
+  // A line already confirmed keeps its identity; only a new line can be matched to an earlier report.
+  const canMatchPrior = !row.source_invoice_id;
+  const clientPriors = priorImports.filter((item) => item.client_id === values.client_id);
+  const prior = clientPriors.find((item) => item.source_invoice_id === values.existing_source_invoice_id) || null;
+  const suggestion = canMatchPrior && !prior ? suggestPriorImport(priorImports, values.client_id, values.invoice_number, values.linked_invoice_id) : null;
+  const change = prior && pdfBalance !== null ? compareBalances(pdfBalance, prior.balance) : null;
+  function choosePrior(sourceInvoiceId: string) {
+    const chosen = priorImports.find((item) => item.source_invoice_id === sourceInvoiceId);
+    setValues((current) => ({
+      ...current, existing_source_invoice_id: sourceInvoiceId,
+      // An imported invoice's Billing link can't be reassigned, so it carries over.
+      ...(chosen?.invoice_id ? { linked_invoice_id: chosen.invoice_id } : {}),
+    }));
+  }
 
   function fillFromCell(index: number) {
     const field = MAPPING_FIELDS.find((item) => item.name === active)!;
@@ -506,6 +560,7 @@ export function InvoiceMappingForm({ row, clients, billingInvoices, onSubmit, on
       reported_aging: values.reported_aging ? Number(values.reported_aging) : null,
       open_balance: parseAmount(values.open_balance)!,
       linked_invoice_id: values.linked_invoice_id || null,
+      existing_source_invoice_id: canMatchPrior ? values.existing_source_invoice_id || null : null,
       confirmed: true,
       // Keep the extracted cells and which cell fed each field, for provenance.
       row_data: { cells, mapped_from: mappedFrom },
@@ -527,7 +582,7 @@ export function InvoiceMappingForm({ row, clients, billingInvoices, onSubmit, on
         <label className="bc-field" style={{ gridColumn: "1 / -1" }}>
           <span>TAP Hub client</span>
           <select className="bc-in" data-field="client_id" value={values.client_id || ""} aria-invalid={errors.client_id ? true : undefined}
-            onChange={(event) => { set("client_id", event.target.value); set("linked_invoice_id", ""); }}>
+            onChange={(event) => { const clientId = event.target.value; setValues((current) => ({ ...current, client_id: clientId, linked_invoice_id: "", existing_source_invoice_id: "" })); }}>
             <option value="">Select the client…</option>
             {clients.map((client) => <option key={client.id} value={client.id}>{client.name}</option>)}
           </select>
@@ -551,14 +606,42 @@ export function InvoiceMappingForm({ row, clients, billingInvoices, onSubmit, on
             {fieldError(field.name)}
           </label>
         ))}
+        {canMatchPrior && clientPriors.length ? (
+          <label className="bc-field" style={{ gridColumn: "1 / -1" }}>
+            <span>Same invoice as an earlier report (optional)</span>
+            <select className="bc-in" data-field="existing_source_invoice_id" value={values.existing_source_invoice_id || ""}
+              onChange={(event) => (event.target.value ? choosePrior(event.target.value) : set("existing_source_invoice_id", ""))}>
+              <option value="">New to Collections</option>
+              {clientPriors.map((item) => (
+                <option key={item.source_invoice_id} value={item.source_invoice_id}>
+                  {item.invoice_number} · {formatMoney(item.balance)}{item.source_as_of ? ` · report as of ${item.source_as_of}` : ""}{item.invoice_id ? " · linked to Billing" : ""}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : null}
+        {suggestion ? (
+          <div className="bc-gatebox" data-prior-suggestion={suggestion.source_invoice_id} style={{ gridColumn: "1 / -1", padding: "8px 12px", fontSize: 12.5 }}>
+            This looks like <b>{suggestion.invoice_number}</b> from {suggestion.source_as_of ? `the report as of ${suggestion.source_as_of}` : "an earlier report"} ({formatMoney(suggestion.balance)}).
+            {" "}If it&rsquo;s the same invoice, link them so its history, holds and reminders carry over instead of starting again.{" "}
+            <button type="button" className="bc-btn quiet" style={{ padding: "3px 9px", fontSize: 12 }} onClick={() => choosePrior(suggestion.source_invoice_id)}>Same invoice</button>
+          </div>
+        ) : null}
         <label className="bc-field" style={{ gridColumn: "1 / -1" }}>
           <span>Same invoice in Billing (optional)</span>
-          <select className="bc-in" data-field="linked_invoice_id" value={values.linked_invoice_id || ""} disabled={!values.client_id} onChange={(event) => set("linked_invoice_id", event.target.value)}>
+          <select className="bc-in" data-field="linked_invoice_id" value={values.linked_invoice_id || ""} disabled={!values.client_id || Boolean(prior?.invoice_id)} onChange={(event) => set("linked_invoice_id", event.target.value)}>
             <option value="">{values.client_id ? (clientInvoices.length ? "Not in Billing" : "This client has no open Billing invoices") : "Pick the client first"}</option>
             {clientInvoices.map((invoice) => <option key={invoice.id} value={invoice.id}>{invoice.invoice_number} · {formatMoney(invoice.balance)} open</option>)}
           </select>
         </label>
       </div>
+      {prior?.invoice_id ? <p className="bc-small" data-prior-billing-link style={{ margin: "0 0 8px" }}>The earlier import is already linked to this Billing invoice, so the link carries over.</p> : null}
+      {change ? (
+        <div className="bc-source" data-prior-change={change.matches ? "same" : "changed"} style={{ margin: "4px 0 10px" }}>
+          Earlier report{prior?.source_as_of ? ` (as of ${prior.source_as_of})` : ""} {formatMoney(change.billing.toFixed(2))} → this report {formatMoney(change.pdf.toFixed(2))}
+          {change.matches ? ": unchanged." : <>: <b>{formatMoney(change.difference.toFixed(2))}</b>. The earlier value is kept in the history.</>}
+        </div>
+      ) : null}
       {comparison ? (
         <div className="bc-source" data-balance-math={comparison.matches ? "match" : "differs"} style={{ margin: "4px 0 10px" }}>
           Report {formatMoney(comparison.pdf.toFixed(2))} − Billing {formatMoney(comparison.billing.toFixed(2))} = <b>{formatMoney(comparison.difference.toFixed(2))}</b>.{" "}
@@ -579,7 +662,7 @@ export function InvoiceMappingForm({ row, clients, billingInvoices, onSubmit, on
   );
 }
 
-export function ConfirmedInvoices({ invoices, clientNames, billingById }: { invoices: ImportInvoice[]; clientNames: Record<string, string>; billingById: Map<string, Receivable> }) {
+export function ConfirmedInvoices({ invoices, revisions = [], clientNames, billingById }: { invoices: ImportInvoice[]; revisions?: ImportBatchDetail["revisions"]; clientNames: Record<string, string>; billingById: Map<string, Receivable> }) {
   return (
     <section aria-label="Confirmed invoices" style={{ marginTop: 18 }}>
       <h4 className="bc-h">Confirmed invoices <small>{invoices.length}</small></h4>
@@ -590,13 +673,17 @@ export function ConfirmedInvoices({ invoices, clientNames, billingById }: { invo
             {invoices.map((invoice) => {
               const billingId = linkedBillingInvoiceId(invoice);
               const billing = billingId ? billingById.get(billingId) : undefined;
+              const earlier = earlierBalance(invoice, revisions);
               const comparison = billing ? compareBalances(invoice.open_balance, billing.balance) : null;
               return (
                 <tr key={invoice.source_invoice_id} data-import-invoice={invoice.source_invoice_id} data-discrepancy={invoice.discrepancy_status}>
                   <td className="bc-nowrap">{invoice.invoice_number || "(no number)"}</td>
                   <td>{invoice.customer_name}<div className="bc-small">{invoice.identity?.client_id ? `→ ${clientNames[invoice.identity.client_id] || "TAP Hub client"}` : "→ client saved with the review"}</div></td>
                   <td className="bc-nowrap">{invoice.due_date || "—"}</td>
-                  <td className="r">{formatMoney(invoice.open_balance)}</td>
+                  <td className="r">
+                    {formatMoney(invoice.open_balance)}
+                    {earlier ? <div className="bc-small" data-earlier-balance={earlier.balance}>was {formatMoney(earlier.balance)}{earlier.source_as_of ? ` (as of ${earlier.source_as_of})` : ""}</div> : null}
+                  </td>
                   <td>
                     {billing && comparison ? (
                       <span data-billing-math={comparison.matches ? "match" : "differs"}>
@@ -743,5 +830,77 @@ export function DiscrepancyResolver({ invoice, billing, onResolve }: {
       {serverError ? <ImportError error={serverError} /> : null}
       <button type="submit" className="bc-btn" disabled={pending}>{pending ? "Saving…" : "Use this balance"}</button>
     </form>
+  );
+}
+
+/** Owner/Admin: which staff roles may upload, review and approve A/R reports. */
+export function ImportPermissionsPanel({ api }: { api: BillingApi }) {
+  const [state, setState] = useState<Load<ImportPolicy>>({ status: "loading" });
+  const [draft, setDraft] = useState<ImportPolicy | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<Failure | null>(null);
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    let current = true;
+    api.importPermissions().then((result) => {
+      if (!current) return;
+      if (result.ok) { setState({ status: "ready", data: result.data.policy }); setDraft(result.data.policy); }
+      else setState({ status: "error", error: failureOf(result)! });
+    });
+    return () => { current = false; };
+  }, [api]);
+
+  if (state.status === "loading") return <p role="status" className="bc-hint">Loading report permissions…</p>;
+  if (state.status === "error") return <ImportError error={state.error} />;
+  const policy = draft || state.data;
+  const changed = JSON.stringify(policy) !== JSON.stringify(state.data);
+
+  return (
+    <div data-import-permissions>
+      <div className="bc-scroll">
+        <table className="bc-table sm">
+          <thead><tr><th>Action</th><th>Owner / Admin</th>{DELEGABLE_ROLES.map((item) => <th key={item.role}>{item.label}</th>)}</tr></thead>
+          <tbody>
+            {IMPORT_ACTIONS.map(({ action, label, hint }) => (
+              <tr key={action} data-permission-action={action}>
+                <td><b>{label}</b><div className="bc-small">{hint}</div></td>
+                <td><input type="checkbox" checked disabled aria-label={`Owner and Admin: ${label} (always on)`} /></td>
+                {DELEGABLE_ROLES.map(({ role, label: roleLabel }) => (
+                  <td key={role}>
+                    <input
+                      type="checkbox"
+                      data-permission={`${action}:${role}`}
+                      aria-label={`${roleLabel}: ${label}`}
+                      checked={(policy[action] || []).includes(role)}
+                      onChange={(event) => { setSaved(false); setDraft(togglePolicy(policy, action, role, event.target.checked)); }}
+                    />
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <p className="bc-small" style={{ margin: "8px 0" }}>
+        Whoever uploads a report, or reviews any of its lines, can never approve that same report, whatever this table says.
+        A person with both Collections and Billing access follows the Collections staff column.
+      </p>
+      {error ? <ImportError error={error} /> : null}
+      <div className="bc-inline">
+        <button type="button" className="bc-btn" disabled={!changed || saving} onClick={async () => {
+          setSaving(true);
+          setError(null);
+          const result = await api.updateImportPermissions(policy);
+          setSaving(false);
+          if (result.ok === false) { setError(failureOf(result)); return; }
+          setState({ status: "ready", data: result.data.policy });
+          setDraft(result.data.policy);
+          setSaved(true);
+        }}>{saving ? "Saving…" : "Save permissions"}</button>
+        {changed ? <button type="button" className="bc-btn quiet" onClick={() => setDraft(state.data)}>Discard changes</button> : null}
+        {saved && !changed ? <span role="status" className="bc-small">Saved.</span> : null}
+      </div>
+    </div>
   );
 }

@@ -1,16 +1,16 @@
 "use client";
 
 import { useCallback, useMemo, useState, type ReactNode } from "react";
-import { mutateThenRefresh, type ApiResult } from "@/lib/billing-ui/api";
+import { invoiceTargetFields, mutateThenRefresh, type ApiResult } from "@/lib/billing-ui/api";
 import { readyData } from "@/lib/billing-ui/ledger";
 import { approvalRequests, noticesAwaitingSend, stageLabelsFrom, todayIso, viewerIsPowerUser } from "@/lib/billing-ui/view-model";
 import { useLedger } from "@/components/billing/use-ledger";
 import { ClientPicker, OwnerAdminOnly, SectionView } from "@/components/billing/ui";
-import { ActiveHoldBanner, ActivityPanel, DecisionsPanel, HoldsPanel, type InvoiceOption } from "@/components/billing/collections-panels";
+import { ActiveHoldBanner, ActivityPanel, DecisionsPanel, HoldsPanel, PDF_OPTION_PREFIX, type InvoiceOption } from "@/components/billing/collections-panels";
 import { AutomationPreviewPanel, LadderRungs, LadderSummary, MoneyByStage, PipelineBanner, PipelineTiles, WhoIsWhere, WorklistSummary, WorklistTable } from "@/components/billing/worklist-panels";
 import { CollectionsRulesEditor } from "@/components/billing/collections-rules-editor";
 import { DeliveryHistoryPanel, DeliverySetupPanel } from "@/components/billing/delivery-panels";
-import { ImportsPanel } from "@/components/billing/import-panels";
+import { ImportPermissionsPanel, ImportsPanel } from "@/components/billing/import-panels";
 
 const WORKLIST_PAGE = 50;
 const TABS = [
@@ -29,6 +29,7 @@ function TabPanel({ id, active, children }: { id: TabId; active: TabId; children
 export default function CollectionsPage() {
   const [tab, setTab] = useState<TabId>("insights");
   const [importsOpened, setImportsOpened] = useState(false);
+  const [importPermissionsOpened, setImportPermissionsOpened] = useState(false);
   const [clientId, setClientId] = useState<string | null>(null);
   const [worklistOffset, setWorklistOffset] = useState(0);
   const [deliveryRefreshKey, setDeliveryRefreshKey] = useState(0);
@@ -57,7 +58,13 @@ export default function CollectionsPage() {
   // date only while neither read model has loaded.
   const today = worklist?.as_of_date || receivables.as_of_date || todayIso();
   // Every issued invoice (all clients, all pages), so names resolve regardless of the call-list page.
-  const invoiceOptions: InvoiceOption[] = receivables.receivables.map((row) => ({ id: row.id, invoice_number: row.invoice_number, client_id: row.client_id }));
+  const billingOptions: InvoiceOption[] = receivables.receivables.map((row) => ({ id: row.id, invoice_number: row.invoice_number, client_id: row.client_id, source: "billing" }));
+  // Report-only invoices (Phase 4) of the accounts on the loaded call-list page. Forms that
+  // use them need a selected client, and then that client's whole account is loaded.
+  const reportOnlyOptions: InvoiceOption[] = (worklist?.accounts || []).flatMap((account) => account.invoices
+    .filter((invoice) => invoice.source === "pdf_import" && !invoice.invoice_id && invoice.source_invoice_id)
+    .map((invoice) => ({ id: `${PDF_OPTION_PREFIX}${invoice.source_invoice_id}`, invoice_number: invoice.invoice_number, client_id: account.client_id, source: "pdf_import" as const, source_invoice_id: invoice.source_invoice_id, source_as_of: invoice.source_as_of })));
+  const invoiceOptions: InvoiceOption[] = [...billingOptions, ...reportOnlyOptions];
   const invoiceNumbers = Object.fromEntries(invoiceOptions.map((option) => [option.id, option.invoice_number]));
   const selectClient = (id: string | null) => { setClientId(id); setWorklistOffset(0); };
   const decisions = approvalRequests(events, holds, viewer, today).filter((item) => item.state !== "approved").length
@@ -72,11 +79,14 @@ export default function CollectionsPage() {
     today,
     firmTimezone,
     stageLabels,
-    onLog: (values: Record<string, string>) => mutate(() => api.logEvent({ client_id: values.client_id, event_type: values.event_type, invoice_id: values.invoice_id || null, detail: values.note.trim() ? { note: values.note.trim() } : {} })),
+    onLog: (values: Record<string, string>) => mutate(() => api.logEvent({ client_id: values.client_id, event_type: values.event_type, ...invoiceTargetFields(values.invoice_id), detail: values.note.trim() ? { note: values.note.trim() } : {} })),
     onApprove: (eventId: string, approvalType: "escalated" | "formal_notice_approved") => mutate(() => api.approveEvent(eventId, approvalType)),
-    onRecordNoticeSent: (approval: { id: string; client_id: string; invoice_id: string | null }, note: string) => mutate(() => api.logEvent({
+    onRecordNoticeSent: (approval: { id: string; client_id: string; invoice_id: string | null; source_invoice_id?: string | null }, note: string) => mutate(() => api.logEvent({
       client_id: approval.client_id,
-      invoice_id: approval.invoice_id,
+      // The notice record must name the same invoice identity as its approval.
+      ...(!approval.invoice_id && approval.source_invoice_id
+        ? { target: { source: "pdf_import" as const, source_invoice_id: approval.source_invoice_id } }
+        : { invoice_id: approval.invoice_id }),
       event_type: "formal_notice_sent",
       approval_event_id: approval.id,
       detail: { note: note.trim() },
@@ -96,7 +106,7 @@ export default function CollectionsPage() {
               aria-controls={`collections-${item.id}`}
               aria-selected={tab === item.id}
               className="bc-snb"
-              onClick={() => { setTab(item.id); if (item.id === "imports") setImportsOpened(true); }}
+              onClick={() => { setTab(item.id); if (item.id === "imports") setImportsOpened(true); if (item.id === "setup") setImportPermissionsOpened(true); }}
             >
               {item.label}
               {item.id === "pipeline" && decisions > 0 ? <span className="bc-count" aria-label={`${decisions} waiting`}>{decisions}</span> : null}
@@ -199,6 +209,13 @@ export default function CollectionsPage() {
             <DeliverySetupPanel api={api} viewer={viewer} onTestRunComplete={() => setDeliveryRefreshKey((current) => current + 1)} />
           </section>
         ) : null}
+        {power ? (
+          <section className="bc-cfgsec" aria-label="A/R report permissions">
+            <h3 className="bc-sect">A/R report permissions</h3>
+            <p className="bc-hint">Who besides Owners and Admins may upload, review, and approve QuickBooks A/R reports.</p>
+            {importPermissionsOpened ? <ImportPermissionsPanel api={api} /> : null}
+          </section>
+        ) : null}
         <section className="bc-cfgsec" aria-label="Holds">
           <h3 className="bc-sect">On hold — never chased</h3>
           <p className="bc-hint">Disputes, payment plans, and anyone a person should handle. A hold blocks escalation and formal-notice steps for its client or invoice.</p>
@@ -212,7 +229,7 @@ export default function CollectionsPage() {
                 viewer={viewer}
                 today={today}
                 firmTimezone={firmTimezone}
-                onPlace={(values) => mutate(() => api.placeHold({ client_id: values.client_id, reason: values.reason.trim(), invoice_id: values.invoice_id || null, expires_on: values.expires_on || null }))}
+                onPlace={(values) => mutate(() => api.placeHold({ client_id: values.client_id, reason: values.reason.trim(), ...invoiceTargetFields(values.invoice_id), expires_on: values.expires_on || null }))}
                 onRelease={(holdId) => mutate(() => api.releaseHold(holdId))}
               />
             )}

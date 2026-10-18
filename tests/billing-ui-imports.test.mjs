@@ -189,3 +189,102 @@ test("call-list rows say when a balance comes from an A/R report or is blocked b
   assert.match(render(h(SourceNote, { invoice: { source: "pdf_import", source_as_of: "2026-08-28", discrepancy_status: "none" } })), /From A\/R report · as of 2026-08-28/);
   assert.match(render(h(SourceNote, { invoice: { source: "billing", source_as_of: "2026-08-28", discrepancy_status: "blocked" } })), /Balances differ/);
 });
+
+// ---- Source-aware holds and activity, re-import identity, permissions -------------
+const vm = loadTs("lib/billing-ui/view-model.ts");
+const { invoiceTargetFields } = loadTs("lib/billing-ui/api.ts");
+const collections = loadTs("components/billing/collections-panels.tsx");
+const TODAY = "2026-10-18";
+const pdfHold = { id: "h-1", client_id: "c-1", invoice_id: null, source: "pdf_import", source_invoice_id: "s-1", canonical_collection_identity: "pdf_import:s-1", invoice_number: "SYN-1001", reason: "Synthetic dispute", placed_by: null, placed_at: "2026-10-18T10:00:00Z", expires_on: null, released_by: null, released_at: null };
+
+test("a hold on a report-only invoice is an invoice hold, not a whole-client hold", () => {
+  assert.equal(vm.invoiceScope(pdfHold), "pdf_import:s-1");
+  assert.equal(vm.invoiceScope({ invoice_id: null, source_invoice_id: null }), null, "whole client");
+  assert.equal(vm.invoiceScope({ invoice_id: "inv-1" }), "billing:inv-1");
+  assert.equal(vm.holdBlocks([pdfHold], TODAY, "c-1", null), false, "does not block client-level requests");
+  assert.equal(vm.holdBlocks([pdfHold], TODAY, "c-1", "inv-1"), false, "does not block a Billing invoice");
+  assert.equal(vm.holdBlocks([pdfHold], TODAY, "c-1", { invoice_id: null, source_invoice_id: "s-1", canonical_collection_identity: "pdf_import:s-1" }), true);
+  const request = { id: "e-1", client_id: "c-1", invoice_id: null, source_invoice_id: "s-2", canonical_collection_identity: "pdf_import:s-2", event_type: "escalation_requested", stage: 4, occurred_at: "2026-10-18T11:00:00Z", actor: null, detail: {}, approves_event_id: null };
+  assert.equal(vm.approvalRequests([request], [pdfHold], { role: "owner", modules: [] }, TODAY)[0].state, "can_approve", "another invoice's hold does not block approval");
+});
+
+test("form choices become the route's invoice target", () => {
+  assert.deepEqual({ ...invoiceTargetFields("") }, { invoice_id: null });
+  assert.deepEqual({ ...invoiceTargetFields("inv-1") }, { invoice_id: "inv-1" });
+  assert.deepEqual(JSON.parse(JSON.stringify(invoiceTargetFields("pdf_import:s-1"))), { target: { source: "pdf_import", source_invoice_id: "s-1" } });
+});
+
+test("holds, history and the activity form name report-only invoices", () => {
+  const options = [{ id: "inv-1", invoice_number: "LOCAL-001", client_id: "c-1", source: "billing" }, { id: "pdf_import:s-1", invoice_number: "SYN-1001", client_id: "c-1", source: "pdf_import", source_invoice_id: "s-1", source_as_of: "2026-08-28" }];
+  const holdsHtml = render(h(collections.HoldsPanel, { holds: [pdfHold], clientId: "c-1", clientNames: {}, invoiceOptions: options, viewer: { role: "owner", modules: [] }, today: TODAY, onPlace: ok, onRelease: ok }));
+  assert.match(holdsHtml, /Invoice SYN-1001 \(A\/R report\) only/);
+  assert.doesNotMatch(holdsHtml, /Whole client/);
+  assert.match(holdsHtml, /value="pdf_import:s-1"[^>]*>Invoice SYN-1001 \(A\/R report as of 2026-08-28\) only/);
+  const event = { id: "e-1", client_id: "c-1", invoice_id: null, source_invoice_id: "s-1", canonical_collection_identity: "pdf_import:s-1", invoice_number: "SYN-1001", event_type: "call_logged", stage: null, occurred_at: "2026-10-18T11:00:00Z", actor: null, detail: { note: "Called" }, approves_event_id: null };
+  const activity = render(h(collections.ActivityPanel, { events: [event], holds: [pdfHold], invoiceOptions: options, clientId: "c-1", clientNames: {}, viewer: { role: "staff", modules: ["Collections"] }, today: TODAY, onLog: ok, onApprove: ok, onRecordNoticeSent: ok }));
+  assert.match(activity, /<td class="bc-nowrap">SYN-1001 \(A\/R report\)<\/td>/);
+  assert.match(activity, /data-invoice-holds/, "the held report invoice is called out");
+  assert.doesNotMatch(activity, /data-requests-blocked/, "no client-wide warning for an invoice hold");
+});
+
+test("earlier imports are matched by client and invoice number or Billing link, as a suggestion only", () => {
+  const priors = imports.priorImportsFrom({ accounts: [{ client_id: "c-1", invoices: [
+    { source_invoice_id: "s-1", invoice_id: null, invoice_number: "SYN-1001", balance: "150.00", source_as_of: "2026-08-28" },
+    { source_invoice_id: "s-2", invoice_id: "inv-1", invoice_number: "LOCAL-001", balance: "125.00", source_as_of: "2026-08-28" },
+    { source_invoice_id: null, invoice_id: "inv-2", invoice_number: "LOCAL-002", balance: "80.00" },
+  ] }] });
+  assert.deepEqual(priors.map((item) => item.source_invoice_id), ["s-1", "s-2"], "only rows that came from a report");
+  assert.equal(imports.suggestPriorImport(priors, "c-1", " syn-1001 ", null)?.source_invoice_id, "s-1");
+  assert.equal(imports.suggestPriorImport(priors, "c-1", "OTHER", "inv-1")?.source_invoice_id, "s-2");
+  assert.equal(imports.suggestPriorImport(priors, "c-2", "SYN-1001", null), null, "never across clients");
+  assert.equal(imports.suggestPriorImport(priors, null, "SYN-1001", null), null);
+});
+
+test("a matching earlier import is offered as a suggestion for a new line", () => {
+  const priors = [{ source_invoice_id: "s-old", client_id: "c-1", invoice_number: "SYN-1001", balance: "150.00", source_as_of: "2026-07-31", invoice_id: null }];
+  // An unmatched new line, prefilled the way a correction would be, so the client is set.
+  const html = render(h(panels.InvoiceMappingForm, { row: row("r9", "unreviewed"), existing: importInvoice({ invoice_number: "SYN-1001", open_balance: "120.00", proposed_linked_invoice_id: null }), clients, billingInvoices: [billingInvoice], priorImports: priors, onSubmit: ok, onCancel: () => {} }));
+  assert.match(html, /data-field="existing_source_invoice_id"/);
+  assert.match(html, /data-prior-suggestion="s-old"/);
+  assert.match(html, /This looks like <b>SYN-1001<\/b> from the report as of 2026-07-31/);
+});
+
+test("correcting a confirmed line starts from its confirmed values and keeps its identity", () => {
+  const confirmed = { ...row("r5", "invoice"), source_invoice_id: "s-1" };
+  const html = render(h(panels.InvoiceMappingForm, { row: confirmed, existing: importInvoice({ invoice_number: "SYN-1001", open_balance: "150.00" }), clients, billingInvoices: [billingInvoice], priorImports: [{ source_invoice_id: "s-old", client_id: "c-1", invoice_number: "SYN-1001", balance: "1.00", source_as_of: null, invoice_id: null }], onSubmit: ok, onCancel: () => {} }));
+  assert.match(html, /data-field="open_balance"[^>]*value="150.00"/);
+  assert.match(html, /data-field="customer_name"[^>]*value="Example Orchard LLC"/);
+  assert.doesNotMatch(html, /data-field="existing_source_invoice_id"/, "an already-confirmed line keeps its identity");
+  assert.doesNotMatch(html, /data-field="confirmed" checked/, "the PDF check must be ticked again");
+});
+
+test("an invoice's earlier reviewed balance is shown when it changed", () => {
+  const revisions = [
+    { id: "rv-2", batch_id: "b-0", source_invoice_id: "s-1", actor: null, snapshot: { open_balance: "100.00", source_as_of: "2026-08-28" }, created_at: "2026-10-18T10:00:00Z" },
+    { id: "rv-1", batch_id: "b-old", source_invoice_id: "s-1", actor: null, snapshot: { open_balance: "150.00", source_as_of: "2026-07-31" }, created_at: "2026-09-01T10:00:00Z" },
+  ];
+  assert.equal(imports.earlierBalance({ source_invoice_id: "s-1", open_balance: "100.00" }, revisions)?.balance, "150.00", "skips unchanged snapshots");
+  assert.equal(imports.earlierBalance({ source_invoice_id: "s-9", open_balance: "100.00" }, revisions), null);
+  const html = render(h(panels.ConfirmedInvoices, { invoices: [importInvoice({ open_balance: "120.00" })], revisions: [{ ...revisions[0], snapshot: { open_balance: "150.00", source_as_of: "2026-07-31" } }], clientNames: {}, billingById: new Map() }));
+  assert.match(html, /was \$150\.00 \(as of 2026-07-31\)/);
+});
+
+test("permission changes keep Owner/Admin in every action", () => {
+  const policy = { upload: ["owner", "admin", "collections"], review: ["owner", "admin", "collections"], approve: ["owner", "admin"] };
+  assert.deepEqual([...imports.togglePolicy(policy, "approve", "collections", true).approve].sort(), ["admin", "collections", "owner"]);
+  assert.deepEqual([...imports.togglePolicy(policy, "review", "collections", false).review].sort(), ["admin", "owner"]);
+  assert.deepEqual([...imports.togglePolicy({ upload: [], review: [], approve: [] }, "upload", "billing", true).upload].sort(), ["admin", "billing", "owner"]);
+});
+
+test("permission and delivery-history calls use the contract's routes", async () => {
+  const calls = [];
+  const api = createBillingApi(async (url, init = {}) => { calls.push(`${init.method || "GET"} ${url}${init.body ? ` ${init.body}` : ""}`); return new Response("{}", { status: 200 }); });
+  await api.importPermissions();
+  await api.updateImportPermissions({ upload: ["owner", "admin"], review: ["owner", "admin"], approve: ["owner", "admin"] });
+  await api.deliveries({ sourceInvoiceId: "s-1" });
+  assert.deepEqual(calls, [
+    "GET /api/collections/imports/permissions",
+    'PATCH /api/collections/imports/permissions {"policy":{"upload":["owner","admin"],"review":["owner","admin"],"approve":["owner","admin"]}}',
+    "GET /api/collections/deliveries?source_invoice_id=s-1",
+  ]);
+});

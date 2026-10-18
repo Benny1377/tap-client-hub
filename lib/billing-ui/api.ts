@@ -22,7 +22,17 @@ import type {
   Viewer,
 } from "./types";
 import type { DeliveriesQuery, DeliveriesResponse, DeliverySetup, DeliveryTestRunResult } from "./delivery";
-import type { ClassifyDisposition, CrossCheckResult, DiscrepancyResolution, ImportBatch, ImportBatchDetail, ImportInvoice, ImportInvoiceInput } from "./imports";
+import type { ClassifyDisposition, CrossCheckResult, DiscrepancyResolution, ImportBatch, ImportBatchDetail, ImportInvoice, ImportInvoiceInput, ImportPolicy } from "./imports";
+
+/** Source-aware invoice target accepted by the hold and event routes (Phase 4 addendum). */
+export type InvoiceTarget = { source: "billing"; invoice_id: string } | { source: "pdf_import"; source_invoice_id: string };
+
+/** Turn a hold/activity form's invoice choice into the route's fields; empty means the whole client. */
+export function invoiceTargetFields(choice: string | null | undefined, pdfPrefix = "pdf_import:"): { invoice_id?: string | null; target?: InvoiceTarget } {
+  if (!choice) return { invoice_id: null };
+  if (choice.startsWith(pdfPrefix)) return { target: { source: "pdf_import", source_invoice_id: choice.slice(pdfPrefix.length) } };
+  return { invoice_id: choice };
+}
 
 export type ApiErrorKind = "unauthorized" | "forbidden" | "not_found" | "conflict" | "invalid" | "server" | "network";
 
@@ -141,6 +151,7 @@ export function createBillingApi(fetchImpl: FetchLike) {
     deliveries: (params: DeliveriesQuery = {}) => {
       const query = new URLSearchParams();
       if (params.invoiceId) query.set("invoice_id", params.invoiceId);
+      if (params.sourceInvoiceId) query.set("source_invoice_id", params.sourceInvoiceId);
       if (params.status) query.set("status", params.status);
       if (params.limit !== undefined) query.set("limit", String(params.limit));
       if (params.offset !== undefined) query.set("offset", String(params.offset));
@@ -181,11 +192,12 @@ export function createBillingApi(fetchImpl: FetchLike) {
     reverseAllocation: (id: string) =>
       post<{ allocation: PaymentAllocation }>(fetchImpl, `/api/billing/allocations/${encodeURIComponent(id)}`, {}),
 
-    logEvent: (input: { client_id: string; event_type: string; invoice_id?: string | null; stage?: number | null; detail?: Record<string, unknown>; approval_event_id?: string | null }) =>
+    /** A Billing invoice goes as invoice_id; a report-only invoice as target (Phase 4 source identity). */
+    logEvent: (input: { client_id: string; event_type: string; invoice_id?: string | null; target?: InvoiceTarget; stage?: number | null; detail?: Record<string, unknown>; approval_event_id?: string | null }) =>
       post<{ event: CollectionEvent }>(fetchImpl, "/api/collections/events", input),
     approveEvent: (eventId: string, eventType: "escalated" | "formal_notice_approved", detail?: Record<string, unknown>) =>
       post<{ event: CollectionEvent }>(fetchImpl, "/api/collections/events/approve", { event_id: eventId, event_type: eventType, detail }),
-    placeHold: (input: { client_id: string; reason: string; invoice_id?: string | null; expires_on?: string | null }) =>
+    placeHold: (input: { client_id: string; reason: string; invoice_id?: string | null; target?: InvoiceTarget; expires_on?: string | null }) =>
       post<{ hold: CollectionHold }>(fetchImpl, "/api/collections/holds", input),
     releaseHold: (id: string) => patch<{ hold: CollectionHold }>(fetchImpl, "/api/collections/holds", { id }),
 
@@ -213,6 +225,10 @@ export function createBillingApi(fetchImpl: FetchLike) {
     resolveDiscrepancy: (sourceInvoiceId: string, input: { selected_source: "billing" | "pdf_import"; resolution_note: string }) =>
       post<DiscrepancyResolution>(fetchImpl, `/api/collections/imports/invoices/${encodeURIComponent(sourceInvoiceId)}/resolve`, input),
     /** A 60-second signed link to the stored original; the server audits each request. */
+    /** Owner/Admin only: who may upload, review and approve A/R reports. */
+    importPermissions: () => request<{ policy: ImportPolicy; updated_by: string | null; updated_at: string | null }>(fetchImpl, "/api/collections/imports/permissions"),
+    updateImportPermissions: (policy: ImportPolicy) =>
+      patch<{ policy: ImportPolicy; updated_by: string | null; updated_at: string | null }>(fetchImpl, "/api/collections/imports/permissions", { policy }),
     importFileUrl: (batchId: string) => request<{ url: string; expires_in_seconds: number }>(fetchImpl, `/api/collections/imports/${encodeURIComponent(batchId)}/file`),
   };
 }
