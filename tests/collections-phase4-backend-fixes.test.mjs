@@ -46,3 +46,9 @@ test("multi-invoice payment changes re-block every linked snapshot through a for
   assert.match(localReset, /20261019120000_collections_reblock_multi_invoice_payments\.sql/);
   assert.match(sqlTests, /Reversing a payment did not re-block every linked invoice snapshot/);
 });
+
+test("the parse route's deploy trace includes the pdfjs worker it imports at runtime", () => {
+  const config = source("next.config.ts");
+  assert.match(config, /outputFileTracingIncludes:/);
+  assert.ok(config.includes(String.raw`"/api/collections/imports/\\[id\\]/parse": ["./node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs"]`));
+});
