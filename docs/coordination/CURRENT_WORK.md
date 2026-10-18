@@ -13,7 +13,7 @@ Updated by: Engineer A (Phase 2 rerun on 8ba6897 and dev, Phase 3 backend integr
   - M0 Stable ownership;
   - Collections Phase 0 (read-only discovery), complete.
   - Collections Phase 1 ledger and Phase 2 Collections features, integrated local validation complete; joint branch review/merge and release gates remain.
-  - Collections Phase 3 email integration: backend `c9d486f` (includes Engineer A fixes `5511876`) and UI `1c50db1` integrated and validated locally with delivery disabled; contract addendum `2b1fce4` approved by Engineer A. Provider-backed test sending awaits owner/operator configuration review; live delivery is excluded.
+  - Collections Phase 3 email integration: merged into `dev` at `7069655` on 2026-10-18 (backend `c9d486f` via `a6e0165`, then UI `1c50db1`). Verified on that exact `dev` tree with delivery disabled. Merged without the joint Engineer A/B review, by Engineer A decision. Test sending deferred (COL-DEP-14); live delivery excluded.
   - Collections Phase 4 QuickBooks A/R PDF intake: contract `a07223c` approved by Engineer A (UI/consumer) on 2026-10-18; Engineer B producer approval and the contract freeze remain to be recorded; nothing built.
 - Overall status: Phase 2 is validated on `8ba6897` itself (backend: SQL, 68/68 API/DB/audit, S1 12/12, login and Contacts browser) and on `dev` at `727ca6a` (main + `8ba6897` → `dd3472f` → `codex/collections-phase2-demo-design`; full browser pass). Phase 2 awaits joint review, then owner-approved `dev` → `main`. Phase 3: backend `af2a52e` + UI `83e2e21` + proposed fixes `5511876` pass locally (68/68, 55/55, SQL, worker-function checks, browser) with delivery disabled; see `docs/handoffs/2026-10-17-collections-phase3-integration-review.md`. Phase 4: owner decisions recorded; Engineer A changes requested. Hosted migrations remain deferred. COL-DEP-10 and COL-DEP-12 remain deferred owner security actions.
 
@@ -73,12 +73,12 @@ Updated by: Engineer A (Phase 2 rerun on 8ba6897 and dev, Phase 3 backend integr
 | --- | --- | --- | --- | --- |
 | 1 | `codex/tap-hub-delivery-playbook` | Codex documentation setup | Project-owner review | Waiting |
 | 2 | `codex/collections-phase-0` | Claude Code | Merge of order 1; project-owner review | Waiting |
-| 3 | `dev` (Collections Phases 1–2) | Engineer A + Engineer B | Joint review; project-owner approval; COL-DEP-10/12 resolved or accepted; hosted migration plan | Waiting for joint review |
+| 3 | `dev` (Collections Phases 1–3) | Engineer A + Engineer B | Joint review; project-owner approval; COL-DEP-10/12 resolved or accepted; hosted migration plan | Waiting for joint review |
 
 ## Next coordination event
 
 1. **Phase 2:** joint Engineer A/B review of `dev` (`727ca6a`), then project-owner approval for `dev` → `main`. Hosted migrations stay deferred until release approval.
-2. **Phase 3:** test sending is deferred until a verified sender domain exists (COL-DEP-14). When it does: owner/operator review of the test-send configuration (rotated provider key, verified sender/reply-to, test mailbox, allowlisted environment) and explicit approval before the first synthetic test send; then Engineer A reruns the integration with a provider-backed test run. Joint review of `codex/collections-phase3-backend-fixes` + `codex/collections-phase3-ui` before merging to `dev`.
+2. **Phase 3:** merged into `dev` (`7069655`). Remaining: the first synthetic test send once a verified sender domain exists (COL-DEP-14) and owner approval; then `dev` → `main` with project-owner approval and the hosted-migration plan.
 3. **Phase 4:** Engineer A approved the contract at `a07223c` (canonical collection identity, source-aware holds/events/approvals, late-link rule, client linkage before any action). Engineer B records producer approval and freezes the contract; then implementation starts with the Phase 3 forward migration, shared types, history filters, source-aware APIs and UI row keys in one wave. Dual-history link reconciliation stays blocked pending a separately reviewed procedure; confirm the fiscal-year boundary before any automatic deletion.
 4. **Deferred owner security actions:** COL-DEP-10 and COL-DEP-12 remain open.
 

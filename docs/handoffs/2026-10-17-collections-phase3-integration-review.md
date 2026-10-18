@@ -101,4 +101,10 @@ Engineer A (UI/consumer) approves `docs/contracts/collections-phase-4-ar-pdf-int
 
 Notes for implementation, not blocking the freeze: dual-history link reconciliation stays blocked pending a separately reviewed procedure; the Phase 3 forward migration, shared types, history filters, source-aware APIs and UI row keys ship in one wave; confirm the fiscal-year boundary before configuring automatic deletion. Engineer B producer approval and the freeze are recorded in the contract by Engineer B.
 
+## Merged into `dev` (2026-10-18)
+
+`dev` `727ca6a` → `a6e0165` (backend `c9d486f`) → `7069655` (UI and validation `1c50db1`); the only conflict was the shared type block in `lib/collections-api.ts`, identical apart from formatting. The merged tree is identical to the tested integration. Merged without the joint Engineer A/B review, by Engineer A decision.
+
+Verified on `7069655`: `tsc`; production build; Phase 3 contract/fixes/provider/template tests 5/5, 7/7, 5/5, 2/2; UI data/render 46/65; Phase 1/2, route-access, contacts and support suites; fresh reset and 5 SQL suites; `validate-phase3-worker.sql` W1–W13; `validate-phase3.mjs` 55/55; concurrent claim PASS; `validate-phase2.mjs` 68/68; worker route 401 without or with a wrong token; Owner browser pass (delivery off, history loads). 0 attempts afterwards; automation off; delivery disabled.
+
 COL-DEP-10 and COL-DEP-12 remain deferred owner security actions.
