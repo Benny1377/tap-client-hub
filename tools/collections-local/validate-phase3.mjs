@@ -117,7 +117,7 @@ if (present.status) {
   const keys = Object.keys(r.json || {}).sort().join();
   record("ST1", "Owner reads the exact delivery-status shape", pass(r.status === 200 && keys === "automation_enabled,missing,mode,test_ready,test_recipient_masked"), `${r.status} keys=${keys}`);
   const masked = r.json?.test_recipient_masked;
-  record("ST2", "no secret or full mailbox is exposed", pass(!JSON.stringify({ ...r.json, missing: undefined }).match(/key|secret|token|re_[A-Za-z0-9]|@[^*]/i) && (masked === null || /\*/.test(masked))), `masked=${masked}`);
+  record("ST2", "no secret or full mailbox is exposed", pass(!JSON.stringify({ ...r.json, missing: undefined, test_recipient_masked: undefined }).match(/key|secret|token|re_[A-Za-z0-9]|@/i) && (masked === null || /^[^@*]\*{2,}@[^@\s]+$/.test(masked))), `masked=${masked}`);
   record("ST3", "delivery stays disabled in the local harness", pass(r.json?.mode === "disabled" && r.json?.test_ready === false), `mode=${r.json?.mode} ready=${r.json?.test_ready} missing=${(r.json?.missing || []).join(",")}`);
   const a = await admin.call("GET", ROUTES.status[1]);
   record("ST4", "Admin reads delivery status", pass(a.status === 200), `${a.status}`);
