@@ -15,6 +15,28 @@ type WorklistPage = { accounts?: WorklistAccount[]; pagination?: { total_account
 
 function stripTags(value: string) { return value.replace(/<[^>]*>/g, ""); }
 
+/**
+ * Whether an approved A/R report linked to this Billing invoice disagrees with Billing
+ * and is still unresolved (Phase 4). The Billing-only worklist this runner reads does not
+ * carry that state, so it is checked here; the preview reports the same case as
+ * source_discrepancy_blocked. Uses the latest approved or blocked snapshot per identity,
+ * like the worklist merge. Fails closed: a read error counts as blocked.
+ */
+async function sourceDiscrepancyBlocked(db: ReturnType<typeof createAdminClient>, invoiceId: string) {
+  const { data: identities, error: identityError } = await db.from("collection_source_invoice_identities")
+    .select("source_invoice_id").eq("linked_invoice_id", invoiceId);
+  if (identityError) return true;
+  const sourceIds = (identities || []).map((identity) => identity.source_invoice_id);
+  if (!sourceIds.length) return false;
+  const { data: snapshots, error: snapshotError } = await db.from("collection_import_invoices")
+    .select("source_invoice_id,discrepancy_status,updated_at").in("source_invoice_id", sourceIds)
+    .in("review_status", ["approved", "blocked"]).order("updated_at", { ascending: false });
+  if (snapshotError) return true;
+  const latest = new Map<string, string>();
+  for (const snapshot of snapshots || []) if (!latest.has(snapshot.source_invoice_id)) latest.set(snapshot.source_invoice_id, snapshot.discrepancy_status);
+  return [...latest.values()].some((status) => status === "blocked");
+}
+
 function providerRequest(input: { subject: string; body: string; to: string; idempotencyKey: string }) {
   const key = process.env.COLLECTIONS_RESEND_API_KEY!;
   const from = `${process.env.COLLECTIONS_SENDER_NAME || "TAP Collections Test"} <${process.env.COLLECTIONS_SENDER_EMAIL}>`;
@@ -99,6 +121,7 @@ export async function runCollectionsTestDelivery(actor: string | null, limit = 5
     // Pre-checks run before any reopen so a skipped attempt is never left queued.
     const contacts = contactRows || [];
     const preReason = !client?.is_synthetic || !sourceInvoice?.is_synthetic ? "SYNTHETIC_DATA_REQUIRED"
+      : await sourceDiscrepancyBlocked(db, invoice.invoice_id) ? "SOURCE_DISCREPANCY_BLOCKED"
       : stage <= 3 && contacts.length !== 1 ? "CONTACT_REVIEW_REQUIRED"
       : stage <= 3 && !contacts[0].email ? "EMAIL_CONTACT_MISSING"
       : null;

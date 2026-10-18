@@ -83,3 +83,13 @@ test("users with both Billing and Collections receive either matching import-pol
   assert.match(helper, /identity\.modules\.includes\("Billing"\)/);
   assert.doesNotMatch(helper, /identity\.modules\.includes\("Collections"\) \? "collections"/);
 });
+
+test("the test runner never sends a Billing invoice whose linked A/R report balance is blocked", () => {
+  const run = source("lib/collections-test-run.ts");
+  assert.match(run, /async function sourceDiscrepancyBlocked\(/);
+  assert.match(run, /\.eq\("linked_invoice_id", invoiceId\)/);
+  assert.match(run, /\.in\("review_status", \["approved", "blocked"\]\)\.order\("updated_at", \{ ascending: false \}\)/);
+  assert.match(run, /if \(identityError\) return true;[\s\S]*if \(snapshotError\) return true;/, "fails closed");
+  const check = run.indexOf('? "SOURCE_DISCREPANCY_BLOCKED"');
+  assert.ok(check > 0 && check < run.indexOf('db.rpc("claim_collection_test_delivery"'), "checked before the attempt is claimed");
+});
