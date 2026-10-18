@@ -304,7 +304,9 @@ await check("UI code goes through the API only", () => {
   for (const file of files) {
     const source = readFileSync(join(root, file), "utf8");
     assert.doesNotMatch(source, /@supabase|lib\/supabase|createAdminClient|SERVICE_ROLE/, `${file} must not access Supabase directly`);
-    assert.doesNotMatch(source, /quickbooks|intuit|oauth|resend|send-email|nodemailer/i, `${file} must not contain QuickBooks, OAuth, or email delivery`);
+    // Phase 4 names exported QuickBooks A/R reports in UI copy; any QuickBooks/Intuit API
+    // or OAuth connection is still out of scope for the browser.
+    assert.doesNotMatch(source, /intuit|oauth|quickbooks[\s-]*(api|online|sdk|connect)|node-quickbooks|resend|send-email|nodemailer/i, `${file} must not contain a QuickBooks API, OAuth, or email delivery`);
   }
 });
 

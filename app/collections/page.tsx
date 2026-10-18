@@ -10,11 +10,13 @@ import { ActiveHoldBanner, ActivityPanel, DecisionsPanel, HoldsPanel, type Invoi
 import { AutomationPreviewPanel, LadderRungs, LadderSummary, MoneyByStage, PipelineBanner, PipelineTiles, WhoIsWhere, WorklistSummary, WorklistTable } from "@/components/billing/worklist-panels";
 import { CollectionsRulesEditor } from "@/components/billing/collections-rules-editor";
 import { DeliveryHistoryPanel, DeliverySetupPanel } from "@/components/billing/delivery-panels";
+import { ImportsPanel } from "@/components/billing/import-panels";
 
 const WORKLIST_PAGE = 50;
 const TABS = [
   { id: "insights", label: "AR Insights" },
   { id: "pipeline", label: "Pipeline" },
+  { id: "imports", label: "A/R reports" },
   { id: "setup", label: "Setup & rules" },
 ] as const;
 type TabId = (typeof TABS)[number]["id"];
@@ -26,6 +28,7 @@ function TabPanel({ id, active, children }: { id: TabId; active: TabId; children
 
 export default function CollectionsPage() {
   const [tab, setTab] = useState<TabId>("insights");
+  const [importsOpened, setImportsOpened] = useState(false);
   const [clientId, setClientId] = useState<string | null>(null);
   const [worklistOffset, setWorklistOffset] = useState(0);
   const [deliveryRefreshKey, setDeliveryRefreshKey] = useState(0);
@@ -93,7 +96,7 @@ export default function CollectionsPage() {
               aria-controls={`collections-${item.id}`}
               aria-selected={tab === item.id}
               className="bc-snb"
-              onClick={() => setTab(item.id)}
+              onClick={() => { setTab(item.id); if (item.id === "imports") setImportsOpened(true); }}
             >
               {item.label}
               {item.id === "pipeline" && decisions > 0 ? <span className="bc-count" aria-label={`${decisions} waiting`}>{decisions}</span> : null}
@@ -162,6 +165,19 @@ export default function CollectionsPage() {
           <h3 className="bc-sect">Automation preview</h3>
           <AutomationPreviewPanel viewer={viewer} runPreview={(params) => api.preview(params)} stageLabels={stageLabels} />
         </section>
+      </TabPanel>
+
+      <TabPanel id="imports" active={tab}>
+        {/* Mounted on first visit only: opening the report list is an audited read. */}
+        {importsOpened ? (
+          <ImportsPanel
+            api={api}
+            viewer={viewer}
+            clients={clients}
+            billingInvoices={receivables.receivables}
+            onCollectionsChanged={() => { void refreshLedger(); void refreshCalls(); }}
+          />
+        ) : null}
       </TabPanel>
 
       <TabPanel id="setup" active={tab}>

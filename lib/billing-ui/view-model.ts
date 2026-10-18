@@ -251,6 +251,7 @@ export const PREVIEW_REASON_LABELS: Record<string, string> = {
   below_minimum_balance: "Below minimum balance",
   contact_review_required: "Needs one primary contact with an email",
   email_contact_missing: "No client email on file",
+  source_discrepancy_blocked: "A/R report and Billing balances differ; review required",
 };
 
 export const DISPOSITION_LABELS: Record<string, string> = {

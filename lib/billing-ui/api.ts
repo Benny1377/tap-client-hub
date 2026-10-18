@@ -22,6 +22,7 @@ import type {
   Viewer,
 } from "./types";
 import type { DeliveriesQuery, DeliveriesResponse, DeliverySetup, DeliveryTestRunResult } from "./delivery";
+import type { ClassifyDisposition, CrossCheckResult, DiscrepancyResolution, ImportBatch, ImportBatchDetail, ImportInvoice, ImportInvoiceInput } from "./imports";
 
 export type ApiErrorKind = "unauthorized" | "forbidden" | "not_found" | "conflict" | "invalid" | "server" | "network";
 
@@ -46,7 +47,8 @@ async function request<T>(fetchImpl: FetchLike, url: string, init?: RequestInit)
     response = await fetchImpl(url, {
       ...init,
       cache: "no-store",
-      headers: init?.body ? { "Content-Type": "application/json" } : undefined,
+      // JSON bodies only; a FormData upload sets its own multipart boundary.
+      headers: typeof init?.body === "string" ? { "Content-Type": "application/json" } : undefined,
     });
   } catch {
     return { ok: false, status: 0, kind: "network", message: "Could not reach TAP Hub. Check your connection and try again." };
@@ -87,9 +89,11 @@ function withClient(path: string, clientId?: string | null) {
 export function createBillingApi(fetchImpl: FetchLike) {
   return {
     async viewer(): Promise<ApiResult<Viewer>> {
-      const result = await request<{ role?: string; modules?: string[] }>(fetchImpl, "/api/me");
+      const result = await request<{ id?: string; role?: string; modules?: string[] }>(fetchImpl, "/api/me");
       if (result.ok === false) return result;
-      return { ok: true, status: result.status, data: { role: result.data.role || "staff", modules: result.data.modules || [] } };
+      const viewer: Viewer = { role: result.data.role || "staff", modules: result.data.modules || [] };
+      if (typeof result.data.id === "string") viewer.id = result.data.id;
+      return { ok: true, status: result.status, data: viewer };
     },
     async clients(): Promise<ApiResult<ClientOption[]>> {
       const result = await request<{ clients?: Array<{ id?: unknown; name?: unknown }> }>(fetchImpl, "/api/clients?fields=lite");
@@ -184,6 +188,32 @@ export function createBillingApi(fetchImpl: FetchLike) {
     placeHold: (input: { client_id: string; reason: string; invoice_id?: string | null; expires_on?: string | null }) =>
       post<{ hold: CollectionHold }>(fetchImpl, "/api/collections/holds", input),
     releaseHold: (id: string) => patch<{ hold: CollectionHold }>(fetchImpl, "/api/collections/holds", { id }),
+
+    // ---- Phase 4 A/R PDF intake. Each route checks the configurable import permission
+    // (upload / review / approve); the database enforces uploader/corrector separation.
+    imports: () => request<{ batches: ImportBatch[] }>(fetchImpl, "/api/collections/imports"),
+    importBatch: (id: string) => request<ImportBatchDetail>(fetchImpl, `/api/collections/imports/${encodeURIComponent(id)}`),
+    uploadImport: (file: File) => {
+      const form = new FormData();
+      form.append("file", file, file.name);
+      return request<{ batch: Pick<ImportBatch, "id" | "status" | "created_at"> & Partial<ImportBatch>; duplicate: boolean }>(fetchImpl, "/api/collections/imports", { method: "POST", body: form });
+    },
+    /** Extracts page/row text only. Parsing never confirms an invoice. */
+    parseImport: (id: string) =>
+      request<{ batch_id: string; status: string; report_type: string; source_as_of: string | null; page_count: number; extracted_line_count: number }>(fetchImpl, `/api/collections/imports/${encodeURIComponent(id)}/parse`, { method: "POST" }),
+    classifyImportRow: (batchId: string, rowId: string, disposition: ClassifyDisposition, note?: string) =>
+      patch<{ row: { id: string; review_disposition: string } }>(fetchImpl, `/api/collections/imports/${encodeURIComponent(batchId)}`, { row_id: rowId, disposition, ...(note ? { note } : {}) }),
+    reviewImportInvoice: (batchId: string, input: ImportInvoiceInput) =>
+      post<{ invoice: ImportInvoice; source_invoice_id: string }>(fetchImpl, `/api/collections/imports/${encodeURIComponent(batchId)}`, input),
+    approveImport: (batchId: string) =>
+      post<{ batch: { batch_id: string; status: "approved"; invoice_count: number } }>(fetchImpl, `/api/collections/imports/${encodeURIComponent(batchId)}/approve`, {}),
+    crossCheckImport: (summaryBatchId: string, input: { detail_batch_id: string; summary_total: number; note: string }) =>
+      post<{ cross_check: CrossCheckResult }>(fetchImpl, `/api/collections/imports/${encodeURIComponent(summaryBatchId)}/cross-check`, input),
+    /** Choosing the balance that drives collection actions; needs approve permission. */
+    resolveDiscrepancy: (sourceInvoiceId: string, input: { selected_source: "billing" | "pdf_import"; resolution_note: string }) =>
+      post<DiscrepancyResolution>(fetchImpl, `/api/collections/imports/invoices/${encodeURIComponent(sourceInvoiceId)}/resolve`, input),
+    /** A 60-second signed link to the stored original; the server audits each request. */
+    importFileUrl: (batchId: string) => request<{ url: string; expires_in_seconds: number }>(fetchImpl, `/api/collections/imports/${encodeURIComponent(batchId)}/file`),
   };
 }
 

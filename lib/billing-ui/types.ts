@@ -164,6 +164,8 @@ export interface ClientOption {
 }
 
 export interface Viewer {
+  /** Profile id from /api/me; used to explain separation-of-duties rules, never to authorize. */
+  id?: string;
   role: string;
   modules: string[];
 }

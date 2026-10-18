@@ -565,16 +565,18 @@ const demoRules = [
   { stage: 4, label: "Owner escalation", days_past_due: 21, automatic: false, enabled: true, subject_template: "Owner review", body_template: "Internal only" },
 ];
 
-check("Collections has the demo's three views, opening on AR Insights with the others mounted but hidden", () => {
+check("Collections has the demo's three views plus Phase 4 A/R reports, opening on AR Insights with the others mounted but hidden", () => {
   const html = render(h(CollectionsPage));
   assert.match(html, /role="tablist"/);
-  assert.equal((html.match(/role="tab"/g) || []).length, 3);
-  for (const label of ["AR Insights", "Pipeline", "Setup &amp; rules"]) assert.match(html, new RegExp(`role="tab"[^>]*>${label}`));
+  assert.equal((html.match(/role="tab"/g) || []).length, 4);
+  for (const label of ["AR Insights", "Pipeline", "A/R reports", "Setup &amp; rules"]) assert.match(html, new RegExp(`role="tab"[^>]*>${label}`));
+  // Opening the report list is an audited read, so it waits until the tab is first opened.
+  assert.doesNotMatch(html, /data-imports-panel/);
   assert.match(html, /id="collections-tab-insights"[^>]*aria-selected="true"/);
   assert.match(html, /role="tabpanel" id="collections-insights"[^>]*>/);
   assert.doesNotMatch(html, /id="collections-insights"[^>]*hidden/);
   assert.match(html, /id="collections-pipeline"[^>]*hidden[\s\S]*?aria-label="Activity"/, "activity lives on the Pipeline view");
-  for (const id of ["pipeline", "setup"]) assert.match(html, new RegExp(`id="collections-${id}"[^>]*hidden`));
+  for (const id of ["pipeline", "imports", "setup"]) assert.match(html, new RegExp(`id="collections-${id}"[^>]*hidden`));
 });
 
 check("ladder touches flag the Owner/Admin gates and hide their wording until opened", () => {
