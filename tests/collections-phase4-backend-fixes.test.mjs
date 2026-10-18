@@ -93,3 +93,14 @@ test("the test runner never sends a Billing invoice whose linked A/R report bala
   const check = run.indexOf('? "SOURCE_DISCREPANCY_BLOCKED"');
   assert.ok(check > 0 && check < run.indexOf('db.rpc("claim_collection_test_delivery"'), "checked before the attempt is claimed");
 });
+
+test("the database claim independently blocks delivery for a linked discrepancy snapshot", () => {
+  const migration = source("supabase/migrations/20261019140000_collections_test_delivery_source_discrepancy.sql");
+  const localReset = source("tools/collections-local/reset.sh");
+  assert.match(migration, /create or replace function tap_hub_project\.claim_collection_test_delivery/);
+  assert.match(migration, /s\.linked_invoice_id = v_attempt\.invoice_id/);
+  assert.match(migration, /i\.review_status in \('approved', 'blocked'\)/);
+  assert.match(migration, /distinct on \(i\.source_invoice_id\)[\s\S]*i\.updated_at desc/);
+  assert.match(migration, /return 'SOURCE_DISCREPANCY_BLOCKED'/);
+  assert.match(localReset, /20261019140000_collections_test_delivery_source_discrepancy\.sql/);
+});

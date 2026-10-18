@@ -60,6 +60,51 @@ begin
 end;
 $$;
 
+-- A second, database-side guard prevents a queued Billing delivery claim when
+-- its latest linked PDF snapshot is blocked by an unresolved discrepancy.
+do $$
+declare
+  v_invoice uuid := gen_random_uuid();
+  v_source uuid := gen_random_uuid();
+  v_batch uuid := gen_random_uuid();
+  v_attempt uuid := gen_random_uuid();
+  v_as_of date := tap_hub_project.collections_firm_today();
+  v_claim_reason text;
+  v_attempt_status text;
+begin
+  update tap_hub_project.collection_settings
+    set automation_enabled=true, delivery_mode='test', test_recipient='owner@example.invalid',
+        send_start='00:00', send_end='23:59', weekdays_only=false
+    where id='default';
+  insert into tap_hub_project.invoices
+    (id,client_id,invoice_number,status,issue_date,due_date,created_by,is_synthetic)
+  values (v_invoice,'10000000-0000-4000-8000-000000000001','LOCAL-DISCREPANCY-'||v_invoice::text,'issued',v_as_of-40,v_as_of-10,
+    '00000000-0000-4000-8000-000000000001',true);
+  insert into tap_hub_project.invoice_lines(invoice_id,description,quantity,unit_amount,amount,created_by)
+  values (v_invoice,'Synthetic discrepancy test',1,125,125,'00000000-0000-4000-8000-000000000001');
+  insert into tap_hub_project.collection_source_invoice_identities
+    (source_invoice_id,client_id,linked_invoice_id,selected_source,canonical_collection_identity)
+  values (v_source,'10000000-0000-4000-8000-000000000001',v_invoice,'billing','billing:'||v_invoice::text);
+  insert into tap_hub_project.collection_import_batches
+    (id,file_sha256,storage_path,original_filename,content_type,file_size_bytes,report_type,source_as_of,status,uploaded_by,approved_by,approved_at)
+  values (v_batch,repeat('7',64),v_batch::text||'/blocked.pdf','blocked.pdf','application/pdf',100,'aging_detail',v_as_of,'approved',
+    '00000000-0000-4000-8000-000000000001','00000000-0000-4000-8000-000000000003',now());
+  insert into tap_hub_project.collection_import_invoices
+    (source_invoice_id,batch_id,invoice_number,customer_name,open_balance,source_as_of,source_row_key,review_status,discrepancy_status)
+  values (v_source,v_batch,'LOCAL-001','Example Orchard LLC',125,v_as_of,'1:1','blocked','blocked');
+  insert into tap_hub_project.collection_delivery_attempts
+    (id,client_id,invoice_id,source,canonical_collection_identity,stage,status,idempotency_key,actor)
+  values (v_attempt,'10000000-0000-4000-8000-000000000001',v_invoice,'billing','billing:'||v_invoice::text,1,'queued',
+    'claim-discrepancy:'||v_attempt::text,'00000000-0000-4000-8000-000000000001');
+
+  v_claim_reason := tap_hub_project.claim_collection_test_delivery(v_attempt,'00000000-0000-4000-8000-000000000001');
+  select status into v_attempt_status from tap_hub_project.collection_delivery_attempts where id=v_attempt;
+  if v_claim_reason is distinct from 'SOURCE_DISCREPANCY_BLOCKED' or v_attempt_status is distinct from 'queued' then
+    raise exception 'Database claim did not fail closed on a linked blocked A/R snapshot';
+  end if;
+end;
+$$;
+
 -- Late linking must preserve activity under the original PDF identity, and
 -- both source aliases must resolve to that same canonical key.
 do $$
