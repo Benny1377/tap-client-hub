@@ -81,6 +81,11 @@ async function request<T>(fetchImpl: FetchLike, url: string, init?: RequestInit)
     if (typeof payload.code === "string") failure.code = payload.code;
     return failure;
   }
+  // A success with no JSON body (for example an HTML page from a dev-server reload)
+  // would reach panels as null data; report it as a failure the panels can show.
+  if (body === null && response.status !== 204) {
+    return { ok: false, status: response.status, kind: "server", message: "TAP Hub sent an unexpected response. Reload the page and try again." };
+  }
   return { ok: true, status: response.status, data: body as T };
 }
 

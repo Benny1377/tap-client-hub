@@ -288,3 +288,10 @@ test("permission and delivery-history calls use the contract's routes", async ()
     "GET /api/collections/deliveries?source_invoice_id=s-1",
   ]);
 });
+
+test("a success response without a JSON body is reported as a failure, not as null data", async () => {
+  const api = createBillingApi(async () => new Response("<html>reloading</html>", { status: 200, headers: { "Content-Type": "text/html" } }));
+  const result = await api.deliveries({});
+  assert.equal(result.ok, false);
+  assert.equal(result.kind, "server");
+});
