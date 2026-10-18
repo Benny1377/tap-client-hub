@@ -40,3 +40,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Local fake Resend request log and control file (tools/collections-local/fake-resend.mjs)
+tools/collections-local/.fake-resend/
