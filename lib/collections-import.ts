@@ -9,8 +9,14 @@ export async function canUseCollectionsImport(identity: AccessIdentity, action: 
   const { data, error } = await db.from("collection_import_permissions").select("policy").eq("id", "default").maybeSingle();
   if (error || !data?.policy || typeof data.policy !== "object") return false;
   const allowed = (data.policy as Record<string, unknown>)[action];
-  const policyRole = identity.modules.includes("Collections") ? "collections" : identity.modules.includes("Billing") ? "billing" : identity.role;
-  return Array.isArray(allowed) && allowed.includes(policyRole);
+  // Import permissions can be granted to either module. A user assigned both
+  // should retain the union of those grants, not have one module silently win.
+  const policyRoles = [
+    ...(identity.modules.includes("Collections") ? ["collections"] : []),
+    ...(identity.modules.includes("Billing") ? ["billing"] : []),
+  ];
+  if (!policyRoles.length) policyRoles.push(identity.role);
+  return Array.isArray(allowed) && policyRoles.some((role) => allowed.includes(role));
 }
 
 export async function recordImportAudit(input: {

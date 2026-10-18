@@ -59,3 +59,27 @@ test("the batch review read returns each imported invoice's client and Billing l
   assert.match(route, /collection_source_invoice_identities"\)\.select\("source_invoice_id,client_id,linked_invoice_id,selected_source"\)/);
   assert.match(route, /invoices: reviewedInvoices/);
 });
+
+test("report metadata corrections are reviewer-confirmed, audited, and block the corrector from approval", () => {
+  const route = source("app/api/collections/imports/[id]/metadata/route.ts");
+  const migration = source("supabase/migrations/20261019130000_collections_import_batch_metadata_correction.sql");
+  const approval = source("app/api/collections/imports/[id]/approve/route.ts");
+  const reset = source("tools/collections-local/reset.sh");
+  assert.match(route, /canUseCollectionsImport\(access\.identity!, "review"\)/);
+  assert.match(route, /body\.confirmed !== true/);
+  assert.match(route, /correct_collection_import_batch_metadata/);
+  assert.match(migration, /pdf_batch_metadata_corrected/);
+  assert.match(migration, /reviewer_confirmed', true/);
+  assert.match(migration, /pdf_batch_metadata_corrected/);
+  assert.match(migration, /report metadata cannot change after invoice review has begun/);
+  assert.match(approval, /batch corrector cannot approve/i);
+  assert.match(reset, /20261019130000_collections_import_batch_metadata_correction\.sql/);
+});
+
+test("users with both Billing and Collections receive either matching import-policy grant", () => {
+  const helper = source("lib/collections-import.ts");
+  assert.match(helper, /policyRoles\.some\(\(role\) => allowed\.includes\(role\)\)/);
+  assert.match(helper, /identity\.modules\.includes\("Collections"\)/);
+  assert.match(helper, /identity\.modules\.includes\("Billing"\)/);
+  assert.doesNotMatch(helper, /identity\.modules\.includes\("Collections"\) \? "collections"/);
+});

@@ -22,6 +22,44 @@ begin
 end;
 $$;
 
+-- A reviewer may correct an unrecognized report header only before invoice
+-- review begins; the before/after values are retained and the corrector cannot
+-- approve the same batch.
+do $$
+declare
+  v_batch uuid := gen_random_uuid();
+  v_result jsonb;
+  v_blocked boolean := false;
+begin
+  insert into tap_hub_project.collection_import_batches
+    (id,file_sha256,storage_path,original_filename,content_type,file_size_bytes,report_type,source_as_of,status,uploaded_by)
+  values (v_batch,repeat('8',64),v_batch::text||'/metadata.pdf','metadata.pdf','application/pdf',100,'unknown',null,'needs_review','00000000-0000-4000-8000-000000000001');
+
+  v_result := tap_hub_project.correct_collection_import_batch_metadata(
+    v_batch,'aging_detail',tap_hub_project.collections_firm_today(),'00000000-0000-4000-8000-000000000002',true);
+  if v_result->>'report_type' <> 'aging_detail'
+    or v_result->>'source_as_of' <> tap_hub_project.collections_firm_today()::text then
+    raise exception 'Reviewer-confirmed report metadata correction was not persisted';
+  end if;
+  if not exists(
+    select 1 from tap_hub_project.collection_import_audit
+    where batch_id=v_batch and actor='00000000-0000-4000-8000-000000000002'
+      and action='pdf_batch_metadata_corrected'
+      and detail->'before'->>'report_type'='unknown'
+      and detail->'after'->>'report_type'='aging_detail'
+      and detail->>'reviewer_confirmed'='true'
+  ) then raise exception 'Report metadata correction did not retain its audited before/after values'; end if;
+
+  begin
+    perform set_config('tap_hub.actor_id','00000000-0000-4000-8000-000000000002',true);
+    update tap_hub_project.collection_import_batches set status='approved' where id=v_batch;
+  exception when raise_exception then
+    v_blocked := position('corrector cannot approve' in sqlerrm) > 0;
+  end;
+  if not v_blocked then raise exception 'A report metadata corrector was allowed to approve the same batch'; end if;
+end;
+$$;
+
 -- Late linking must preserve activity under the original PDF identity, and
 -- both source aliases must resolve to that same canonical key.
 do $$

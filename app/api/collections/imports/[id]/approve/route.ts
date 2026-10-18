@@ -17,7 +17,7 @@ export async function POST(_request: Request, context: { params: Promise<{ id: s
   const db = createAdminClient();
   const { data, error } = await db.rpc("approve_collection_import_batch", { p_batch_id: id, p_actor: access.identity!.id });
   if (error) {
-    const forbidden = /uploader cannot approve|corrector cannot approve/i.test(error.message);
+    const forbidden = /uploader cannot approve|corrector cannot approve|batch corrector cannot approve/i.test(error.message);
     const conflict = error.code === "P0001";
     return NextResponse.json({ error: forbidden ? "The uploader or a batch corrector cannot approve this report" : conflict ? "Batch is not ready for approval" : "Unable to approve import batch", code: forbidden ? "IMPORT_SEPARATION_OF_DUTIES" : conflict ? "IMPORT_APPROVAL_BLOCKED" : "IMPORT_APPROVAL_FAILED" }, { status: error.code === "P0002" ? 404 : conflict ? 409 : 500, headers: NO_STORE });
   }
