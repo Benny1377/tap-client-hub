@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-const read = (path) => readFileSync(new URL(path, import.meta.url), "utf8");
+// Line endings normalised so the checks behave the same on Windows checkouts.
+const read = (path) => readFileSync(new URL(path, import.meta.url), "utf8").replace(/\r\n/g, "\n");
 const modal = read("../components/client-modal.tsx");
-const page = read("../app/page.tsx");
+// The Clients page moved to app/clients/page.tsx with the PracticeOps launch pad (app/page.tsx).
+const page = read("../app/clients/page.tsx");
 const route = read("../app/api/clients/route.ts");
 
 assert.match(modal, /eftps:\s*prEftps\s*\|\|\s*null/, "Add Client must retain Payroll EFTPS in its service payload");

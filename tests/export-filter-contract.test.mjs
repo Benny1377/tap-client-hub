@@ -1,15 +1,19 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-const clientsPage = readFileSync(new URL("../app/page.tsx", import.meta.url), "utf8");
-const worklist = readFileSync(new URL("../components/worklist-table.tsx", import.meta.url), "utf8");
-const exporter = readFileSync(new URL("../lib/export-csv.ts", import.meta.url), "utf8");
+// Line endings normalised so the checks behave the same on Windows checkouts.
+const read = (path) => readFileSync(new URL(path, import.meta.url), "utf8").replace(/\r\n/g, "\n");
+// The Clients page moved to app/clients/page.tsx with the PracticeOps launch pad (app/page.tsx).
+const clientsPage = read("../app/clients/page.tsx");
+const worklist = read("../components/worklist-table.tsx");
+const exporter = read("../lib/export-csv.ts");
 
 assert.match(clientsPage, /exportClientCsv\(filteredClients/);
 assert.match(clientsPage, /\[filteredClients\]\);/);
-assert.match(clientsPage, /Export \{filteredClients\.length\} filtered/);
+// PracticeOps labels the button "Export to Excel" and keeps the filtered count in its title.
+assert.match(clientsPage, /Export \$\{filteredClients\.length\} filtered/);
 assert.match(worklist, /exportClientCsv\(filteredClients,\s*\{\s*serviceKey/);
-assert.match(worklist, /Export \{filteredClients\.length\} filtered/);
+assert.match(worklist, /Export \$\{filteredClients\.length\} filtered/);
 assert.match(exporter, /serviceKey \? \(SERVICE_LABELS\[serviceKey\] \|\| serviceKey\)/);
 assert.match(exporter, /anchor\.download = .*clients\.length/);
 
