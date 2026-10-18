@@ -26,7 +26,7 @@ const AGING_BANDS = [
   { key: "current", testId: "aging-current", label: "Current", color: "var(--green)" },
   { key: "days_1_30", testId: "aging-1-30", label: "1–30 days", color: "var(--blue)" },
   { key: "days_31_60", testId: "aging-31-60", label: "31–60 days", color: "var(--amber)" },
-  { key: "days_61_90", testId: "aging-61-90", label: "61–90 days", color: "#c0612b" },
+  { key: "days_61_90", testId: "aging-61-90", label: "61–90 days", color: "var(--red)" },
   { key: "days_over_90", testId: "aging-90", label: "90+ days", color: "var(--red)" },
 ] as const;
 

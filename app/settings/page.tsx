@@ -194,7 +194,7 @@ export default function SettingsPage() {
               type={showPassword ? "text" : "password"} value={newPassword}
               onChange={e => { setNewPassword(e.target.value); setPwError(""); setPwSuccess(""); }}
               placeholder="New password (min 6 characters)"
-              style={{ width: "100%", padding: "10px 40px 10px 13px", border: "1px solid var(--line)", borderRadius: 9, font: "inherit", fontSize: 14, background: "#fff", boxSizing: "border-box" }}
+              style={{ width: "100%", padding: "10px 40px 10px 13px", border: "1px solid var(--line)", borderRadius: 9, font: "inherit", fontSize: 14, background: "var(--card)", boxSizing: "border-box" }}
             />
             <button
               type="button"
@@ -248,8 +248,8 @@ export default function SettingsPage() {
 
           {step === "setup" && !user?.email_2fa_enabled && (
             <div>
-              <div style={{ background: "var(--amber-soft)", border: "1px solid #ead9b6", borderRadius: 11, padding: 14, marginBottom: 14 }}>
-                <p style={{ fontSize: 13, color: "#7a5210" }}><strong>Recommended</strong> — When enabled, you'll receive a 6-digit code via email each time you sign in.</p>
+              <div style={{ background: "var(--amber-soft)", border: "1px solid var(--amber-line)", borderRadius: 11, padding: 14, marginBottom: 14 }}>
+                <p style={{ fontSize: 13, color: "var(--amber)" }}><strong>Recommended</strong> — When enabled, you'll receive a 6-digit code via email each time you sign in.</p>
               </div>
               {error && <div style={{ background: "var(--red-soft)", color: "var(--red)", padding: "10px 13px", borderRadius: 9, fontSize: 13, marginBottom: 12, fontWeight: 600 }}>{error}</div>}
               <button onClick={startSetup} disabled={saving}

@@ -119,7 +119,7 @@ export default function SupportPage() {
               Fill this in to create a tracked support ticket. We will reply with your ticket number.
             </div>
 
-            <div className="shot-note" style={{ display: "flex", gap: 10, background: "var(--amber-soft)", border: "1px solid #e8d3a6", color: "#7a5210", borderRadius: 12, padding: "12px 14px", fontSize: 13, lineHeight: 1.5, marginBottom: 16 }}>
+            <div className="shot-note" style={{ display: "flex", gap: 10, background: "var(--amber-soft)", border: "1px solid var(--amber-line)", color: "var(--amber)", borderRadius: 12, padding: "12px 14px", fontSize: 13, lineHeight: 1.5, marginBottom: 16 }}>
               <span style={{ fontSize: 18 }}>&#128206;</span>
               <div><b>Screenshots are helpful.</b> This form does not upload files, so please send any screenshot separately if needed. Confirming it here gives the support team useful context.</div>
             </div>
@@ -144,7 +144,7 @@ export default function SupportPage() {
             <span className="sl" style={slStyle}>Brief summary <span className="opt" style={{ fontWeight: 500, color: "var(--muted)", textTransform: "none", letterSpacing: 0 }}>(this becomes the subject line)</span></span>
             <input style={supInputStyle} value={summary} onChange={e => setSummary(e.target.value)} placeholder="e.g. Can't save a new payroll client" />
 
-            <label className="urgrow" style={{ display: "flex", alignItems: "center", gap: 9, margin: "14px 0 2px", fontSize: "13.5px", cursor: "pointer", background: "#fff", border: "1px solid var(--line)", borderRadius: 10, padding: "11px 13px" }}>
+            <label className="urgrow" style={{ display: "flex", alignItems: "center", gap: 9, margin: "14px 0 2px", fontSize: "13.5px", cursor: "pointer", background: "var(--card)", border: "1px solid var(--line)", borderRadius: 10, padding: "11px 13px" }}>
               <input type="checkbox" checked={urgent} onChange={e => setUrgent(e.target.checked)} style={{ width: "auto" }} />
               <span><b>This is urgent:</b> it&apos;s blocking work right now</span>
             </label>
@@ -158,12 +158,12 @@ export default function SupportPage() {
             <span className="sl" style={slStyle}>Steps to reproduce <span className="opt" style={{ fontWeight: 500, color: "var(--muted)", textTransform: "none", letterSpacing: 0 }}>(optional, but very helpful)</span></span>
             <textarea style={supInputStyle} rows={3} value={steps} onChange={e => setSteps(e.target.value)} placeholder="1. Opened a client\n2. Switched Payroll on\n3. Clicked Save…" />
 
-            <label className="urgrow" style={{ display: "flex", alignItems: "center", gap: 9, margin: "14px 0 2px", fontSize: "13.5px", cursor: "pointer", background: "#fff", border: "1px solid var(--line)", borderRadius: 10, padding: "11px 13px" }}>
+            <label className="urgrow" style={{ display: "flex", alignItems: "center", gap: 9, margin: "14px 0 2px", fontSize: "13.5px", cursor: "pointer", background: "var(--card)", border: "1px solid var(--line)", borderRadius: 10, padding: "11px 13px" }}>
               <input type="checkbox" checked={shot} onChange={e => setShot(e.target.checked)} style={{ width: "auto" }} />
               <span>I have sent or will send a screenshot separately if needed</span>
             </label>
 
-            <div className="subjbox" style={{ marginTop: 16, background: "#f3f6fc", border: "1px dashed #c3cde6", borderRadius: 11, padding: "11px 14px" }}>
+            <div className="subjbox" style={{ marginTop: 16, background: "var(--card2)", border: "1px dashed var(--brand-line)", borderRadius: 11, padding: "11px 14px" }}>
               <span style={{ fontSize: "10.5px", fontWeight: 700, letterSpacing: ".08em", textTransform: "uppercase", color: "var(--muted)" }}>Subject preview</span>
               <div style={{ fontSize: "13.5px", marginTop: 4, color: "var(--ink)", wordBreak: "break-word", fontVariantNumeric: "tabular-nums" }}>{subjectPreview}</div>
             </div>
@@ -200,7 +200,7 @@ export default function SupportPage() {
               ["3", "We need the details", "What went wrong, what you expected, and a screenshot. The more we have, the faster we fix it."],
               ["4", "We resolve & follow up", "We'll reply on the same ticket and confirm once it's sorted."],
             ].map(([n, t, d]) => (
-              <div key={n} className="step" style={{ display: "flex", gap: 11, padding: "8px 0", borderBottom: "1px solid #eef1f6" }}>
+              <div key={n} className="step" style={{ display: "flex", gap: 11, padding: "8px 0", borderBottom: "1px solid var(--card2)" }}>
                 <div className="stepn" style={{ flex: "0 0 24px", height: 24, borderRadius: "50%", background: "var(--teal)", color: "#fff", fontWeight: 700, fontSize: 12, display: "flex", alignItems: "center", justifyContent: "center" }}>{n}</div>
                 <div><div className="stept" style={{ fontWeight: 600, fontSize: "13.5px" }}>{t}</div><div className="stepd" style={{ fontSize: "12.5px", color: "var(--muted)", lineHeight: 1.45, marginTop: 1 }}>{d}</div></div>
               </div>
@@ -220,6 +220,6 @@ export default function SupportPage() {
 }
 
 const slStyle: React.CSSProperties = { display: "block", fontSize: "11.5px", fontWeight: 700, letterSpacing: ".05em", textTransform: "uppercase", color: "var(--muted)", margin: "14px 0 5px" };
-const supInputStyle: React.CSSProperties = { width: "100%", padding: "10px 12px", border: "1px solid var(--line)", borderRadius: 10, font: "inherit", fontSize: 14, background: "#fff", resize: "vertical" };
+const supInputStyle: React.CSSProperties = { width: "100%", padding: "10px 12px", border: "1px solid var(--line)", borderRadius: 10, font: "inherit", fontSize: 14, background: "var(--card)", resize: "vertical" };
 const contactStyle: React.CSSProperties = { display: "flex", alignItems: "center", gap: 12, padding: "11px 12px", border: "1px solid var(--line)", borderRadius: 11, marginBottom: 9, textDecoration: "none", color: "var(--ink)", transition: ".12s" };
 const btnStyle = (primary: boolean, disabled = false): React.CSSProperties => ({ all: "unset", cursor: disabled ? "wait" : "pointer", opacity: disabled ? 0.65 : 1, background: primary ? "var(--ink)" : "var(--card)", color: primary ? "#fff" : "var(--ink)", border: primary ? "none" : "1px solid var(--line)", padding: "10px 16px", borderRadius: 11, fontWeight: 600, fontSize: "13.5px", display: "inline-flex", gap: 7, alignItems: "center" });

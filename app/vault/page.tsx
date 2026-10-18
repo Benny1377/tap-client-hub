@@ -132,7 +132,7 @@ export default function VaultPage() {
             the team can use the client files without ever seeing passwords.
           </p>
           <button className="btn" onClick={() => { setUnlocked(true); setUserRole("admin"); }} style={{
-            all: "unset", cursor: "pointer", background: "var(--ink)", color: "#fff",
+            all: "unset", cursor: "pointer", background: "var(--ink)", color: "var(--paper)",
             padding: "10px 16px", borderRadius: 11, fontWeight: 600, fontSize: "13.5px",
             display: "inline-flex", gap: 7, alignItems: "center",
           }}>
@@ -161,7 +161,7 @@ export default function VaultPage() {
     <div className="space-y-4">
       {/* ── Vault note banner ── */}
       <div className="vault-note" style={{
-        background: "var(--amber-soft)", border: "1px solid #ead9b6", color: "#7a5210",
+        background: "var(--amber-soft)", border: "1px solid var(--amber-line)", color: "var(--amber)",
         borderRadius: 13, padding: "13px 16px", fontSize: 13, display: "flex", gap: 10,
       }}>
         <span style={{ fontSize: 18, lineHeight: "20px" }}>🏦</span>
@@ -186,7 +186,7 @@ export default function VaultPage() {
 
         {canEdit && (
           <button className="btn" onClick={handleAdd} disabled={saving} style={{
-            all: "unset", cursor: "pointer", background: "var(--ink)", color: "#fff",
+            all: "unset", cursor: "pointer", background: "var(--ink)", color: "var(--paper)",
             padding: "10px 16px", borderRadius: 11, fontWeight: 600, fontSize: "13.5px",
             display: "inline-flex", gap: 7, alignItems: "center", whiteSpace: "nowrap",
           }}>
@@ -323,7 +323,7 @@ export default function VaultPage() {
                 letter-spacing: 0.04em;
                 text-transform: uppercase;
                 padding: 11px 12px;
-                background: #faf7f0;
+                background: var(--card2);
                 border-bottom: 1px solid var(--line);
               }
               .vault-table tbody td {
@@ -335,7 +335,7 @@ export default function VaultPage() {
                 border-bottom: none;
               }
               .vault-table tbody tr:hover {
-                background: #fcfaf4;
+                background: var(--card2);
               }
               .vt-mono {
                 font-family: "SF Mono","Fira Code","Consolas",monospace;

@@ -7,6 +7,7 @@ import { canAccessPathname, effectiveModules, firstAllowedRoute, normalizeRole }
 import { ServiceWorkerRegistration } from "@/components/service-worker-registration";
 import { Icon } from "@/components/practiceops/icons";
 import { SessionContext } from "@/components/practiceops/session";
+import { OpsRail } from "@/components/practiceops/ops-rail";
 import { FIRM, OPS_NAV, OPS_PATHS, PAGE_HEADS, YEAR_PATHS, appForPath, type RailItem } from "@/components/practiceops/apps";
 import "./globals.css";
 import "./practiceops.css";
@@ -176,17 +177,7 @@ export default function RootLayout({
   } else if (isOps) {
     page = (
       <div className="appframe">
-        <aside className="rail">
-          <div className="rail-lab">Operations</div>
-          {railItems.map((item, index) => item === "sep"
-            ? <div key={`sep-${index}`} className="rsep" />
-            : (
-              <button key={item.href} className={pathname === item.href ? "on" : ""} onClick={() => router.push(item.href)}>
-                <Icon name={item.icon} className="ri" /><span>{item.label}</span>
-              </button>
-            ))}
-          <div className="rail-foot">{FIRM.name}<br />{userName || userEmail}</div>
-        </aside>
+        <OpsRail items={railItems} pathname={pathname} footer={userName || userEmail} />
         <main className="work">
           {offshoreDoor}
           {pageHead}

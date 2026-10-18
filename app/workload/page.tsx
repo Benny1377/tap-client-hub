@@ -66,9 +66,9 @@ function getFreqLoad(freq: string | undefined | null): number {
 
 // ── Service colors & metadata ──
 const SVCMETA: Record<string, { l: string; ic: string; col: string }> = {
-  financials:  { l: "Financials", ic: "📊", col: "#2f7d4f" },
-  payroll:     { l: "Payroll", ic: "💵", col: "#2c5d86" },
-  sales_tax:   { l: "Sales Tax", ic: "🧾", col: "#b9791f" },
+  financials:  { l: "Financials", ic: "📊", col: "var(--green)" },
+  payroll:     { l: "Payroll", ic: "💵", col: "var(--blue)" },
+  sales_tax:   { l: "Sales Tax", ic: "🧾", col: "var(--amber)" },
   tax_returns: { l: "Tax Return", ic: "📋", col: "#5a4a80" },
   "1099s":     { l: "1099s", ic: "📄", col: "#7a5436" },
   renditions:  { l: "Renditions", ic: "🏠", col: "#3a5a44" },
@@ -309,7 +309,7 @@ export default function WorkloadPage() {
                     title={`${v.l}: ${val} touchpoints`} />;
                 })}
                 {Object.values(s.services).reduce((a, b) => a + b, 0) === 0 && (
-                  <div className="wseg" style={{ width: 2, background: "#ddd" }} />
+                  <div className="wseg" style={{ width: 2, background: "var(--line)" }} />
                 )}
               </div>
               <div className="wload">
@@ -350,9 +350,9 @@ export default function WorkloadPage() {
                             style={{
                               "--c": v.col,
                               fontSize: "11.5px", fontWeight: 500, padding: "3px 9px", borderRadius: 20,
-                              background: isExpanded ? v.col : "color-mix(in srgb, " + v.col + " 12%, #fff)",
+                              background: isExpanded ? v.col : "color-mix(in srgb, " + v.col + " 12%, var(--card))",
                               color: isExpanded ? "#fff" : v.col,
-                              border: isExpanded ? `1px solid ${v.col}` : `1px solid color-mix(in srgb, ${v.col} 25%, #fff)`,
+                              border: isExpanded ? `1px solid ${v.col}` : `1px solid color-mix(in srgb, ${v.col} 25%, var(--card))`,
                               cursor: "pointer", transition: ".12s", display: "inline-block",
                           } as React.CSSProperties}>
                             {v.ic} {v.l} <b style={{ fontWeight: 700 }}>{cnt}</b>
@@ -360,7 +360,7 @@ export default function WorkloadPage() {
                           {isExpanded && s.serviceClients?.[k] && (
                             <div style={{
                               position: "absolute", top: "100%", left: 0, zIndex: 10,
-                              background: "#fff", border: "1px solid #e0dcd0", borderRadius: 10,
+                              background: "var(--card)", border: "1px solid var(--line)", borderRadius: 10,
                               boxShadow: "0 4px 16px rgba(0,0,0,.1)", padding: "8px 0",
                               minWidth: 220, maxHeight: 240, overflowY: "auto", marginTop: 4,
                             }}>
@@ -375,7 +375,7 @@ export default function WorkloadPage() {
                       );
                     })}
                     {Object.values(s.services).reduce((a, b) => a + b, 0) === 0 && (
-                      <span className="schip" style={{ "--c": "#aaa", fontSize: "11.5px", fontWeight: 500, padding: "3px 9px", borderRadius: 20, background: "color-mix(in srgb, #aaa 12%, #fff)", color: "#aaa", border: "1px solid color-mix(in srgb, #aaa 25%, #fff)" } as React.CSSProperties}>none</span>
+                      <span className="schip" style={{ "--c": "var(--faint)", fontSize: "11.5px", fontWeight: 500, padding: "3px 9px", borderRadius: 20, background: "color-mix(in srgb, var(--faint) 12%, var(--card))", color: "var(--faint)", border: "1px solid color-mix(in srgb, var(--faint) 25%, var(--card))" } as React.CSSProperties}>none</span>
                     )}
                   </div>
                 </td>

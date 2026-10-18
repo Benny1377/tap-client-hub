@@ -47,13 +47,13 @@ function isInvalidPhone(value: string): boolean {
 }
 
 const STAGE_STYLES: Record<string, { bg: string; fg: string; border: string; cls: string; label: string }> = {
-  "":   { bg: "transparent", fg: "#c2c8d4", border: "transparent", cls: "lock", label: "Not due" },
-  ip:   { bg: "var(--blue-soft)", fg: "var(--blue)", border: "#bcd0e2", cls: "prog", label: "In progress" },
-  wc:   { bg: "var(--amber-soft)", fg: "var(--amber)", border: "#e8d3a6", cls: "wait", label: "Waiting on client" },
-  pp:   { bg: "var(--teal-soft)", fg: "var(--teal-ink)", border: "#c5d0ec", cls: "prep", label: "Prepared" },
-  dl:   { bg: "var(--red-soft)", fg: "var(--red)", border: "#e8c4bf", cls: "delay", label: "Delayed" },
-  dn:   { bg: "var(--green-soft)", fg: "var(--green)", border: "#bcdcc6", cls: "done", label: "Done" },
-  na:   { bg: "var(--red-soft)", fg: "var(--red)", border: "#e8c4bf", cls: "na", label: "N/A" },
+  "":   { bg: "transparent", fg: "var(--faint)", border: "transparent", cls: "lock", label: "Not due" },
+  ip:   { bg: "var(--blue-soft)", fg: "var(--blue)", border: "var(--brand-line)", cls: "prog", label: "In progress" },
+  wc:   { bg: "var(--amber-soft)", fg: "var(--amber)", border: "var(--amber-line)", cls: "wait", label: "Waiting on client" },
+  pp:   { bg: "var(--teal-soft)", fg: "var(--teal-ink)", border: "var(--brand-line)", cls: "prep", label: "Prepared" },
+  dl:   { bg: "var(--red-soft)", fg: "var(--red)", border: "var(--red-line)", cls: "delay", label: "Delayed" },
+  dn:   { bg: "var(--green-soft)", fg: "var(--green)", border: "var(--green-line)", cls: "done", label: "Done" },
+  na:   { bg: "var(--red-soft)", fg: "var(--red)", border: "var(--red-line)", cls: "na", label: "N/A" },
 };
 
 // ── Module labels ──
@@ -61,10 +61,10 @@ const svcMeta: Record<string, { label: string; ic: string; bg: string }> = {
   financials:  { label: "Financials", ic: "📊", bg: "var(--green-soft)" },
   payroll:     { label: "Payroll", ic: "💵", bg: "var(--blue-soft)" },
   sales_tax:   { label: "Sales Tax", ic: "🧾", bg: "var(--amber-soft)" },
-  tax_returns: { label: "Tax Return", ic: "📋", bg: "#ece7f3" },
-  "1099s":     { label: "1099 Filing", ic: "📄", bg: "#f0e8e2" },
-  renditions:       { label: "Renditions",  ic: "🏠", bg: "#e7eee8" },
-  annual_reports:   { label: "Annual Reports", ic: "📄", bg: "#e7eee8" },
+  tax_returns: { label: "Tax Return", ic: "📋", bg: "var(--violet-soft)" },
+  "1099s":     { label: "1099 Filing", ic: "📄", bg: "var(--violet-soft)" },
+  renditions:       { label: "Renditions",  ic: "🏠", bg: "var(--sunk)" },
+  annual_reports:   { label: "Annual Reports", ic: "📄", bg: "var(--sunk)" },
 };
 const svcLabel = (k: string) => svcMeta[k]?.label || k;
 const svcIc = (k: string) => svcMeta[k]?.ic || "📋";
@@ -578,8 +578,8 @@ export default function ClientSlideover({ client, open, onClose, onSave, onDelet
 
   const c = client;
   const typeBadge = c.type === "Business"
-    ? { bg: "var(--ink)", fg: "#fff" }
-    : { bg: "#dfe7e6", fg: "var(--teal-ink)" };
+    ? { bg: "var(--ink)", fg: "var(--paper)" }
+    : { bg: "var(--sunk)", fg: "var(--teal-ink)" };
 
   // Unique assignees
   const assignees = [...new Set(
@@ -1132,14 +1132,14 @@ export default function ClientSlideover({ client, open, onClose, onSave, onDelet
             }}
             style={{
               width: 46, height: 27, borderRadius: 20,
-              background: svc.enabled ? "var(--teal)" : "#d8d2c4",
+              background: svc.enabled ? "var(--teal)" : "var(--line)",
               position: "relative", cursor: moduleKey ? "default" : "pointer", transition: ".16s", flex: "0 0 auto",
               opacity: moduleKey ? 0.6 : 1,
             }}
           >
             <div style={{
               position: "absolute", top: 3, left: svc.enabled ? 22 : 3, width: 21, height: 21,
-              borderRadius: "50%", background: "#fff", transition: ".16s",
+              borderRadius: "50%", background: "var(--card)", transition: ".16s",
               boxShadow: "0 1px 3px rgba(0,0,0,.25)",
             }} />
           </div>
@@ -1320,7 +1320,7 @@ export default function ClientSlideover({ client, open, onClose, onSave, onDelet
                     ))}
                   </div>
                   <div style={{ display: "flex", gap: 4 }}>
-                    <input style={{ flex: 1, padding: "5px 8px", border: "1px solid var(--line)", borderRadius: 7, fontSize: 12, background: "#fff" }}
+                    <input style={{ flex: 1, padding: "5px 8px", border: "1px solid var(--line)", borderRadius: 7, fontSize: 12, background: "var(--card)" }}
                       ref={newPrEmailRef}
                       defaultValue={newPrEmail}
                       onBlur={e => setNewPrEmail(e.target.value)}
@@ -1329,7 +1329,7 @@ export default function ClientSlideover({ client, open, onClose, onSave, onDelet
                     />
                     <button className="reveal"
                       onClick={addPrEmail}
-                      style={{ all: "unset", cursor: "pointer", padding: "5px 10px", background: "var(--ink)", color: "#fff", borderRadius: 7, fontSize: 14, fontWeight: 700, lineHeight: 1 }}>+</button>
+                      style={{ all: "unset", cursor: "pointer", padding: "5px 10px", background: "var(--ink)", color: "var(--paper)", borderRadius: 7, fontSize: 14, fontWeight: 700, lineHeight: 1 }}>+</button>
                   </div>
                 </div>
               </div>
@@ -1448,7 +1448,7 @@ export default function ClientSlideover({ client, open, onClose, onSave, onDelet
             {isSalesTax && svc.enabled && (
               <div style={{ marginBottom: 10 }}>
                 {/* Service Name */}
-                <div style={{ marginBottom: 10, padding: "8px 10px", background: "var(--grey-soft,#f5f5f5)", borderRadius: 8 }}>
+                <div style={{ marginBottom: 10, padding: "8px 10px", background: "var(--grey-soft,var(--card2))", borderRadius: 8 }}>
                   <span style={{ fontSize: 10, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase" }}>Service Name</span>
                   <div style={{ fontSize: 13, fontWeight: 600, color: "var(--ink)", marginTop: 2 }}>{svc.serviceName || svc.label}</div>
                 </div>
@@ -1473,15 +1473,15 @@ export default function ClientSlideover({ client, open, onClose, onSave, onDelet
                   <div style={{ background: "var(--paper)", border: "1px solid var(--line)", borderRadius: 10, padding: 12, marginBottom: 8 }}>
                     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 8 }}>
                       <div>
-                        <label style={{ fontSize: 10, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", display: "block", marginBottom: 3 }}>Service name <span style={{ color: "var(--red,#e74c3c)" }}>*</span></label>
+                        <label style={{ fontSize: 10, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", display: "block", marginBottom: 3 }}>Service name <span style={{ color: "var(--red,var(--red))" }}>*</span></label>
                         <input style={{ width: "100%", padding: "6px 8px", border: "1px solid var(--line)", borderRadius: 7, fontSize: 13 }} ref={stxNameRef} defaultValue={newStxName} onBlur={e => setNewStxName(e.target.value)} placeholder="e.g. Texas Sales Tax" />
                       </div>
                       <div>
-                        <label style={{ fontSize: 10, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", display: "block", marginBottom: 3 }}>RT # <span style={{ color: "var(--red,#e74c3c)" }}>*</span></label>
+                        <label style={{ fontSize: 10, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", display: "block", marginBottom: 3 }}>RT # <span style={{ color: "var(--red,var(--red))" }}>*</span></label>
                         <input style={{ width: "100%", padding: "6px 8px", border: "1px solid var(--line)", borderRadius: 7, fontSize: 13 }} ref={stxRtRef} defaultValue={newStxRt} onBlur={e => setNewStxRt(e.target.value)} placeholder="e.g. 123456" />
                       </div>
                       <div>
-                        <label style={{ fontSize: 10, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", display: "block", marginBottom: 3 }}>Tax ID <span style={{ color: "var(--red,#e74c3c)" }}>*</span></label>
+                        <label style={{ fontSize: 10, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", display: "block", marginBottom: 3 }}>Tax ID <span style={{ color: "var(--red,var(--red))" }}>*</span></label>
                         <input style={{ width: "100%", padding: "6px 8px", border: "1px solid var(--line)", borderRadius: 7, fontSize: 13 }} ref={stxTaxIdRef} defaultValue={newStxTaxId} onBlur={e => setNewStxTaxId(e.target.value)} placeholder="e.g. 74-1234567" />
                       </div>
                     </div>
@@ -1502,7 +1502,7 @@ export default function ClientSlideover({ client, open, onClose, onSave, onDelet
                     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 8 }}>
                       <div>
                         <label style={{ fontSize: 10, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", display: "block", marginBottom: 3 }}>Assigned to</label>
-                        <select style={{ width: "100%", padding: "6px 8px", border: "1px solid var(--line)", borderRadius: 7, fontSize: 13, background: "#fff", color: "var(--ink)" }}
+                        <select style={{ width: "100%", padding: "6px 8px", border: "1px solid var(--line)", borderRadius: 7, fontSize: 13, background: "var(--card)", color: "var(--ink)" }}
                           value={newStxAssigned} onChange={e => setNewStxAssigned(e.target.value)}>
                           <option value="">—</option>
                           {profiles.map((p: any) => <option key={p.id} value={p.name}>{firstName(p.name)}</option>)}
@@ -1510,7 +1510,7 @@ export default function ClientSlideover({ client, open, onClose, onSave, onDelet
                       </div>
                       <div>
                         <label style={{ fontSize: 10, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", display: "block", marginBottom: 3 }}>Frequency</label>
-                        <select style={{ width: "100%", padding: "6px 8px", border: "1px solid var(--line)", borderRadius: 7, fontSize: 13, background: "#fff", color: "var(--ink)" }}
+                        <select style={{ width: "100%", padding: "6px 8px", border: "1px solid var(--line)", borderRadius: 7, fontSize: 13, background: "var(--card)", color: "var(--ink)" }}
                           value={newStxFreq} onChange={e => setNewStxFreq(e.target.value)}>
                           <option>Monthly</option><option>Quarterly</option><option>Annually</option>
                         </select>
@@ -1521,7 +1521,7 @@ export default function ClientSlideover({ client, open, onClose, onSave, onDelet
                         onClick={() => setAddingStx(false)}>Cancel</button>
                       <button className="reveal" style={{
                         all: "unset", cursor: "pointer", padding: "6px 12px", borderRadius: 8, fontWeight: 600, fontSize: 12,
-                        background: "var(--ink)", color: "#fff",
+                        background: "var(--ink)", color: "var(--paper)",
                       }}
                         onClick={() => {
                           const n = stxNameRef.current?.value.trim() || '';
@@ -1594,7 +1594,7 @@ export default function ClientSlideover({ client, open, onClose, onSave, onDelet
                               </div>
                               <div>
                                 <label style={{ fontSize: 9, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", display: "block", marginBottom: 2 }}>Assigned to</label>
-                                <select style={{ width: "100%", padding: "5px 7px", border: "1px solid var(--line)", borderRadius: 6, fontSize: 12, background: "#fff", color: "var(--ink)" }}
+                                <select style={{ width: "100%", padding: "5px 7px", border: "1px solid var(--line)", borderRadius: 6, fontSize: 12, background: "var(--card)", color: "var(--ink)" }}
                                   value={editStxAssigned} onChange={e => setEditStxAssigned(e.target.value)}>
                                   <option value="">—</option>
                                   {profiles.map((p: any) => <option key={p.id} value={p.name}>{firstName(p.name)}</option>)}
@@ -1980,12 +1980,12 @@ export default function ClientSlideover({ client, open, onClose, onSave, onDelet
       }
 
       const stxStageStyles: Record<string, { bg: string; fg: string; border: string }> = {
-        lock: { bg: "transparent", fg: "#c2c8d4", border: "transparent" },
-        in_progress: { bg: "var(--blue-soft)", fg: "var(--blue)", border: "#bcd0e2" },
-        waiting: { bg: "var(--amber-soft)", fg: "var(--amber)", border: "#e8d3a6" },
-        billed: { bg: "var(--teal-soft)", fg: "var(--teal-ink)", border: "#c5d0ec" },
-        done: { bg: "var(--green-soft)", fg: "var(--green)", border: "#bcdcc6" },
-        na: { bg: "var(--red-soft)", fg: "var(--red)", border: "#e8c4bf" },
+        lock: { bg: "transparent", fg: "var(--faint)", border: "transparent" },
+        in_progress: { bg: "var(--blue-soft)", fg: "var(--blue)", border: "var(--brand-line)" },
+        waiting: { bg: "var(--amber-soft)", fg: "var(--amber)", border: "var(--amber-line)" },
+        billed: { bg: "var(--teal-soft)", fg: "var(--teal-ink)", border: "var(--brand-line)" },
+        done: { bg: "var(--green-soft)", fg: "var(--green)", border: "var(--green-line)" },
+        na: { bg: "var(--red-soft)", fg: "var(--red)", border: "var(--red-line)" },
       };
 
       function stxStageSymbol(st: string): string {
@@ -2055,7 +2055,7 @@ export default function ClientSlideover({ client, open, onClose, onSave, onDelet
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 8 }}>
                 <div>
                   <label style={{ fontSize: 10, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", display: "block", marginBottom: 3 }}>Assigned to</label>
-                  <select style={{ width: "100%", padding: "6px 8px", border: "1px solid var(--line)", borderRadius: 7, fontSize: 13, background: "#fff", color: "var(--ink)" }}
+                  <select style={{ width: "100%", padding: "6px 8px", border: "1px solid var(--line)", borderRadius: 7, fontSize: 13, background: "var(--card)", color: "var(--ink)" }}
                     value={newStxAssigned} onChange={e => setNewStxAssigned(e.target.value)}>
                     <option value="">—</option>
                     {profiles.map((p: any) => <option key={p.id} value={p.name}>{firstName(p.name)}</option>)}
@@ -2063,7 +2063,7 @@ export default function ClientSlideover({ client, open, onClose, onSave, onDelet
                 </div>
                 <div>
                   <label style={{ fontSize: 10, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", display: "block", marginBottom: 3 }}>Frequency</label>
-                  <select style={{ width: "100%", padding: "6px 8px", border: "1px solid var(--line)", borderRadius: 7, fontSize: 13, background: "#fff", color: "var(--ink)" }}
+                  <select style={{ width: "100%", padding: "6px 8px", border: "1px solid var(--line)", borderRadius: 7, fontSize: 13, background: "var(--card)", color: "var(--ink)" }}
                     value={newStxFreq} onChange={e => setNewStxFreq(e.target.value)}>
                     <option>Monthly</option><option>Quarterly</option><option>Annually</option>
                   </select>
@@ -2072,7 +2072,7 @@ export default function ClientSlideover({ client, open, onClose, onSave, onDelet
               <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
                 <button className="reveal" style={{ all: "unset", cursor: "pointer", padding: "6px 12px", borderRadius: 8, fontWeight: 600, fontSize: 12, color: "var(--muted)" }}
                   onClick={() => setAddingStx(false)}>Cancel</button>
-                <button className="reveal" style={{ all: "unset", cursor: "pointer", background: "var(--ink)", color: "#fff", padding: "6px 12px", borderRadius: 8, fontWeight: 600, fontSize: 12 }}
+                <button className="reveal" style={{ all: "unset", cursor: "pointer", background: "var(--ink)", color: "var(--paper)", padding: "6px 12px", borderRadius: 8, fontWeight: 600, fontSize: 12 }}
                   onClick={() => {
                     const n = stxNameRef.current?.value.trim() || '';
                     const r = stxRtRef.current?.value.trim() || '';
@@ -2131,7 +2131,7 @@ export default function ClientSlideover({ client, open, onClose, onSave, onDelet
                     </div>
                     <div>
                       <label style={{ fontSize: 10, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", display: "block", marginBottom: 3 }}>Assigned to</label>
-                      <select style={{ width: "100%", padding: "6px 8px", border: "1px solid var(--line)", borderRadius: 7, fontSize: 13, background: "#fff", color: "var(--ink)" }}
+                      <select style={{ width: "100%", padding: "6px 8px", border: "1px solid var(--line)", borderRadius: 7, fontSize: 13, background: "var(--card)", color: "var(--ink)" }}
                         value={editStxAssigned} onChange={e => { setEditStxAssigned(e.target.value); autoSaveStxFields({ assignedTo: e.target.value }); }}>
                         <option value="">—</option>
                         {profiles.map((p: any) => <option key={p.id} value={p.name}>{firstName(p.name)}</option>)}
@@ -2139,7 +2139,7 @@ export default function ClientSlideover({ client, open, onClose, onSave, onDelet
                     </div>
                     <div>
                       <label style={{ fontSize: 10, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", display: "block", marginBottom: 3 }}>Frequency</label>
-                      <select style={{ width: "100%", padding: "6px 8px", border: "1px solid var(--line)", borderRadius: 7, fontSize: 13, background: "#fff", color: "var(--ink)" }}
+                      <select style={{ width: "100%", padding: "6px 8px", border: "1px solid var(--line)", borderRadius: 7, fontSize: 13, background: "var(--card)", color: "var(--ink)" }}
                         value={editStxFreq} onChange={e => { setEditStxFreq(e.target.value); autoSaveStxFields({ frequency: e.target.value }); }}>
                         <option>Monthly</option><option>Quarterly</option><option>Annually</option>
                       </select>
@@ -2294,8 +2294,8 @@ export default function ClientSlideover({ client, open, onClose, onSave, onDelet
                 style={{
                   fontSize: "10.5px", fontWeight: 700, padding: "3px 9px", borderRadius: 20,
                   textTransform: "uppercase", letterSpacing: "0.05em", cursor: "pointer",
-                  backgroundColor: isActive ? "var(--green-soft,#e6f4ea)" : "var(--red-soft,#fce8e6)",
-                  color: isActive ? "var(--green,#1e7e34)" : "var(--red,#c62828)",
+                  backgroundColor: isActive ? "var(--green-soft,var(--green-soft))" : "var(--red-soft,var(--red-soft))",
+                  color: isActive ? "var(--green,var(--green))" : "var(--red,var(--red))",
                   marginLeft: 6,
                 }}>
                 {isActive ? "ACTIVE" : "INACTIVE"}
@@ -2384,7 +2384,7 @@ export default function ClientSlideover({ client, open, onClose, onSave, onDelet
                             saveCurrentRenewal();
                             setEditingRenewalIdx(null);
                           }}
-                            style={{ all: "unset", cursor: "pointer", padding: "5px 12px", borderRadius: 6, fontSize: 11, fontWeight: 600, background: "var(--ink)", color: "#fff" }}>Done</button>
+                            style={{ all: "unset", cursor: "pointer", padding: "5px 12px", borderRadius: 6, fontSize: 11, fontWeight: 600, background: "var(--ink)", color: "var(--paper)" }}>Done</button>
                         </div>
                       </div>
                     ) : (
@@ -2430,7 +2430,7 @@ export default function ClientSlideover({ client, open, onClose, onSave, onDelet
                             <select
                               value={renewalNoteMonth[idx] ?? new Date().getMonth()}
                               onChange={e => setRenewalNoteMonth((prev: any) => ({ ...prev, [idx]: Number(e.target.value) }))}
-                              style={{ padding: "4px 6px", border: "1px solid var(--line)", borderRadius: 6, fontSize: 11, background: "#fff", color: "var(--ink)" }}>
+                              style={{ padding: "4px 6px", border: "1px solid var(--line)", borderRadius: 6, fontSize: 11, background: "var(--card)", color: "var(--ink)" }}>
                               {MONTHS.map((m, mi) => <option key={mi} value={mi}>{m.substring(0, 3)}</option>)}
                             </select>
                             <input
@@ -2438,7 +2438,7 @@ export default function ClientSlideover({ client, open, onClose, onSave, onDelet
                               onChange={e => setRenewalNoteText((prev: any) => ({ ...prev, [idx]: e.target.value }))}
                               onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); addRenewalItemNote(idx); } }}
                               placeholder="Add note..."
-                              style={{ flex: 1, padding: "4px 8px", border: "1px solid var(--line)", borderRadius: 6, fontSize: 11, background: "#fff", color: "var(--ink)", outline: "none" }} />
+                              style={{ flex: 1, padding: "4px 8px", border: "1px solid var(--line)", borderRadius: 6, fontSize: 11, background: "var(--card)", color: "var(--ink)", outline: "none" }} />
                             <button
                               onClick={() => addRenewalItemNote(idx)}
                               style={{ all: "unset", cursor: "pointer", background: "var(--teal)", color: "#fff", padding: "4px 10px", borderRadius: 6, fontWeight: 600, fontSize: 11, whiteSpace: "nowrap" }}>Add</button>
@@ -2515,7 +2515,7 @@ export default function ClientSlideover({ client, open, onClose, onSave, onDelet
                       });
                       syncRenewalItems(updated);
                     }}
-                      style={{ all: "unset", cursor: "pointer", padding: "5px 12px", borderRadius: 6, fontSize: 11, fontWeight: 600, background: "var(--ink)", color: "#fff" }}>Add</button>
+                      style={{ all: "unset", cursor: "pointer", padding: "5px 12px", borderRadius: 6, fontSize: 11, fontWeight: 600, background: "var(--ink)", color: "var(--paper)" }}>Add</button>
                   </div>
                 </div>
               ) : (
@@ -2554,7 +2554,7 @@ export default function ClientSlideover({ client, open, onClose, onSave, onDelet
               <div className="sect" style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--muted)", margin: "0 0 8px" }}>
                 Assigned To
               </div>
-              <select className="ef" style={{ width: "100%", padding: "7px 9px", border: "1px solid var(--line)", borderRadius: 7, fontSize: 13, background: "#fff" }}
+              <select className="ef" style={{ width: "100%", padding: "7px 9px", border: "1px solid var(--line)", borderRadius: 7, fontSize: 13, background: "var(--card)" }}
                 value={resolvedAssignee}
                 onChange={e => {
                   setESvcAssignees((prev: any) => ({ ...prev, [resolvedKey]: e.target.value }));
@@ -2580,9 +2580,9 @@ export default function ClientSlideover({ client, open, onClose, onSave, onDelet
                 </div>
                 {/* Cadence for Financials only (1099s is always Annual) */}
                 {moduleKey === "financials" && (
-                  <div className="field" style={{ display: "flex", justifyContent: "flex-start", gap: 14, padding: "7px 0", fontSize: "13.5px", borderBottom: "1px dashed #e7e1d3" }}>
+                  <div className="field" style={{ display: "flex", justifyContent: "flex-start", gap: 14, padding: "7px 0", fontSize: "13.5px", borderBottom: "1px dashed var(--line2)" }}>
                     <span className="k" style={{ color: "var(--muted)" }}>Cadence</span>
-                    <select style={{ flex: 1, textAlign: "left", padding: "4px 8px", border: "1px solid var(--line)", borderRadius: 6, fontSize: 13, background: "#fff", color: "var(--ink)", fontWeight: 500, outline: "none", cursor: "pointer" }}
+                    <select style={{ flex: 1, textAlign: "left", padding: "4px 8px", border: "1px solid var(--line)", borderRadius: 6, fontSize: 13, background: "var(--card)", color: "var(--ink)", fontWeight: 500, outline: "none", cursor: "pointer" }}
                       value={(targetSvc.frequency || "Monthly") === "Yearly" || (targetSvc.frequency || "Monthly") === "yearly" || (targetSvc.frequency || "Monthly") === "annual" ? "Annual" : (targetSvc.frequency || "Monthly")} onChange={e => {
                         updateServicesAndAutoSave((svcs) => svcs.map((s: any) => s.key === moduleKey ? { ...s, frequency: e.target.value } : s));
                       }}>
@@ -2595,9 +2595,9 @@ export default function ClientSlideover({ client, open, onClose, onSave, onDelet
                 )}
                 {/* Expected Annual for 1099s */}
                 {moduleKey === "1099s" && (
-                  <div className="field" style={{ display: "flex", justifyContent: "flex-start", gap: 14, padding: "7px 0", fontSize: "13.5px", borderBottom: "1px dashed #e7e1d3" }}>
+                  <div className="field" style={{ display: "flex", justifyContent: "flex-start", gap: 14, padding: "7px 0", fontSize: "13.5px", borderBottom: "1px dashed var(--line2)" }}>
                     <span className="k" style={{ color: "var(--muted)" }}>Expected Annual</span>
-                    <input style={{ flex: 1, textAlign: "left", padding: "4px 8px", border: "1px solid var(--line)", borderRadius: 6, fontSize: 13, background: "#fff", color: "var(--ink)", fontWeight: 500, outline: "none" }}
+                    <input style={{ flex: 1, textAlign: "left", padding: "4px 8px", border: "1px solid var(--line)", borderRadius: 6, fontSize: 13, background: "var(--card)", color: "var(--ink)", fontWeight: 500, outline: "none" }}
                       type="number" defaultValue={targetSvc.expectedAnnual || 0} onBlur={e => { setLocalSvcs(prev => prev.map((s: any) => s.key === "1099s" ? { ...s, expectedAnnual: Number(e.target.value) } : s)); if (targetSvc?.csId) fetch("/api/clients",{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({csId:targetSvc.csId,expectedAnnual:Number(e.target.value)})}).catch(()=>{}); }} placeholder="0" />
                   </div>
                 )}
@@ -2608,7 +2608,7 @@ export default function ClientSlideover({ client, open, onClose, onSave, onDelet
             {moduleKey === "payroll" && targetSvc.enabled && (
               <>
                 <div className="sect" style={sectStyle}>Payroll Details</div>
-                <div className="field" style={{ display: "flex", justifyContent: "flex-start", gap: 14, padding: "7px 0", fontSize: "13.5px", borderBottom: "1px dashed #e7e1d3" }}>
+                <div className="field" style={{ display: "flex", justifyContent: "flex-start", gap: 14, padding: "7px 0", fontSize: "13.5px", borderBottom: "1px dashed var(--line2)" }}>
                   <span className="k" style={{ color: "var(--muted)" }}>EIN</span>
                   <input
                     ref={eEinRef}
@@ -2618,12 +2618,12 @@ export default function ClientSlideover({ client, open, onClose, onSave, onDelet
                       autoSave({ ...c, ein: e.target.value } as Client);
                     }}
                     placeholder="XX-XXXXXXX"
-                    style={{ flex: 1, textAlign: "left", padding: "4px 8px", border: "1px solid var(--line)", borderRadius: 6, fontSize: 13, background: "#fff", color: "var(--ink)", fontWeight: 500, outline: "none", fontFamily: "var(--mono)" }}
+                    style={{ flex: 1, textAlign: "left", padding: "4px 8px", border: "1px solid var(--line)", borderRadius: 6, fontSize: 13, background: "var(--card)", color: "var(--ink)", fontWeight: 500, outline: "none", fontFamily: "var(--mono)" }}
                   />
                 </div>
-                <div className="field" style={{ display: "flex", justifyContent: "flex-start", gap: 14, padding: "7px 0", fontSize: "13.5px", borderBottom: "1px dashed #e7e1d3" }}>
+                <div className="field" style={{ display: "flex", justifyContent: "flex-start", gap: 14, padding: "7px 0", fontSize: "13.5px", borderBottom: "1px dashed var(--line2)" }}>
                   <span className="k" style={{ color: "var(--muted)" }}>Frequency</span>
-                  <select style={{ flex: 1, textAlign: "left", padding: "4px 8px", border: "1px solid var(--line)", borderRadius: 6, fontSize: 13, background: "#fff", color: "var(--ink)", fontWeight: 500, outline: "none", cursor: "pointer" }}
+                  <select style={{ flex: 1, textAlign: "left", padding: "4px 8px", border: "1px solid var(--line)", borderRadius: 6, fontSize: 13, background: "var(--card)", color: "var(--ink)", fontWeight: 500, outline: "none", cursor: "pointer" }}
                     value={prPeriodFreq} onChange={e => {
                       const val = e.target.value;
                       setPrPeriodFreq(val);
@@ -2642,9 +2642,9 @@ export default function ClientSlideover({ client, open, onClose, onSave, onDelet
                     <option value="Quarterly">Quarterly</option>
                   </select>
                 </div>
-                <div className="field" style={{ display: "flex", justifyContent: "flex-start", gap: 14, padding: "7px 0", fontSize: "13.5px", borderBottom: "1px dashed #e7e1d3" }}>
+                <div className="field" style={{ display: "flex", justifyContent: "flex-start", gap: 14, padding: "7px 0", fontSize: "13.5px", borderBottom: "1px dashed var(--line2)" }}>
                   <span className="k" style={{ color: "var(--muted)" }}>Pay Day</span>
-                  <select style={{ flex: 1, textAlign: "left", padding: "4px 8px", border: "1px solid var(--line)", borderRadius: 6, fontSize: 13, background: "#fff", color: "var(--ink)", fontWeight: 500, outline: "none", cursor: "pointer" }}
+                  <select style={{ flex: 1, textAlign: "left", padding: "4px 8px", border: "1px solid var(--line)", borderRadius: 6, fontSize: 13, background: "var(--card)", color: "var(--ink)", fontWeight: 500, outline: "none", cursor: "pointer" }}
                     value={prPaydate} onChange={e => {
                       const normalizedPayDay = normalizePayDay(e.target.value);
                       setPrPaydate(normalizedPayDay);
@@ -2659,14 +2659,14 @@ export default function ClientSlideover({ client, open, onClose, onSave, onDelet
                     {payDayOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}
                   </select>
                 </div>
-                <div className="field" style={{ display: "flex", justifyContent: "flex-start", gap: 14, padding: "7px 0", fontSize: "13.5px", borderBottom: "1px dashed #e7e1d3" }}>
+                <div className="field" style={{ display: "flex", justifyContent: "flex-start", gap: 14, padding: "7px 0", fontSize: "13.5px", borderBottom: "1px dashed var(--line2)" }}>
                   <span className="k" style={{ color: "var(--muted)" }}>Start Date</span>
                   <input type="text" style={{ flex: 1, textAlign: "left", padding: "4px 8px", border: "1px solid var(--line)", borderRadius: 6, fontSize: 13, background: "var(--paper)", color: "var(--ink)", fontWeight: 500, outline: "none", cursor: "default" }}
                     value={prStartDate ? formatPayrollStartDate(prStartDate) : (prPeriodFreq && prPaydate ? formatPayrollStartDate(calcPayrollStartDate(prPeriodFreq, prPaydate)) : "")} readOnly />
                 </div>
-                <div className="field" style={{ display: "flex", justifyContent: "flex-start", gap: 14, padding: "7px 0", fontSize: "13.5px", borderBottom: "1px dashed #e7e1d3" }}>
+                <div className="field" style={{ display: "flex", justifyContent: "flex-start", gap: 14, padding: "7px 0", fontSize: "13.5px", borderBottom: "1px dashed var(--line2)" }}>
                   <span className="k" style={{ color: "var(--muted)" }}>Processor</span>
-                  <select style={{ flex: 1, textAlign: "left", padding: "4px 8px", border: "1px solid var(--line)", borderRadius: 6, fontSize: 13, background: "#fff", color: "var(--ink)", fontWeight: 500, outline: "none", cursor: "pointer" }}
+                  <select style={{ flex: 1, textAlign: "left", padding: "4px 8px", border: "1px solid var(--line)", borderRadius: 6, fontSize: 13, background: "var(--card)", color: "var(--ink)", fontWeight: 500, outline: "none", cursor: "pointer" }}
                     value={targetSvc?.processor || ""} onChange={e => {
                       updateServicesAndAutoSave((svcs) => svcs.map((s: any) => s.key === "payroll" ? { ...s, processor: e.target.value } : s));
                     }}>
@@ -2677,10 +2677,10 @@ export default function ClientSlideover({ client, open, onClose, onSave, onDelet
                     <option value="QBO">QBO</option>
                   </select>
                 </div>
-                <div className="field" style={{ display: "flex", justifyContent: "flex-start", gap: 14, padding: "7px 0", fontSize: "13.5px", borderBottom: "1px dashed #e7e1d3" }}>
+                <div className="field" style={{ display: "flex", justifyContent: "flex-start", gap: 14, padding: "7px 0", fontSize: "13.5px", borderBottom: "1px dashed var(--line2)" }}>
                   <span className="k" style={{ color: "var(--muted)" }}>EFTPS Password</span>
                   <div style={{ flex: 1, position: "relative" }}>
-                    <input style={{ width: "100%", textAlign: "left", padding: "4px 30px 4px 8px", border: "1px solid var(--line)", borderRadius: 6, fontSize: 13, background: "#fff", color: "var(--ink)", fontWeight: 500, outline: "none", fontFamily: "var(--mono)" }}
+                    <input style={{ width: "100%", textAlign: "left", padding: "4px 30px 4px 8px", border: "1px solid var(--line)", borderRadius: 6, fontSize: 13, background: "var(--card)", color: "var(--ink)", fontWeight: 500, outline: "none", fontFamily: "var(--mono)" }}
                       type={showPrEftps ? "text" : "password"} ref={prEftpsRef} defaultValue={prEftps || ""}
                       onBlur={e => { setPrEftps(e.target.value); const p = localSvcs.find((s: any) => s.key === 'payroll'); if (p?.csId) fetch('/api/clients',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({csId:p.csId,eftps:e.target.value})}).catch(()=>{}); }} placeholder="—" />
                     <button type="button" tabIndex={-1}
@@ -2694,10 +2694,10 @@ export default function ClientSlideover({ client, open, onClose, onSave, onDelet
                     </button>
                   </div>
                 </div>
-                <div className="field" style={{ display: "flex", justifyContent: "flex-start", gap: 14, padding: "7px 0", fontSize: "13.5px", borderBottom: "1px dashed #e7e1d3" }}>
+                <div className="field" style={{ display: "flex", justifyContent: "flex-start", gap: 14, padding: "7px 0", fontSize: "13.5px", borderBottom: "1px dashed var(--line2)" }}>
                   <span className="k" style={{ color: "var(--muted)" }}>PIN</span>
                   <div style={{ flex: 1, position: "relative" }}>
-                    <input style={{ width: "100%", textAlign: "left", padding: "4px 30px 4px 8px", border: "1px solid var(--line)", borderRadius: 6, fontSize: 13, background: "#fff", color: "var(--ink)", fontWeight: 500, outline: "none", fontFamily: "var(--mono)" }}
+                    <input style={{ width: "100%", textAlign: "left", padding: "4px 30px 4px 8px", border: "1px solid var(--line)", borderRadius: 6, fontSize: 13, background: "var(--card)", color: "var(--ink)", fontWeight: 500, outline: "none", fontFamily: "var(--mono)" }}
                       type={showPrPin ? "text" : "password"} ref={prPinRef} defaultValue={prPin || ""}
                       onBlur={e => { setPrPin(e.target.value); const p = localSvcs.find((s: any) => s.key === 'payroll'); if (p?.csId) fetch('/api/clients',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({csId:p.csId,payrollPassword:e.target.value})}).catch(()=>{}); }} placeholder="—" />
                     <button type="button" tabIndex={-1}
@@ -2711,7 +2711,7 @@ export default function ClientSlideover({ client, open, onClose, onSave, onDelet
                     </button>
                   </div>
                 </div>
-                <div className="field" style={{ display: "flex", justifyContent: "flex-start", gap: 14, padding: "7px 0", fontSize: "13.5px", borderBottom: "1px dashed #e7e1d3" }}>
+                <div className="field" style={{ display: "flex", justifyContent: "flex-start", gap: 14, padding: "7px 0", fontSize: "13.5px", borderBottom: "1px dashed var(--line2)" }}>
                   <span className="k" style={{ color: "var(--muted)" }}>Payroll email</span>
                   <div style={{ flex: 1 }}>
                     <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 4 }}>
@@ -2724,7 +2724,7 @@ export default function ClientSlideover({ client, open, onClose, onSave, onDelet
                       ))}
                     </div>
                     <div style={{ display: "flex", gap: 4 }}>
-                    <input style={{ flex: 1, padding: "4px 8px", border: "1px solid var(--line)", borderRadius: 6, fontSize: 12, background: "#fff", outline: "none", boxSizing: "border-box" }}
+                    <input style={{ flex: 1, padding: "4px 8px", border: "1px solid var(--line)", borderRadius: 6, fontSize: 12, background: "var(--card)", outline: "none", boxSizing: "border-box" }}
                       ref={newPrEmailRef}
                       defaultValue={newPrEmail}
                       onBlur={e => setNewPrEmail(e.target.value)}
@@ -2733,13 +2733,13 @@ export default function ClientSlideover({ client, open, onClose, onSave, onDelet
                     />
                     <button className="reveal"
                       onClick={addPrEmail}
-                      style={{ all: "unset", cursor: "pointer", padding: "4px 9px", background: "var(--ink)", color: "#fff", borderRadius: 6, fontSize: 14, fontWeight: 700, lineHeight: 1 }}>+</button>
+                      style={{ all: "unset", cursor: "pointer", padding: "4px 9px", background: "var(--ink)", color: "var(--paper)", borderRadius: 6, fontSize: 14, fontWeight: 700, lineHeight: 1 }}>+</button>
                     </div>
                 </div>
                 </div>
-                <div className="field" style={{ display: "flex", justifyContent: "flex-start", gap: 14, padding: "7px 0", fontSize: "13.5px", borderBottom: "1px dashed #e7e1d3" }}>
+                <div className="field" style={{ display: "flex", justifyContent: "flex-start", gap: 14, padding: "7px 0", fontSize: "13.5px", borderBottom: "1px dashed var(--line2)" }}>
                   <span className="k" style={{ color: "var(--muted)" }}>Notes</span>
-                  <textarea style={{ flex: 1, textAlign: "left", padding: "4px 8px", border: "1px solid var(--line)", borderRadius: 6, fontSize: 13, background: "#fff", color: "var(--ink)", fontWeight: 500, outline: "none", minHeight: 50, resize: "vertical" }}
+                  <textarea style={{ flex: 1, textAlign: "left", padding: "4px 8px", border: "1px solid var(--line)", borderRadius: 6, fontSize: 13, background: "var(--card)", color: "var(--ink)", fontWeight: 500, outline: "none", minHeight: 50, resize: "vertical" }}
                     ref={reportingRef}
                     defaultValue={prReportingNotes}
                     onBlur={e => { setPrReportingNotes(e.target.value); const p = localSvcs.find((s: any) => s.key === 'payroll'); if (p?.csId) fetch('/api/clients',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({csId:p.csId,reportingNotes:e.target.value})}).catch(()=>{}); }}
@@ -2752,35 +2752,35 @@ export default function ClientSlideover({ client, open, onClose, onSave, onDelet
             {moduleKey === "tax_returns" && targetSvc.enabled && (
               <>
                 <div className="sect" style={sectStyle}>Tax Return Details</div>
-                <div className="field" style={{ display: "flex", justifyContent: "flex-start", gap: 14, padding: "7px 0", fontSize: "13.5px", borderBottom: "1px dashed #e7e1d3" }}>
+                <div className="field" style={{ display: "flex", justifyContent: "flex-start", gap: 14, padding: "7px 0", fontSize: "13.5px", borderBottom: "1px dashed var(--line2)" }}>
                   <span className="k" style={{ color: "var(--muted)" }}>Filing Type</span>
                   <select value={filingType} onChange={e => {
                     setFilingType(e.target.value);
                     updateServicesAndAutoSave((svcs) => svcs.map((s: any) => s.key === "tax_returns" ? { ...s, filingType: e.target.value } : s));
                   }}
-                    style={{ flex: 1, textAlign: "left", padding: "4px 8px", border: "1px solid var(--line)", borderRadius: 6, fontSize: 13, background: "#fff", color: "var(--ink)", fontWeight: 500, outline: "none" }}>
+                    style={{ flex: 1, textAlign: "left", padding: "4px 8px", border: "1px solid var(--line)", borderRadius: 6, fontSize: 13, background: "var(--card)", color: "var(--ink)", fontWeight: 500, outline: "none" }}>
                     <option value="">—</option>
                     {FILING_TYPES.map(t => <option key={t}>{t}</option>)}
                   </select>
                 </div>
-                <div className="field" style={{ display: "flex", justifyContent: "flex-start", gap: 14, padding: "7px 0", fontSize: "13.5px", borderBottom: "1px dashed #e7e1d3" }}>
+                <div className="field" style={{ display: "flex", justifyContent: "flex-start", gap: 14, padding: "7px 0", fontSize: "13.5px", borderBottom: "1px dashed var(--line2)" }}>
                   <span className="k" style={{ color: "var(--muted)" }}>Filing State</span>
                   <select value={filingState} onChange={e => {
                     setFilingState(e.target.value);
                     updateServicesAndAutoSave((svcs) => svcs.map((s: any) => s.key === "tax_returns" ? { ...s, filingState: e.target.value } : s));
                   }}
-                    style={{ flex: 1, textAlign: "left", padding: "4px 8px", border: "1px solid var(--line)", borderRadius: 6, fontSize: 13, background: "#fff", color: "var(--ink)", fontWeight: 500, outline: "none" }}>
+                    style={{ flex: 1, textAlign: "left", padding: "4px 8px", border: "1px solid var(--line)", borderRadius: 6, fontSize: 13, background: "var(--card)", color: "var(--ink)", fontWeight: 500, outline: "none" }}>
                     <option value="">—</option>
                     {US_STATES.map(st => <option key={st}>{st}</option>)}
                   </select>
                 </div>
-                <div className="field" style={{ display: "flex", justifyContent: "flex-start", gap: 14, padding: "7px 0", fontSize: "13.5px", borderBottom: "1px dashed #e7e1d3" }}>
+                <div className="field" style={{ display: "flex", justifyContent: "flex-start", gap: 14, padding: "7px 0", fontSize: "13.5px", borderBottom: "1px dashed var(--line2)" }}>
                   <span className="k" style={{ color: "var(--muted)" }}>Filing Month</span>
                   <select value={filingMonth} onChange={e => {
                     setFilingMonth(e.target.value);
                     updateServicesAndAutoSave((svcs) => svcs.map((s: any) => s.key === "tax_returns" ? { ...s, filingMonth: e.target.value } : s));
                   }}
-                    style={{ flex: 1, textAlign: "left", padding: "4px 8px", border: "1px solid var(--line)", borderRadius: 6, fontSize: 13, background: "#fff", color: "var(--ink)", fontWeight: 500, outline: "none" }}>
+                    style={{ flex: 1, textAlign: "left", padding: "4px 8px", border: "1px solid var(--line)", borderRadius: 6, fontSize: 13, background: "var(--card)", color: "var(--ink)", fontWeight: 500, outline: "none" }}>
                     <option value="">—</option>
                     {MONTH_NAMES.map((m, i) => <option key={i} value={String(i + 1)}>{m}</option>)}
                   </select>
@@ -2791,7 +2791,7 @@ export default function ClientSlideover({ client, open, onClose, onSave, onDelet
             {/* Sales Tax: line items section — only on Sales Tax tab */}
             {/* Service Name — only show in full client view, not on worklist tabs */}
             {!moduleKey && (
-            <div style={{ marginBottom: 12, padding: "10px 12px", background: "var(--grey-soft,#f5f5f5)", borderRadius: 8 }}>
+            <div style={{ marginBottom: 12, padding: "10px 12px", background: "var(--grey-soft,var(--card2))", borderRadius: 8 }}>
               <span style={{ fontSize: 10, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase" }}>Service Name</span>
               <div style={{ fontSize: 14, fontWeight: 600, color: "var(--ink)", marginTop: 3 }}>{targetSvc.serviceName || targetSvc.label}</div>
             </div>
@@ -2870,9 +2870,9 @@ export default function ClientSlideover({ client, open, onClose, onSave, onDelet
             <button onClick={toggleActive} style={{
               all: "unset", cursor: "pointer", fontWeight: 600, fontSize: "13.5px",
               padding: "10px 14px", borderRadius: 11,
-              background: isActive ? "var(--red-soft,#fce8e6)" : "var(--green-soft,#e6f4ea)",
-              color: isActive ? "var(--red,#c62828)" : "var(--green,#1e7e34)",
-              border: `1px solid ${isActive ? "var(--red-soft,#fce8e6)" : "var(--green-soft,#c8e6c9)"}`,
+              background: isActive ? "var(--red-soft,var(--red-soft))" : "var(--green-soft,var(--green-soft))",
+              color: isActive ? "var(--red,var(--red))" : "var(--green,var(--green))",
+              border: `1px solid ${isActive ? "var(--red-soft,var(--red-soft))" : "var(--green-soft,var(--green-soft))"}`,
             }}>
               {isActive ? "Deactivate client" : "Activate client"}
             </button>
@@ -2977,47 +2977,47 @@ export default function ClientSlideover({ client, open, onClose, onSave, onDelet
             {/* Group */}
             <div className="field" style={fieldStyle}>
               <span className="k" style={{ color: "var(--muted)" }}>Group</span>
-              <input style={{ flex: 1, textAlign: "left", padding: "4px 8px", border: "1px solid var(--line)", borderRadius: 6, fontSize: 13, background: "#fff", color: "var(--ink)", fontWeight: 500, outline: "none" }}
+              <input style={{ flex: 1, textAlign: "left", padding: "4px 8px", border: "1px solid var(--line)", borderRadius: 6, fontSize: 13, background: "var(--card)", color: "var(--ink)", fontWeight: 500, outline: "none" }}
                 value={eGroup} onChange={e => setEGroup(e.target.value)} onBlur={syncAndAutoSaveUniversal} placeholder="—" />
             </div>
             {/* Contact */}
             <div className="field" style={fieldStyle}>
               <span className="k" style={{ color: "var(--muted)" }}>Contact</span>
-              <input style={{ flex: 1, textAlign: "left", padding: "4px 8px", border: "1px solid var(--line)", borderRadius: 6, fontSize: 13, background: "#fff", color: "var(--ink)", fontWeight: 500, outline: "none" }}
+              <input style={{ flex: 1, textAlign: "left", padding: "4px 8px", border: "1px solid var(--line)", borderRadius: 6, fontSize: 13, background: "var(--card)", color: "var(--ink)", fontWeight: 500, outline: "none" }}
                 value={eContact} onChange={e => setEContact(e.target.value)} onBlur={syncAndAutoSaveUniversal} placeholder="—" />
             </div>
 
             {/* Email */}
             <div className="field" style={fieldStyle}>
               <span className="k" style={{ color: "var(--muted)" }}>Email</span>
-              <input style={{ flex: 1, textAlign: "left", padding: "4px 8px", border: "1px solid var(--line)", borderRadius: 6, fontSize: 13, background: "#fff", color: "var(--ink)", fontWeight: 500, outline: "none" }}
+              <input style={{ flex: 1, textAlign: "left", padding: "4px 8px", border: "1px solid var(--line)", borderRadius: 6, fontSize: 13, background: "var(--card)", color: "var(--ink)", fontWeight: 500, outline: "none" }}
                 ref={eEmailRef} defaultValue={eEmail} onBlur={e => { setEEmail(e.target.value); syncAndAutoSaveUniversal(); }} placeholder="—" />
             </div>
             {/* Additional email */}
             <div className="field" style={fieldStyle}>
               <span className="k" style={{ color: "var(--muted)" }}>Additional email</span>
-              <input style={{ flex: 1, textAlign: "left", padding: "4px 8px", border: "1px solid var(--line)", borderRadius: 6, fontSize: 13, background: "#fff", color: "var(--ink)", fontWeight: 500, outline: "none" }}
+              <input style={{ flex: 1, textAlign: "left", padding: "4px 8px", border: "1px solid var(--line)", borderRadius: 6, fontSize: 13, background: "var(--card)", color: "var(--ink)", fontWeight: 500, outline: "none" }}
                 ref={eAddEmailRef} defaultValue={eAddEmail} onBlur={e => { setEAddEmail(e.target.value); syncAndAutoSaveUniversal(); }} placeholder="—" />
             </div>
             {/* Phone */}
             <div className="field" style={fieldStyle}>
               <span className="k" style={{ color: "var(--muted)" }}>Phone</span>
-              <input style={{ flex: 1, textAlign: "left", padding: "4px 8px", border: "1px solid var(--line)", borderRadius: 6, fontSize: 13, background: "#fff", color: "var(--ink)", fontWeight: 500, outline: "none", borderColor: isInvalidPhone(ePhoneRef.current?.value ?? ePhone) ? "var(--red,#e74c3c)" : undefined }}
+              <input style={{ flex: 1, textAlign: "left", padding: "4px 8px", border: "1px solid var(--line)", borderRadius: 6, fontSize: 13, background: "var(--card)", color: "var(--ink)", fontWeight: 500, outline: "none", borderColor: isInvalidPhone(ePhoneRef.current?.value ?? ePhone) ? "var(--red,var(--red))" : undefined }}
                 ref={ePhoneRef} defaultValue={ePhone} onBlur={e => { setEPhone(normalizePhone(e.target.value)); syncAndAutoSaveUniversal(); }} placeholder="—" />
             </div>
-            {isInvalidPhone(ePhoneRef.current?.value ?? ePhone) && <div style={{ color: "var(--red,#e74c3c)", fontSize: 12, marginTop: -10, marginBottom: 8 }}>Enter a valid 10-digit phone number.</div>}
+            {isInvalidPhone(ePhoneRef.current?.value ?? ePhone) && <div style={{ color: "var(--red,var(--red))", fontSize: 12, marginTop: -10, marginBottom: 8 }}>Enter a valid 10-digit phone number.</div>}
             {/* Additional phone */}
             <div className="field" style={fieldStyle}>
               <span className="k" style={{ color: "var(--muted)" }}>Additional phone</span>
-              <input style={{ flex: 1, textAlign: "left", padding: "4px 8px", border: "1px solid var(--line)", borderRadius: 6, fontSize: 13, background: "#fff", color: "var(--ink)", fontWeight: 500, outline: "none", borderColor: isInvalidPhone(eAddPhoneRef.current?.value ?? eAddPhone) ? "var(--red,#e74c3c)" : undefined }}
+              <input style={{ flex: 1, textAlign: "left", padding: "4px 8px", border: "1px solid var(--line)", borderRadius: 6, fontSize: 13, background: "var(--card)", color: "var(--ink)", fontWeight: 500, outline: "none", borderColor: isInvalidPhone(eAddPhoneRef.current?.value ?? eAddPhone) ? "var(--red,var(--red))" : undefined }}
                 ref={eAddPhoneRef} defaultValue={eAddPhone} onBlur={e => { setEAddPhone(normalizePhone(e.target.value)); syncAndAutoSaveUniversal(); }} placeholder="—" />
             </div>
-            {isInvalidPhone(eAddPhoneRef.current?.value ?? eAddPhone) && <div style={{ color: "var(--red,#e74c3c)", fontSize: 12, marginTop: -10, marginBottom: 8 }}>Enter a valid 10-digit phone number.</div>}
+            {isInvalidPhone(eAddPhoneRef.current?.value ?? eAddPhone) && <div style={{ color: "var(--red,var(--red))", fontSize: 12, marginTop: -10, marginBottom: 8 }}>Enter a valid 10-digit phone number.</div>}
 
             {/* Address */}
             <div className="field" style={fieldStyle}>
               <span className="k" style={{ color: "var(--muted)" }}>Address</span>
-              <input style={{ flex: 1, textAlign: "left", padding: "4px 8px", border: "1px solid var(--line)", borderRadius: 6, fontSize: 13, background: "#fff", color: "var(--ink)", fontWeight: 500, outline: "none" }}
+              <input style={{ flex: 1, textAlign: "left", padding: "4px 8px", border: "1px solid var(--line)", borderRadius: 6, fontSize: 13, background: "var(--card)", color: "var(--ink)", fontWeight: 500, outline: "none" }}
                 ref={eAddressRef} defaultValue={eAddress} onBlur={e => { setEAddress(e.target.value); syncAndAutoSaveUniversal(); }} placeholder="—" />
             </div>
 
@@ -3025,17 +3025,17 @@ export default function ClientSlideover({ client, open, onClose, onSave, onDelet
             <div style={{ display: "flex", gap: 10 }}>
               <div className="field" style={{ ...fieldStyle, flex: 1, minWidth: 0 }}>
                 <span className="k" style={{ color: "var(--muted)", flexShrink: 0 }}>City</span>
-                <input style={{ flex: 1, minWidth: 0, textAlign: "left", padding: "4px 8px", border: "1px solid var(--line)", borderRadius: 6, fontSize: 13, background: "#fff", color: "var(--ink)", fontWeight: 500, outline: "none" }}
+                <input style={{ flex: 1, minWidth: 0, textAlign: "left", padding: "4px 8px", border: "1px solid var(--line)", borderRadius: 6, fontSize: 13, background: "var(--card)", color: "var(--ink)", fontWeight: 500, outline: "none" }}
                   ref={eCityRef} defaultValue={eCity} onBlur={e => { setECity(e.target.value); syncAndAutoSaveUniversal(); }} placeholder="—" />
               </div>
               <div className="field" style={{ ...fieldStyle, flex: "0 0 70px" }}>
                 <span className="k" style={{ color: "var(--muted)", flexShrink: 0 }}>State</span>
-                <input style={{ width: 70, minWidth: 70, textAlign: "left", padding: "4px 8px", border: "1px solid var(--line)", borderRadius: 6, fontSize: 13, background: "#fff", color: "var(--ink)", fontWeight: 500, outline: "none" }}
+                <input style={{ width: 70, minWidth: 70, textAlign: "left", padding: "4px 8px", border: "1px solid var(--line)", borderRadius: 6, fontSize: 13, background: "var(--card)", color: "var(--ink)", fontWeight: 500, outline: "none" }}
                   ref={eStateRef} defaultValue={eState} onBlur={e => { setEState(e.target.value); syncAndAutoSaveUniversal(); }} placeholder="—" />
               </div>
               <div className="field" style={{ ...fieldStyle, flex: "0 0 120px" }}>
                 <span className="k" style={{ color: "var(--muted)", flexShrink: 0 }}>ZIP</span>
-                <input type="text" inputMode="numeric" pattern="[0-9]*" style={{ width: 120, minWidth: 120, textAlign: "left", padding: "4px 8px", border: "1px solid var(--line)", borderRadius: 6, fontSize: 13, background: "#fff", color: "var(--ink)", fontWeight: 500, outline: "none" }}
+                <input type="text" inputMode="numeric" pattern="[0-9]*" style={{ width: 120, minWidth: 120, textAlign: "left", padding: "4px 8px", border: "1px solid var(--line)", borderRadius: 6, fontSize: 13, background: "var(--card)", color: "var(--ink)", fontWeight: 500, outline: "none" }}
                   ref={eZipRef} defaultValue={String(eZip).replace(/\.0+$/, "")} onBlur={e => { setEZip(e.target.value.replace(/\D/g, "")); syncAndAutoSaveUniversal(); }} placeholder="—" />
               </div>
             </div>
@@ -3058,7 +3058,7 @@ export default function ClientSlideover({ client, open, onClose, onSave, onDelet
                   border: "1px solid var(--line)",
                   borderRadius: 6,
                   fontSize: 13,
-                  background: "#fff",
+                  background: "var(--card)",
                   color: "var(--ink)",
                   fontWeight: 500,
                   outline: "none",
@@ -3086,9 +3086,9 @@ export default function ClientSlideover({ client, open, onClose, onSave, onDelet
             <button onClick={toggleActive} style={{
               all: "unset", cursor: "pointer", fontWeight: 600, fontSize: "13.5px",
               padding: "10px 14px", borderRadius: 11,
-              background: isActive ? "var(--red-soft,#fce8e6)" : "var(--green-soft,#e6f4ea)",
-              color: isActive ? "var(--red,#c62828)" : "var(--green,#1e7e34)",
-              border: `1px solid ${isActive ? "var(--red-soft,#fce8e6)" : "var(--green-soft,#c8e6c9)"}`,
+              background: isActive ? "var(--red-soft,var(--red-soft))" : "var(--green-soft,var(--green-soft))",
+              color: isActive ? "var(--red,var(--red))" : "var(--green,var(--green))",
+              border: `1px solid ${isActive ? "var(--red-soft,var(--red-soft))" : "var(--green-soft,var(--green-soft))"}`,
             }}>
               {isActive ? "Deactivate client" : "Activate client"}
             </button>
@@ -3110,7 +3110,7 @@ export default function ClientSlideover({ client, open, onClose, onSave, onDelet
 // ── Shared styles ──
 const fieldStyle: React.CSSProperties = {
   display: "flex", justifyContent: "flex-start", gap: 14,
-  padding: "7px 0", fontSize: "13.5px", borderBottom: "1px dashed #e7e1d3",
+  padding: "7px 0", fontSize: "13.5px", borderBottom: "1px dashed var(--line2)",
 };
 const sectStyle: React.CSSProperties = {
   fontSize: 11, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase",
@@ -3122,5 +3122,5 @@ const elStyle: React.CSSProperties = {
 };
 const efStyle: React.CSSProperties = {
   width: "100%", padding: "9px 11px", border: "1px solid var(--line)", borderRadius: 9,
-  font: "inherit", fontSize: 14, background: "#fff", marginBottom: 4,
+  font: "inherit", fontSize: 14, background: "var(--card)", marginBottom: 4,
 };

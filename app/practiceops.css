@@ -3,11 +3,21 @@
    Renamed to avoid clashes with existing classes: .note (callout) -> .po-note. */
 /* ============ BASE ============ */
 *{box-sizing:border-box}
-body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--f-ui);
-  font-size:15px;line-height:1.45;-webkit-font-smoothing:antialiased;overflow-x:clip}
-h1,h2,h3,h4{margin:0;font-family:var(--f-disp);font-weight:600;letter-spacing:-.012em;text-wrap:balance}
-p{margin:0}
-button{font:inherit;color:inherit}
+/* Element defaults sit in Tailwind's base layer so a page's own utility classes
+   (e.g. a button's text colour) still win; design classes stay unlayered. */
+@layer base{
+  body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--f-ui);
+    font-size:15px;line-height:1.45;-webkit-font-smoothing:antialiased;overflow-x:clip}
+  h1,h2,h3,h4{margin:0;font-family:var(--f-disp);font-weight:600;letter-spacing:-.012em;text-wrap:balance}
+  p{margin:0}
+  button{font:inherit;color:inherit}
+  table{width:100%;border-collapse:collapse;font-size:13.5px}
+  th{text-align:left;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--faint);
+    font-weight:700;padding:12px 14px;background:var(--card2);border-bottom:1px solid var(--line);white-space:nowrap}
+  td{padding:11px 14px;border-bottom:1px solid var(--line2);vertical-align:middle}
+  tbody tr:last-child td{border-bottom:none}
+  tbody tr:hover{background:var(--card2)}
+}
 .num{font-variant-numeric:tabular-nums}
 .mono{font-family:var(--f-mono);font-variant-numeric:tabular-nums;font-size:.92em}
 :focus-visible{outline:2px solid var(--brand);outline-offset:2px;border-radius:4px}
@@ -190,12 +200,6 @@ button{font:inherit;color:inherit}
 .panel{background:var(--card);border:1px solid var(--line);border-radius:var(--r-lg);overflow:hidden;
   box-shadow:var(--shadow)}
 .scroll{overflow-x:auto}
-table{width:100%;border-collapse:collapse;font-size:13.5px}
-th{text-align:left;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--faint);
-  font-weight:700;padding:12px 14px;background:var(--card2);border-bottom:1px solid var(--line);white-space:nowrap}
-td{padding:11px 14px;border-bottom:1px solid var(--line2);vertical-align:middle}
-tbody tr:last-child td{border-bottom:none}
-tbody tr:hover{background:var(--card2)}
 th.c,td.c{text-align:center}
 th.r,td.r{text-align:right}
 .rowname{font-weight:600;cursor:pointer}

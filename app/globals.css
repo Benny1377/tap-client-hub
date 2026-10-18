@@ -72,15 +72,7 @@ html {
   -moz-osx-font-smoothing: grayscale;
 }
 
-body {
-  margin: 0;
-  padding: 0;
-  background-color: var(--paper);
-  color: var(--ink);
-  font-size: 0.9375rem;
-  line-height: 1.45;
-  font-family: "Public Sans", system-ui, -apple-system, sans-serif;
-}
+/* body, table, th and td defaults come from the PracticeOps base layer (practiceops.css). */
 
 /* ── Headings use Fraunces (demo standard) ── */
 main h1, main h2, main h3, main h4, main h5, main h6,
@@ -135,19 +127,19 @@ main a:hover {
   letter-spacing: 0.04em;
   text-transform: uppercase;
   padding: 10px 10px;
-  background: #faf7f0;
+  background: var(--card2);
   border-bottom: 1px solid var(--line);
 }
 .worklist-panel td {
   padding: 8px 10px;
-  border-bottom: 1px solid #efeade;
+  border-bottom: 1px solid var(--line2);
   vertical-align: middle;
 }
 .worklist-panel tr:last-child td {
   border-bottom: none;
 }
 .worklist-panel tbody tr:hover {
-  background: #fcfaf4;
+  background: var(--card2);
 }
 .worklist-panel .mh {
   text-align: center;
@@ -171,7 +163,7 @@ textarea {
   border-radius: 10px;
   font: inherit;
   font-size: 0.875rem;
-  background: #fff;
+  background: var(--card);
   color: var(--ink);
 
   /* Hide number input spinners for cell editing inputs */
@@ -218,30 +210,7 @@ input:focus, select:focus, textarea:focus {
 }
 .btn-secondary:hover { opacity: 0.9; }
 
-/* ── Table base (demo: #faf7f0 header bg) ── */
-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 0.84375rem;
-}
-th {
-  text-align: left;
-  font-weight: 600;
-  color: var(--muted);
-  font-size: 0.71875rem;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  padding: 13px 14px;
-  background: #faf7f0;
-  border-bottom: 1px solid var(--line);
-}
-td {
-  padding: 12px 14px;
-  border-bottom: 1px solid #efeade;
-  vertical-align: middle;
-}
-tr:last-child td { border-bottom: none; }
-tbody tr:hover { background: #fcfaf4; }
+
 
 /* ── Mobile ── */
 @media (max-width: 767px) {
@@ -253,7 +222,7 @@ tbody tr:hover { background: #fcfaf4; }
 /* ── Worklist month cells (compact: 26x26 to fit 12 months) ── */
 .mcell {
   width: 26px; height: 26px; border-radius: 6px;
-  border: 1px solid var(--line); background: #fff;
+  border: 1px solid var(--line); background: var(--card);
   cursor: pointer; font-weight: 600; font-size: 11px;
   display: flex; align-items: center; justify-content: center;
   margin: 0 auto; transition: .1s; user-select: none;
@@ -284,7 +253,7 @@ tbody tr:hover { background: #fcfaf4; }
 .wrow-u .wdiff { color: var(--red); }
 
 /* ── Slideover ── */
-.scrim { position: fixed; inset: 0; background: rgba(33,31,26,.34); opacity: 0; pointer-events: none; transition: .2s; z-index: 40; }
+.scrim { position: fixed; inset: 0; background: rgba(10,16,26,.45); opacity: 0; pointer-events: none; transition: .2s; z-index: 40; }
 .scrim.show { opacity: 1; pointer-events: auto; }
 .over { position: fixed; top: 0; right: 0; height: 100vh; width: 600px; max-width: 95vw; transform: translateX(102%); transition: .24s cubic-bezier(.4,0,.2,1); z-index: 50; display: flex; flex-direction: column; }
 .over.show { transform: translateX(0); }
@@ -305,8 +274,8 @@ tbody tr:hover { background: #fcfaf4; }
 
 /* ── Badges ── */
 .badge { font-size: 10.5px; font-weight: 700; padding: 3px 9px; border-radius: 20px; text-transform: uppercase; letter-spacing: 0.05em; }
-.b-biz { background: var(--ink); color: #fff; }
-.b-per { background: #dfe7e6; color: var(--teal-ink); }
+.b-biz { background: var(--ink); color: var(--paper); }
+.b-per { background: var(--sunk); color: var(--teal-ink); }
 
 /* ── Client name link ── */
 .lname { font-weight: 600; cursor: pointer; }
@@ -360,7 +329,7 @@ select.pick { padding: 10px 12px; border: 1px solid var(--line); border-radius: 
 .vgroup .vcount { margin-left: auto; background: var(--teal-soft); color: var(--teal-ink); font-size: 11.5px; font-weight: 700; padding: 3px 10px; border-radius: 999px; }
 
 /* ── Service toggle switch ── */
-.sw { width: 46px; height: 27px; border-radius: 20px; background: #d8d2c4; position: relative; cursor: pointer; transition: .16s; flex: 0 0 auto; }
+.sw { width: 46px; height: 27px; border-radius: 20px; background: var(--line); position: relative; cursor: pointer; transition: .16s; flex: 0 0 auto; }
 .sw::after { content: ""; position: absolute; top: 3px; left: 3px; width: 21px; height: 21px; border-radius: 50%; background: #fff; transition: .16s; box-shadow: 0 1px 3px rgba(0,0,0,.25); }
 .sw.on { background: var(--teal); }
 .sw.on::after { left: 22px; }
@@ -410,7 +379,7 @@ select.pick { padding: 10px 12px; border: 1px solid var(--line); border-radius: 
 .suphint { color: var(--muted); font-size: 13.5px; margin: 5px 0 14px; line-height: 1.5; }
 .shot-note { display: flex; gap: 10px; background: var(--amber-soft); border: 1px solid #e8d3a6; color: #7a5210; border-radius: 12px; padding: 12px 14px; font-size: 13px; line-height: 1.5; margin-bottom: 16px; }
 .supmain .sl { display: block; font-size: 11.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); margin: 14px 0 5px; }
-.urgrow { display: flex; align-items: center; gap: 9px; font-size: 13.5px; cursor: pointer; background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 11px 13px; margin: 14px 0 2px; }
+.urgrow { display: flex; align-items: center; gap: 9px; font-size: 13.5px; cursor: pointer; background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 11px 13px; margin: 14px 0 2px; }
 .urgrow input { width: auto !important; margin: 0; }
 .subjbox { margin-top: 16px; background: #f3f6fc; border: 1px dashed #c3cde6; border-radius: 11px; padding: 11px 14px; }
 .subjbox span { font-size: 10.5px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
@@ -437,7 +406,7 @@ select.pick { padding: 10px 12px; border: 1px solid var(--line); border-radius: 
 .tw-timer { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 16px; background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 18px 20px; margin-bottom: 18px; }
 .tw-timer .fld { display: flex; flex-direction: column; gap: 6px; }
 .tw-timer label { font-size: 11px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); }
-.tw-timer select { padding: 9px 11px; border: 1px solid var(--line); border-radius: 9px; font: inherit; font-size: 14px; background: #fff; min-width: 150px; }
+.tw-timer select { padding: 9px 11px; border: 1px solid var(--line); border-radius: 9px; font: inherit; font-size: 14px; background: var(--card); min-width: 150px; }
 .tw-clock { font-variant-numeric: tabular-nums; font-size: 40px; font-weight: 800; color: var(--muted); letter-spacing: 1px; min-width: 182px; line-height: 1; }
 .tw-clock.run { color: var(--green); }
 .tw-go { all: unset; cursor: pointer; background: var(--green); color: #fff; padding: 13px 24px; border-radius: 12px; font-weight: 700; font-size: 15px; }
@@ -468,7 +437,7 @@ select.pick { padding: 10px 12px; border: 1px solid var(--line); border-radius: 
 .svctop { display: flex !important; align-items: center; gap: 10px; padding: 11px 13px; margin: 0 !important; cursor: pointer; font-size: 14px; font-weight: 600; color: var(--ink); text-transform: none; letter-spacing: 0; }
 .svctop input { width: auto !important; }
 .svcic { font-size: 16px; }
-.svcsub { max-height: 0; opacity: 0; padding: 0 13px; transition: .18s; background: #faf7f0; overflow: hidden; }
+.svcsub { max-height: 0; opacity: 0; padding: 0 13px; transition: .18s; background: var(--card2); overflow: hidden; }
 .svcsub.open { max-height: 200px; opacity: 1; padding: 6px 13px 13px; border-top: 1px solid var(--line); }
 
 /* ── Module detail tag ── */
@@ -509,11 +478,11 @@ select.pick { padding: 10px 12px; border: 1px solid var(--line); border-radius: 
 .sect2 { font-family: "Fraunces", Georgia, serif; font-weight: 600; font-size: 18px; margin: 26px 0 10px; }
 
 /* ── Workload bar row ── */
-.wrow { display: grid; grid-template-columns: 170px 1fr 120px; align-items: center; gap: 14px; padding: 10px 0; border-bottom: 1px solid #efeade; }
+.wrow { display: grid; grid-template-columns: 170px 1fr 120px; align-items: center; gap: 14px; padding: 10px 0; border-bottom: 1px solid var(--line2); }
 .wrow:last-child { border-bottom: none; }
 .wname { font-weight: 600; font-size: 14px; line-height: 1.25; }
 .wname .wsub { display: block; font-weight: 500; font-size: 11.5px; color: var(--muted); margin-top: 2px; }
-.wtrack { display: flex; height: 22px; border-radius: 7px; overflow: hidden; background: #efeade; }
+.wtrack { display: flex; height: 22px; border-radius: 7px; overflow: hidden; background: var(--line2); }
 .wseg { height: 100%; transition: width .5s cubic-bezier(.4,0,.2,1); }
 .wload { text-align: right; }
 .wload b { font-family: "Fraunces", Georgia, serif; font-size: 19px; }
@@ -521,7 +490,7 @@ select.pick { padding: 10px 12px; border: 1px solid var(--line); border-radius: 
 
 /* ── Role picker ── */
 .rolepick { display: flex; align-items: center; gap: 8px; }
-.rolepick select { appearance: none; border: 1px solid var(--line); border-radius: 10px; padding: 9px 30px 9px 12px; background: #fff; font: inherit; font-size: 13px; color: var(--ink); cursor: pointer; }
+.rolepick select { appearance: none; border: 1px solid var(--line); border-radius: 10px; padding: 9px 30px 9px 12px; background: var(--card); font: inherit; font-size: 13px; color: var(--ink); cursor: pointer; }
 
 /* ── Secure Web Door banner ── */
 .doorbar { display: flex; align-items: center; gap: 11px; background: var(--amber-soft); border: 1px solid #e8d3a6; color: #6b4a12; border-radius: 13px; padding: 11px 15px; margin-bottom: 16px; font-size: 13px; line-height: 1.45; }
@@ -655,7 +624,7 @@ select.pick { padding: 10px 12px; border: 1px solid var(--line); border-radius: 
 .bc-item .grow { flex: 1 1 260px; min-width: 0; }
 
 .bc-btn { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--navy); background: var(--navy); color: #fff; border-radius: 8px; padding: 8px 14px; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
-.bc-btn.quiet { background: #fff; color: var(--navy); border-color: #cdd6ec; }
+.bc-btn.quiet { background: var(--card); color: var(--navy); border-color: var(--brand-line); }
 .bc-btn:disabled { opacity: .55; cursor: default; }
 .bc-pager { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 12px; font-size: 12.5px; color: var(--muted); }
 
@@ -669,7 +638,7 @@ select.pick { padding: 10px 12px; border: 1px solid var(--line); border-radius: 
 .bc-inline { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .bc-in { background: var(--paper); color: var(--ink); border: 1px solid var(--line); border-radius: 8px; padding: 9px 11px; font-family: inherit; font-size: 13.5px; width: 100%; min-width: 0; }
 .bc-in.sm { width: 84px; }
-.bc-in:focus { outline: none; border-color: var(--navy); background: #fff; }
+.bc-in:focus { outline: none; border-color: var(--navy); background: var(--card); }
 .bc-in:disabled { opacity: .7; }
 textarea.bc-in { min-height: 150px; line-height: 1.6; resize: vertical; }
 .bc-when { font-size: 11.5px; color: var(--muted); }
@@ -680,7 +649,7 @@ textarea.bc-in { min-height: 150px; line-height: 1.6; resize: vertical; }
 .bc-note { font-size: 11.5px; color: var(--faint); margin-top: 8px; line-height: 1.4; }
 .bc-tog { display: flex; align-items: center; gap: 9px; font-size: 13.5px; color: var(--ink); margin: 11px 0; cursor: pointer; }
 .bc-tog input { width: 16px; height: 16px; accent-color: var(--navy); }
-.bc-chip { font-weight: 600; font-size: 11px; background: var(--navy-soft); border: 1px solid #cdd6ec; border-radius: 5px; padding: 2px 7px; margin: 0 3px; color: var(--navy); white-space: nowrap; }
+.bc-chip { font-weight: 600; font-size: 11px; background: var(--navy-soft); border: 1px solid var(--brand-line); border-radius: 5px; padding: 2px 7px; margin: 0 3px; color: var(--navy); white-space: nowrap; }
 .bc-savebar { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; position: sticky; bottom: 0; background: var(--paper); padding: 12px 0; border-top: 1px solid var(--line); }
 
 .bc-exlist { background: var(--card); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; box-shadow: var(--shadow); }
