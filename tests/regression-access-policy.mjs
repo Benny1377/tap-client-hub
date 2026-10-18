@@ -67,8 +67,13 @@ assert.match(layout, /accessLoading/);
 assert.match(layout, /fetch\("\/api\/me"/);
 assert.match(layout, /canAccessPathname\(role, userModules, pathname\)/);
 assert.match(layout, /router\.replace\(firstAllowedRoute/);
-assert.match(layout, /router\.push\(item\.href\)/);
-assert.match(layout, /Loading navigation/);
+assert.match(read("components/practiceops/ops-rail.tsx"), /router\.push\(item\.href\)/, "the Operations rail navigates by item href");
+assert.match(layout, /Loading page access/);
+// PracticeOps shell: the launch pad is open to every signed-in user; Clients moved to /clients and still needs the Clients module.
+assert.equal(policy.canAccessPathname("staff", [], "/"), true);
+assert.equal(policy.canAccessPathname("staff", [], "/clients"), false);
+assert.equal(policy.canAccessPathname("staff", ["Clients"], "/clients"), true);
+assert.equal(policy.firstAllowedRoute("staff", ["Clients"]), "/clients");
 assert.doesNotMatch(layout, /useState\(\(\) =>[\s\S]{0,500}tap_demo_role/);
 
 const meRoute = read("app/api/me/route.ts");

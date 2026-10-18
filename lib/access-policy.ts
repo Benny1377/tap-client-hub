@@ -1,7 +1,7 @@
 export type CanonicalRole = "owner" | "admin" | "manager" | "staff" | "offshore";
 
 export const MODULE_ROUTES: Record<string, string> = {
-  "Clients": "/",
+  "Clients": "/clients",
   "Workload": "/workload",
   "Timesheet": "/time",
   "Financials": "/fin",
@@ -96,7 +96,8 @@ export function moduleForPathname(pathname: string): string | null {
 }
 
 export function isPublicOrSelfServicePath(pathname: string) {
-  return pathname === "/settings" || pathname.startsWith("/login") || pathname.startsWith("/auth");
+  // "/" is the PracticeOps launch pad; it shows no module data, so every signed-in user may open it.
+  return pathname === "/" || pathname === "/settings" || pathname.startsWith("/login") || pathname.startsWith("/auth");
 }
 
 export function canAccessPathname(role: unknown, modules: unknown, pathname: string) {

@@ -14,12 +14,12 @@ const labelStyle: CSSProperties = { display: "block", fontSize: 10, fontWeight: 
 // Border longhands only: mixing `border` with an error `borderColor` breaks React re-renders.
 const inputStyle: CSSProperties = { width: "100%", borderWidth: 1, borderStyle: "solid", borderColor: "var(--line)", borderRadius: 8, padding: "9px 11px", fontSize: 13.5, fontFamily: "inherit", background: "var(--paper)", color: "var(--ink)", minWidth: 0 };
 export const buttonStyle: CSSProperties = { border: "1px solid var(--navy)", background: "var(--navy)", color: "#fff", borderRadius: 8, padding: "8px 14px", fontSize: 13, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" };
-export const quietButtonStyle: CSSProperties = { ...buttonStyle, background: "#fff", color: "var(--navy)", borderColor: "#cdd6ec" };
+export const quietButtonStyle: CSSProperties = { ...buttonStyle, background: "var(--card)", color: "var(--navy)", borderColor: "var(--brand-line)" };
 export const tableStyle: CSSProperties = { width: "100%", borderCollapse: "collapse", fontSize: 13 };
 export const cellStyle: CSSProperties = { borderBottom: "1px solid var(--line2)", padding: "10px 8px", textAlign: "left", verticalAlign: "top" };
 
 export function ErrorBanner({ kind, message, code }: { kind: ApiErrorKind; message: string; code?: string }) {
-  const tone = kind === "forbidden" || kind === "unauthorized" ? { background: "var(--amber-soft)", color: "#7a5210" } : { background: "var(--red-soft)", color: "var(--red)" };
+  const tone = kind === "forbidden" || kind === "unauthorized" ? { background: "var(--amber-soft)", color: "var(--amber)" } : { background: "var(--red-soft)", color: "var(--red)" };
   const { headline, detail } = friendlyError(kind, code, message);
   return (
     <div role="alert" data-error-kind={kind} data-error-code={code || undefined} style={{ ...tone, borderRadius: 10, padding: "10px 12px", fontSize: 13, margin: "8px 0" }}>
