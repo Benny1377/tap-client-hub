@@ -66,7 +66,7 @@ export function WorklistSummary({ worklist, minimumBalance = null }: { worklist:
   return (
     <div>
       <div className="bc-source">
-        Reading every issued invoice in <b>TAP Hub Billing</b>, less the payments allocated to it, plus invoices from approved
+        Reading every issued invoice in <b>TAP Hub Billing</b>, less the payments allocated to it, plus invoices from approved{" "}
         <b>A/R reports</b>. An A/R report is a dated snapshot: if it disagrees with Billing, that invoice waits for review. Ages count
         from each due date. <b>As of {worklist.as_of_date} (firm date).</b>
       </div>
