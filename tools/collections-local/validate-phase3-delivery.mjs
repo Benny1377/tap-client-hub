@@ -129,9 +129,10 @@ record("D6", "repeat runs never send the same invoice stage twice", run3.status 
 
 // Phase 4: an approved A/R report says LOCAL-002's balance differs from Billing and nobody
 // has resolved it. With the hold released, the runner must still not send it.
-const ownerId = sql("select id from tap_hub_project.profiles where role = 'owner' order by created_at limit 1");
-sql(`with b as (insert into tap_hub_project.collection_import_batches (file_sha256, storage_path, original_filename, content_type, file_size_bytes, report_type, source_as_of, status, uploaded_by)
-      values (repeat('d', 64), 'synthetic/delivery-check.pdf', 'delivery-check.pdf', 'application/pdf', 100, 'aging_detail', tap_hub_project.collections_firm_today() - 1, 'approved', '${ownerId}') returning id),
+const ownerId = sql("select id from tap_hub_project.profiles where role = 'owner' order by id limit 1");
+const adminId = sql("select id from tap_hub_project.profiles where role = 'admin' order by id limit 1");
+sql(`with b as (insert into tap_hub_project.collection_import_batches (file_sha256, storage_path, original_filename, content_type, file_size_bytes, report_type, source_as_of, status, uploaded_by, approved_by, approved_at)
+      values (repeat('d', 64), 'synthetic/delivery-check.pdf', 'delivery-check.pdf', 'application/pdf', 100, 'aging_detail', tap_hub_project.collections_firm_today() - 1, 'approved', '${ownerId}', '${adminId}', now()) returning id),
   s as (insert into tap_hub_project.collection_source_invoice_identities (client_id, linked_invoice_id, canonical_collection_identity, selected_source)
       values ('${C2}', '${I2}', 'billing:${I2}', 'billing') returning source_invoice_id)
   insert into tap_hub_project.collection_import_invoices (source_invoice_id, batch_id, invoice_number, customer_name, open_balance, source_as_of, source_row_key, review_status, discrepancy_status)
