@@ -79,7 +79,7 @@ export function ImportsPanel({ api, viewer, clients, billingInvoices, onCollecti
       <section className="bc-card" aria-label="Upload an A/R report">
         <h3 className="bc-sect">A/R reports from QuickBooks</h3>
         <p className="bc-hint">
-          Upload an <b>A/R Aging detail</b> report (QuickZoom) to bring its invoices into Collections, or an <b>A/R Aging summary</b> to cross-check a detail report&rsquo;s total.
+          Upload an <b>A/R Aging detail</b> report (QuickZoom) to bring its invoices into Collections, or an <b>A/R Aging summary</b>{" "}to cross-check a detail report&rsquo;s total.
           Nothing reaches the call list until a reviewer confirms each invoice against the PDF and a different Owner/Admin approves the report.
         </p>
         <div className="bc-source" role="note">
@@ -314,7 +314,7 @@ function BatchReview({ api, batchId, viewer, clients, billingInvoices, batches, 
       ) : null}
       {batch.status === "approved" ? (
         <div className="bc-source" role="note" data-batch-approved style={{ marginTop: 16 }}>
-          <b>Approved {dateLabel(batch.approved_at)}.</b> Its invoices are on the call list under &ldquo;From A/R report&rdquo;. A later Billing payment or change to a linked invoice blocks it again until someone reviews the difference.
+          <b>Approved {dateLabel(batch.approved_at)}.</b>{" "}Its invoices are on the call list under &ldquo;From A/R report&rdquo;. A later Billing payment or change to a linked invoice blocks it again until someone reviews the difference.
         </div>
       ) : null}
 
@@ -339,6 +339,7 @@ function BatchReview({ api, batchId, viewer, clients, billingInvoices, batches, 
 function OpenOriginal({ api, batchId }: { api: BillingApi; batchId: string }) {
   const [error, setError] = useState<Failure | null>(null);
   const [pending, setPending] = useState(false);
+  const [blockedLink, setBlockedLink] = useState<string | null>(null);
   return (
     <span>
       <button
@@ -348,16 +349,23 @@ function OpenOriginal({ api, batchId }: { api: BillingApi; batchId: string }) {
         onClick={async () => {
           setPending(true);
           setError(null);
-          // Open the tab first (inside the click) so popup blockers allow it, then point it at the link.
+          setBlockedLink(null);
+          // Open the tab inside the click so pop-up blockers allow it, then point it at the signed link.
           const tab = window.open("", "_blank");
           const result = await api.importFileUrl(batchId);
           setPending(false);
           if (result.ok === false) { tab?.close(); setError(failureOf(result)); return; }
-          if (tab) { tab.opener = null; tab.location.href = result.data.url; } else window.location.assign(result.data.url);
+          if (tab) { tab.opener = null; tab.location.href = result.data.url; }
+          else setBlockedLink(result.data.url);
         }}
       >
         {pending ? "Opening…" : "Open original PDF"}
       </button>
+      {blockedLink ? (
+        <a href={blockedLink} target="_blank" rel="noopener noreferrer" className="bc-small" data-pdf-link style={{ marginLeft: 8 }}>
+          Pop-up blocked: open the PDF (link works for 60 seconds)
+        </a>
+      ) : null}
       {error ? <ImportError error={error} /> : null}
     </span>
   );
@@ -599,7 +607,7 @@ export function ConfirmedInvoices({ invoices, clientNames, billingById }: { invo
                   </td>
                   <td>
                     <span className={`bc-pill ${invoice.discrepancy_status === "blocked" ? "red" : invoice.review_status === "approved" ? "green" : invoice.review_status === "ready" ? "navy" : "amber"}`}>
-                      {invoice.discrepancy_status === "blocked" ? "Blocked: balances differ" : invoice.discrepancy_status === "resolved" ? "Balance chosen" : invoice.review_status === "ready" ? "Ready" : invoice.review_status === "approved" ? "Approved" : invoice.review_status.replace(/_/g, " ")}
+                      {invoice.discrepancy_status === "blocked" ? "Blocked: balances differ" : invoice.discrepancy_status === "resolved" ? (invoice.identity?.selected_source === "billing" ? "Using Billing's balance" : invoice.identity?.selected_source === "pdf_import" ? "Using the report's balance" : "Balance chosen") : invoice.review_status === "ready" ? "Ready" : invoice.review_status === "approved" ? "Approved" : invoice.review_status.replace(/_/g, " ")}
                     </span>
                   </td>
                 </tr>
