@@ -65,6 +65,7 @@ Updated by: Engineer A (Phase 2 rerun on 8ba6897 and dev, Phase 3 backend integr
 | COL-DEP-11 | Collections Phase 2 | Engineer A + Engineer B | Validate Billing/Collections in non-production. | PASS on `8ba6897` (SQL, 68/68, S1 12/12, Contacts browser) and on `dev` `727ca6a` (full browser and static suites), 2026-10-17. Local harness only; no hosted database. | `docs/handoffs/2026-10-17-collections-engineer-a-status.md` |
 | COL-DEP-12 | TAP Hub repository | Project owner | Review tracked historical credential-bearing migration source and determine credential rotation/history cleanup actions before broader branch sharing. | DEFERRED OWNER SECURITY ACTION; not inspected by Engineer A; excluded from local test setup | `supabase/migrations/007_insert_credentials.sql` |
 | COL-DEP-13 | Collections Phase 2 | Engineer A + Engineer B | Incorporate local identity/Auth harness, shared stage types and server-derived progression, firm-timezone display, configurable Owner/Admin rules, and remembered primary-contact selection. | COMPLETE in `8ba6897` and `dev`; validated 2026-10-17. Hosted DB remains untouched. | `docs/handoffs/2026-10-17-collections-engineer-a-status.md` |
+| COL-DEP-14 | Collections Phase 3 | Project owner + Engineer A | Verified sender domain for Resend test sends (sender/reply-to on a business domain, per P3-D3). A Resend key is configured in the ignored local `.env.local` only; the account's one domain is unverified and the team has no domain to verify yet. | DEFERRED 2026-10-18: no domain available. Provider-backed test sending stays off (database `delivery_mode=disabled`, automation off). Rotate the Resend key before use; it was shared in a chat session. | Phase 3 contract P3-D2/P3-D3 |
 
 ## Merge queue
 
@@ -77,7 +78,7 @@ Updated by: Engineer A (Phase 2 rerun on 8ba6897 and dev, Phase 3 backend integr
 ## Next coordination event
 
 1. **Phase 2:** joint Engineer A/B review of `dev` (`727ca6a`), then project-owner approval for `dev` → `main`. Hosted migrations stay deferred until release approval.
-2. **Phase 3:** owner/operator review of the test-send configuration (provider key, verified sender/reply-to, test mailbox, allowlisted environment) and explicit approval before the first synthetic test send; then Engineer A reruns the integration with a provider-backed test run. Joint review of `codex/collections-phase3-backend-fixes` + `codex/collections-phase3-ui` before merging to `dev`.
+2. **Phase 3:** test sending is deferred until a verified sender domain exists (COL-DEP-14). When it does: owner/operator review of the test-send configuration (rotated provider key, verified sender/reply-to, test mailbox, allowlisted environment) and explicit approval before the first synthetic test send; then Engineer A reruns the integration with a provider-backed test run. Joint review of `codex/collections-phase3-backend-fixes` + `codex/collections-phase3-ui` before merging to `dev`.
 3. **Phase 4:** owner decides customer linkage (Engineer A recommends: link to a TAP Hub client before any collection action); Engineer B pins the four wire-shape items in the integration review; then Engineer A approves the freeze.
 4. **Deferred owner security actions:** COL-DEP-10 and COL-DEP-12 remain open.
 
