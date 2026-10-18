@@ -10,8 +10,11 @@ import {
   deliveryStatusLabel,
   endpointMissing,
   missingSettingLabel,
+  testRunSummary,
+  withDeliveryActionWording,
   type DeliveriesResponse,
   type DeliverySetup,
+  type DeliveryTestRunResult,
   type DeliveryStatus,
   type LastDelivery,
   type PreviewDeliveryAttempt,
@@ -119,11 +122,20 @@ export function DeliverySetupView({ result, onPause, onTestRun }: {
   );
 }
 
+/** Counts from a finished "Run test now"; history below holds each attempt's detail. */
+export function TestRunResult({ run }: { run: DeliveryTestRunResult }) {
+  return (
+    <p role="status" className="bc-hint" data-test-run-complete data-test-run-id={run.run_id}>
+      Test run finished: {testRunSummary(run)}. Delivery history is refreshing; check each attempt&rsquo;s status below.
+    </p>
+  );
+}
+
 /** Loads delivery status for Owner/Admin; other roles never call the route. */
 export function DeliverySetupPanel({ api, viewer, onTestRunComplete }: { api: BillingApi; viewer: Viewer | null; onTestRunComplete: () => void }) {
   const power = viewerIsPowerUser(viewer);
   const [result, setResult] = useState<ApiResult<DeliverySetup> | null>(null);
-  const [testRunFinished, setTestRunFinished] = useState(false);
+  const [lastRun, setLastRun] = useState<DeliveryTestRunResult | null>(null);
   const load = useCallback(() => api.deliveryStatus().then(setResult), [api]);
   useEffect(() => { if (power) void load(); }, [power, load]);
   if (!power) return <p className="bc-hint"><OwnerAdminOnly action="Email delivery settings" /></p>;
@@ -132,24 +144,26 @@ export function DeliverySetupPanel({ api, viewer, onTestRunComplete }: { api: Bi
       <DeliverySetupView
         result={result}
         onTestRun={async () => {
-          setTestRunFinished(false);
+          setLastRun(null);
           const run = await api.testRun();
           if (endpointMissing(run)) return { ok: false, status: 404, kind: "not_found", message: "Test runs are not available on this server yet." };
           if (run.ok === true) {
-            setTestRunFinished(true);
+            setLastRun(run.data);
             await load();
             onTestRunComplete();
+          } else if (run.code === "DELIVERY_NOT_READY") {
+            await load();
           }
-          return run;
+          return withDeliveryActionWording(run);
         }}
         onPause={async () => {
-          const paused = await api.pauseAutomation();
+          const paused = withDeliveryActionWording(await api.pauseAutomation());
           if (endpointMissing(paused)) return { ok: false, status: 404, kind: "not_found", message: "Pausing is not available on this server yet." };
           if (paused.ok === true) await load();
           return paused;
         }}
       />
-      {testRunFinished ? <p role="status" className="bc-hint" data-test-run-complete>Test run finished. Delivery history is refreshing; check each attempt&rsquo;s status below.</p> : null}
+      {lastRun ? <TestRunResult run={lastRun} /> : null}
     </>
   );
 }
@@ -257,8 +271,8 @@ export function DeliveryHistoryPanel({ api, viewer, invoiceOptions, stageLabels,
       onPage={(offset) => setFilters((current) => ({ ...current, offset }))}
       onRetry={async (attemptId) => {
         const retried = await api.retryDelivery(attemptId);
-        if (retried.ok === true || retried.kind === "conflict") await load();
-        return retried;
+        if (retried.ok === true || retried.kind === "conflict" || retried.code === "DELIVERY_ATTEMPT_NOT_FOUND") await load();
+        return withDeliveryActionWording(retried);
       }}
     />
   );

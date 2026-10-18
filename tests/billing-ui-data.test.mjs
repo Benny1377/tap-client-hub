@@ -530,6 +530,13 @@ await check("only accepted, queued, sending, and needs-review attempts block a n
   for (const status of ["accepted", "queued", "sending", "needs_review"]) assert.equal(delivery.attemptBlocksNewSend(attempt(status)), true, status);
   for (const status of ["suppressed", "failed"]) assert.equal(delivery.attemptBlocksNewSend(attempt(status)), false, status);
   assert.equal(delivery.attemptBlocksNewSend(null), false);
+  // Route error codes get our wording; unknown codes keep the server text.
+  for (const code of ["DELIVERY_NOT_READY", "TEST_RUN_FAILED_CLOSED", "OUTSIDE_SEND_WINDOW", "DELIVERY_NOT_RETRYABLE", "DELIVERY_RETRY_CONFLICT", "DELIVERY_ATTEMPT_NOT_FOUND"]) {
+    const worded = delivery.withDeliveryActionWording({ ok: false, status: 409, kind: "conflict", message: "server text", code });
+    assert.equal(worded.message, delivery.DELIVERY_ACTION_ERROR_LABELS[code], code);
+  }
+  assert.equal(delivery.withDeliveryActionWording({ ok: false, status: 500, kind: "server", message: "server text", code: "OTHER" }).message, "server text");
+  assert.equal(delivery.withDeliveryActionWording({ ok: true, status: 200, data: 1 }).ok, true);
 });
 
 console.log(`billing UI data checks passed (${passed})`);

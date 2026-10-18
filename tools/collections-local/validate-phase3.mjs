@@ -115,7 +115,7 @@ if (present.status) {
   const keys = Object.keys(r.json || {}).sort().join();
   record("ST1", "Owner reads the exact delivery-status shape", pass(r.status === 200 && keys === "automation_enabled,missing,mode,test_ready,test_recipient_masked"), `${r.status} keys=${keys}`);
   const masked = r.json?.test_recipient_masked;
-  record("ST2", "no secret or full mailbox is exposed", pass(!JSON.stringify(r.json).match(/key|secret|token|re_[A-Za-z0-9]/i) && (masked === null || /\*/.test(masked))), `masked=${masked}`);
+  record("ST2", "no secret or full mailbox is exposed", pass(!JSON.stringify({ ...r.json, missing: undefined }).match(/key|secret|token|re_[A-Za-z0-9]|@[^*]/i) && (masked === null || /\*/.test(masked))), `masked=${masked}`);
   record("ST3", "delivery stays disabled in the local harness", pass(r.json?.mode === "disabled" && r.json?.test_ready === false), `mode=${r.json?.mode} ready=${r.json?.test_ready} missing=${(r.json?.missing || []).join(",")}`);
   const a = await admin.call("GET", ROUTES.status[1]);
   record("ST4", "Admin reads delivery status", pass(a.status === 200), `${a.status}`);
@@ -177,7 +177,9 @@ record("WL2", "Collections staff also see last_delivery", hasLast ? pass(staffHa
 const pv = await owner.call("POST", "/api/collections/automation/preview", {});
 const actions = pv.json?.actions || [];
 const hasAttempt = actions.length > 0 && actions.every((a) => "delivery_attempt" in a);
-record("PV1", "preview actions carry delivery_attempt", hasAttempt ? pass(actions.every((a) => a.delivery_attempt === null && a.delivery_performed === false)) : "BLOCKED", hasAttempt ? `${actions.length} actions` : "field not returned yet");
+if (pv.status !== 200) record("PV1", "preview actions carry delivery_attempt", "FAIL", `${pv.status} ${pv.json?.code || ""}`);
+else if (!actions.length) record("PV1", "preview actions carry delivery_attempt", "BLOCKED", "the preview returned no actions for the fixtures");
+else record("PV1", "preview actions carry delivery_attempt", hasAttempt ? pass(actions.every((a) => a.delivery_attempt === null && a.delivery_performed === false)) : "FAIL", hasAttempt ? `${actions.length} actions` : "field not returned");
 
 // ---- Synthetic-only safeguard ------------------------------------------------------
 const marker = sql("select count(*) from information_schema.columns where table_schema = 'tap_hub_project' and table_name in ('clients', 'invoices') and column_name ilike '%synthetic%'");

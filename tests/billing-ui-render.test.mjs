@@ -697,4 +697,12 @@ check("the call list shows each invoice's last email, and the preview shows exis
   assert.match(render(h(worklistPanels.PreviewResults, { preview, onPage: () => {} })), /data-preview-attempt="queued"[^>]*>Already attempted: Waiting to send/);
 });
 
+check("a finished test run shows its counts without claiming delivery", () => {
+  const run = { run_id: "r-1", claimed: 3, accepted: 1, suppressed: 1, needs_review: 1, failed: 0, remaining: 2 };
+  const html = render(h(deliveryPanels.TestRunResult, { run }));
+  assert.match(html, /data-test-run-id="r-1"/);
+  assert.match(html, /3 picked up · 1 accepted by the email provider · 1 not sent · 1 need review · 0 failed · 2 left for the next run/);
+  assert.doesNotMatch(html, /delivered|was sent to/i);
+});
+
 console.log(`billing UI render checks passed (${passed})`);
