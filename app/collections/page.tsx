@@ -132,7 +132,7 @@ export default function CollectionsPage() {
             {(data) => <WorklistTable worklist={data} onSelectClient={selectClient} onPage={setWorklistOffset} stageLabels={stageLabels} rules={rules} firmTimezone={firmTimezone} selectedClientId={clientId} />}
           </SectionView>
         </section>
-        <p className="bc-foot" style={{ marginTop: 18 }}><b>No guessed recovery rate.</b> Every figure here comes straight from Billing; nothing is estimated.</p>
+        <p className="bc-foot" style={{ marginTop: 18 }}><b>No guessed recovery rate.</b> Every figure here comes from Billing or an approved A/R report; nothing is estimated.</p>
       </TabPanel>
 
       <TabPanel id="pipeline" active={tab}>

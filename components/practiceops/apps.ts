@@ -79,7 +79,7 @@ export const PAGE_HEADS: Record<string, [string, string]> = {
   "/vault": ["Password Vault", "Portal logins grouped by client. Bank logins are deliberately not stored here."],
   "/users": ["Users & Access", "Who can sign in, what they can open, and who they report to. Owner-controlled."],
   "/billing": ["Billing", "Invoices, payments and balances. Balances come from the server and refresh after every change."],
-  "/collections": ["Collections", "The follow-up ladder that keeps the firm from falling behind on getting paid. Balances come from Billing; nothing is sent to clients yet."],
+  "/collections": ["Collections", "The follow-up ladder that keeps the firm from falling behind on getting paid. Balances come from Billing and approved A/R reports; nothing is sent to clients yet."],
   "/support": ["Help & Support", "Raise a ticket from inside the system so it arrives with the context already attached — who you are, where you were, and what the system was doing."],
   "/support/inbox": ["Support Inbox", "Firm-wide support tickets, grouped by application."],
   "/settings": ["Settings", "Your account details, password, and security settings."],

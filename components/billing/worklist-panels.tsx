@@ -66,8 +66,9 @@ export function WorklistSummary({ worklist, minimumBalance = null }: { worklist:
   return (
     <div>
       <div className="bc-source">
-        Reading every issued invoice in <b>TAP Hub Billing</b>, less the payments allocated to it, so Collections always works the
-        current balance, never a stale report. Ages count from each due date. <b>As of {worklist.as_of_date} (firm date).</b>
+        Reading every issued invoice in <b>TAP Hub Billing</b>, less the payments allocated to it, plus invoices from approved
+        <b>A/R reports</b>. An A/R report is a dated snapshot: if it disagrees with Billing, that invoice waits for review. Ages count
+        from each due date. <b>As of {worklist.as_of_date} (firm date).</b>
       </div>
       <div className="bc-tiles">
         <Tile testId="net" label="Net AR outstanding" value={formatMoney(summary.net_ar_estimate)} tone="red" detail={`${summary.owing_accounts} account${summary.owing_accounts === 1 ? "" : "s"} still owe`} />
