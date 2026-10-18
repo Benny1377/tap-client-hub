@@ -41,7 +41,11 @@ export type CollectionsDeliveryReasonCode =
   | "PROVIDER_TEMPORARY_FAILURE"
   | "PROVIDER_REJECTED"
   | "PROVIDER_OUTCOME_UNKNOWN"
-  | "ATTEMPT_LIMIT_REACHED";
+  | "PROVIDER_PAYLOAD_CHANGED"
+  | "ATTEMPT_LIMIT_REACHED"
+  | "STAGE_NOT_DUE"
+  | "INVOICE_NOT_ELIGIBLE"
+  | "OUTSIDE_SEND_WINDOW";
 
 export type CollectionsDeliveryAttemptRef = {
   attempt_id: string;

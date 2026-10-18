@@ -47,6 +47,9 @@ export const DELIVERY_REASON_LABELS: Record<CollectionsDeliveryReasonCode, strin
   RULE_DISABLED: "This reminder stage is turned off.",
   APPROVAL_REQUIRED: "Owner/Admin approval is required.",
   ATTEMPT_ALREADY_EXISTS: "This invoice stage already has an attempt.",
+  STAGE_NOT_DUE: "This reminder stage is not due yet.",
+  INVOICE_NOT_ELIGIBLE: "This invoice is not open and eligible for collection.",
+  OUTSIDE_SEND_WINDOW: "Outside the firm's configured send window.",
   DELIVERY_DISABLED: "Email delivery is disabled.",
   PROVIDER_KEY_MISSING: "Email provider is not configured.",
   SENDER_NOT_VERIFIED: "Sender address is not verified.",
@@ -56,6 +59,7 @@ export const DELIVERY_REASON_LABELS: Record<CollectionsDeliveryReasonCode, strin
   PROVIDER_TEMPORARY_FAILURE: "Email provider temporarily failed.",
   PROVIDER_REJECTED: "Email provider rejected the request.",
   PROVIDER_OUTCOME_UNKNOWN: "Provider outcome is unknown; review before retrying.",
+  PROVIDER_PAYLOAD_CHANGED: "Message content changed since the prior attempt; review required.",
   ATTEMPT_LIMIT_REACHED: "Retry limit reached.",
 };
 
@@ -75,7 +79,7 @@ export const DELIVERY_ACTION_ERROR_LABELS: Record<string, string> = {
   DELIVERY_NOT_READY: "Test sends aren't ready yet. The list on the left shows what is still missing.",
   TEST_RUN_FAILED_CLOSED: "The test run stopped before sending anything because a safety check failed. Nothing was sent.",
   OUTSIDE_SEND_WINDOW: "It's outside the firm's sending hours, so nothing was queued. Try again during the send window.",
-  DELIVERY_NOT_RETRYABLE: "This attempt can't be retried. Only temporary provider failures with tries left can be retried.",
+  DELIVERY_NOT_RETRYABLE: "This attempt can't be retried. Only temporary provider failures with tries left, within 23 hours of the first try, can be retried.",
   DELIVERY_RETRY_CONFLICT: "This attempt changed while you were looking. The list has been refreshed.",
   DELIVERY_ATTEMPT_NOT_FOUND: "That attempt no longer exists. The list has been refreshed.",
 };

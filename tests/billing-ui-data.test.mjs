@@ -506,8 +506,12 @@ await check("every contract status, reason code, and missing setting has plain w
   assert.deepEqual(delivery.DELIVERY_STATUSES, ["queued", "sending", "accepted", "suppressed", "needs_review", "failed"]);
   assert.equal(delivery.deliveryStatusLabel("accepted"), "Accepted by email provider");
   assert.doesNotMatch(delivery.DELIVERY_STATUS_LABELS.accepted, /\bdelivered\b|\bread\b|\bsent\b/i, "acceptance never claims delivery");
-  const codes = ["ACTIVE_HOLD", "UNALLOCATED_CREDIT_REVIEW", "CONTACT_REVIEW_REQUIRED", "EMAIL_CONTACT_MISSING", "BELOW_MINIMUM_BALANCE", "RULE_DISABLED", "APPROVAL_REQUIRED", "ATTEMPT_ALREADY_EXISTS", "DELIVERY_DISABLED", "PROVIDER_KEY_MISSING", "SENDER_NOT_VERIFIED", "TEST_RECIPIENT_MISSING", "SYNTHETIC_DATA_REQUIRED", "PROVIDER_RATE_LIMITED", "PROVIDER_TEMPORARY_FAILURE", "PROVIDER_REJECTED", "PROVIDER_OUTCOME_UNKNOWN", "ATTEMPT_LIMIT_REACHED"];
+  const codes = ["ACTIVE_HOLD", "UNALLOCATED_CREDIT_REVIEW", "CONTACT_REVIEW_REQUIRED", "EMAIL_CONTACT_MISSING", "BELOW_MINIMUM_BALANCE", "RULE_DISABLED", "APPROVAL_REQUIRED", "ATTEMPT_ALREADY_EXISTS", "DELIVERY_DISABLED", "PROVIDER_KEY_MISSING", "SENDER_NOT_VERIFIED", "TEST_RECIPIENT_MISSING", "SYNTHETIC_DATA_REQUIRED", "PROVIDER_RATE_LIMITED", "PROVIDER_TEMPORARY_FAILURE", "PROVIDER_REJECTED", "PROVIDER_OUTCOME_UNKNOWN", "ATTEMPT_LIMIT_REACHED",
+    // Addendum 2b1fce4
+    "STAGE_NOT_DUE", "INVOICE_NOT_ELIGIBLE", "OUTSIDE_SEND_WINDOW", "PROVIDER_PAYLOAD_CHANGED"];
   assert.deepEqual(Object.keys(delivery.DELIVERY_REASON_LABELS).sort(), [...codes].sort());
+  assert.equal(delivery.deliveryReasonLabel("OUTSIDE_SEND_WINDOW"), "Outside the firm's configured send window.");
+  assert.notEqual(delivery.DELIVERY_REASON_LABELS.OUTSIDE_SEND_WINDOW, delivery.DELIVERY_REASON_LABELS.RULE_DISABLED, "a closed window is not a disabled rule");
   for (const code of ["DELIVERY_DISABLED", "AUTOMATION_PAUSED", "PROVIDER_KEY_MISSING", "SENDER_NOT_VERIFIED", "REPLY_TO_MISSING", "TEST_RECIPIENT_MISSING", "ENVIRONMENT_NOT_ALLOWLISTED"]) {
     assert.notEqual(delivery.missingSettingLabel(code), code, `${code} has wording`);
   }
