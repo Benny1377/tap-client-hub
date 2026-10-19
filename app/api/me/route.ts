@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { resolveAccessIdentity } from "@/lib/access-server";
+import { resolveAccessSession } from "@/lib/access-server";
 import { authContext, authRequestId } from "@/lib/auth-debug";
 
 export const dynamic = "force-dynamic";
@@ -10,7 +10,10 @@ export async function GET(request: Request) {
   const context = authContext(requestId);
   const startedAt = Date.now();
   try {
-    const identity = await resolveAccessIdentity();
+    const { identity, twoFactorPending } = await resolveAccessSession();
+    if (identity && twoFactorPending) {
+      return NextResponse.json({ error: "Two-factor verification required", code: "TWO_FACTOR_REQUIRED", twoFactorRequired: true, requestId }, { status: 401, headers: { "x-auth-request-id": requestId } });
+    }
     if (!identity) {
       console.warn("[auth.me] unauthorized", { ...context, elapsedMs: Date.now() - startedAt });
       return NextResponse.json({ error: "Unauthorized", role: "staff", modules: [], canManageUsers: false, requestId }, { status: 401, headers: { "x-auth-request-id": requestId } });

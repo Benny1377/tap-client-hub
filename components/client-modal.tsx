@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { Client, ServiceKey } from "@/lib/types";
-import { SERVICE_META, STAFF } from "@/lib/data";
+import { SERVICE_META } from "@/lib/data";
 import { calculatePayrollStartDate } from "@/lib/payroll-schedule";
 
 interface ClientModalProps {
@@ -12,7 +12,28 @@ interface ClientModalProps {
   onSave: (client: Client | Omit<Client, "id" | "cid">) => Promise<void> | void;
 }
 
-const STAFF_NAMES = [...STAFF.map(s => s.name), "Unassigned"];
+/**
+ * Active staff for the "Assigned to" choices, from the profile directory (the same
+ * source the client panel uses). The value is the profile's full name, which is
+ * what /api/clients matches on.
+ */
+function useStaffNames(): string[] {
+  const [names, setNames] = useState<string[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/profile-directory")
+      .then(r => (r.ok ? r.json() : []))
+      .then((data: unknown) => {
+        if (cancelled || !Array.isArray(data)) return;
+        setNames(data
+          .filter((u: { status?: string; name?: string }) => u.status === "Active" && u.name)
+          .map((u: { name: string }) => u.name));
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+  return [...names, "Unassigned"];
+}
 
 // ── Phone normalization helper ──
 function normalizePhone(value: string): string {
@@ -33,6 +54,7 @@ function isInvalidPhone(value: string): boolean {
 const FILING_TYPES = ["C Corp.", "S Corp.", "Partnership", "SMLLC", "Personal", "Trust", "Non Profit", "Retirem Plan"];
 
 export default function ClientModal({ open, client, onClose, onSave }: ClientModalProps) {
+  const staffNames = useStaffNames();
   const isEdit = !!client;
 
   const [previewCid] = useState(() => "TP|BS|" + String(Math.floor(1000 + Math.random() * 9000)).padStart(4, "0"));
@@ -361,7 +383,7 @@ export default function ClientModal({ open, client, onClose, onSave }: ClientMod
             )}
             <label style={{ ...labelStyle, marginTop: 8 }}>Assigned to</label>
             <select style={inputStyle} value={finAssigned} onChange={e => setFinAssigned(e.target.value)}>
-              {STAFF_NAMES.map(s => <option key={s} value={s}>{s}</option>)}
+              {staffNames.map(s => <option key={s} value={s}>{s}</option>)}
             </select>
           </ServiceCard>
 
@@ -477,7 +499,7 @@ export default function ClientModal({ open, client, onClose, onSave }: ClientMod
             </div>
             <label style={{ ...labelStyle, marginTop: 8 }}>Assigned to</label>
             <select style={inputStyle} value={prAssigned} onChange={e => setPrAssigned(e.target.value)}>
-              {STAFF_NAMES.map(s => <option key={s} value={s}>{s}</option>)}
+              {staffNames.map(s => <option key={s} value={s}>{s}</option>)}
             </select>
           </ServiceCard>
 
@@ -532,7 +554,7 @@ export default function ClientModal({ open, client, onClose, onSave }: ClientMod
                     <select style={{ width: "100%", padding: "7px 9px", border: "1px solid var(--line)", borderRadius: 7, fontSize: 13 }}
                       value={newStxAssigned} onChange={e => setNewStxAssigned(e.target.value)}>
                       <option value="">—</option>
-                      {STAFF_NAMES.map(s => <option key={s} value={s}>{s}</option>)}
+                      {staffNames.map(s => <option key={s} value={s}>{s}</option>)}
                     </select>
                   </div>
                 </div>
@@ -596,7 +618,7 @@ export default function ClientModal({ open, client, onClose, onSave }: ClientMod
             </div>
             <label style={{ ...labelStyle, marginTop: 8 }}>Assigned to</label>
             <select style={inputStyle} value={t9Assigned} onChange={e => setT9Assigned(e.target.value)}>
-              {STAFF_NAMES.map(s => <option key={s} value={s}>{s}</option>)}
+              {staffNames.map(s => <option key={s} value={s}>{s}</option>)}
             </select>
           </ServiceCard>
 
@@ -641,7 +663,7 @@ export default function ClientModal({ open, client, onClose, onSave }: ClientMod
                 </div>
                 <input style={inputStyle} value={newRenewalIds} onChange={e => setNewRenewalIds(e.target.value)} placeholder="IDs (e.g. EIN, state IDs)" />
                 <select style={inputStyle} value={newRenewalAssigned} onChange={e => setNewRenewalAssigned(e.target.value)}>
-                  {STAFF_NAMES.map(s => <option key={s} value={s}>{s}</option>)}
+                  {staffNames.map(s => <option key={s} value={s}>{s}</option>)}
                 </select>
                 <div style={{ display: "flex", gap: 8 }}>
                   <button onClick={() => setAddingRenewal(false)}
@@ -675,7 +697,7 @@ export default function ClientModal({ open, client, onClose, onSave }: ClientMod
             </select>
             <label style={{ ...labelStyle, marginTop: 8 }}>Assigned to</label>
             <select style={inputStyle} value={taxAssigned} onChange={e => setTaxAssigned(e.target.value)}>
-              {STAFF_NAMES.map(s => <option key={s} value={s}>{s}</option>)}
+              {staffNames.map(s => <option key={s} value={s}>{s}</option>)}
             </select>
             <div className="two" style={{ display: "flex", gap: 12 }}>
               <div style={{ flex: 1 }}>

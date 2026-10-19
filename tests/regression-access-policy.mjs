@@ -79,7 +79,9 @@ assert.doesNotMatch(layout, /useState\(\(\) =>[\s\S]{0,500}tap_demo_role/);
 assert.doesNotMatch(layout, /Viewing as|tap_demo_role=\$\{/, "no client-side role switcher");
 
 const meRoute = read("app/api/me/route.ts");
-assert.match(meRoute, /resolveAccessIdentity/);
+// /api/me reads the session state so it can say when the 2FA code is still due.
+assert.match(meRoute, /resolveAccessSession\(\)/);
+assert.match(meRoute, /twoFactorRequired: true/);
 assert.match(meRoute, /status: 401/);
 
 for (const route of [
@@ -115,7 +117,10 @@ const demoLoginRoute = read("app/api/demo-login/route.ts");
 assert.match(demoLoginRoute, /status: 410/);
 assert.doesNotMatch(demoLoginRoute, /TapHub2026|createDemoSession/);
 const loginPage = read("app/login/page.tsx");
-assert.doesNotMatch(loginPage, /api\/demo-login/);
+// The login page never uses the retired demo sign-in (POST); leaving the code screen
+// signs out through the logout endpoint (DELETE).
+assert.doesNotMatch(loginPage, /api\/demo-login", \{ method: "POST"/);
+assert.match(loginPage, /api\/demo-login", \{ method: "DELETE"/);
 assert.doesNotMatch(loginPage, /TapHub2026|TapHub2024|MaxHub2025/);
 const proxy = read("proxy.ts");
 assert.doesNotMatch(proxy, /tap_demo_session|tap_demo_user/);
@@ -126,7 +131,8 @@ assert.doesNotMatch(legacyAuth, /tap_demo_user/);
 assert.doesNotMatch(legacyAuth, /tap_demo_email/);
 
 const twoFactorStatus = read("app/api/2fa/status/route.ts");
-assert.match(twoFactorStatus, /resolveAccessIdentity/);
+// Asked between the password and code steps, so it reads the half-signed-in state.
+assert.match(twoFactorStatus, /resolveAccessSession\(\)/);
 assert.match(twoFactorStatus, /status: 401/);
 assert.doesNotMatch(twoFactorStatus, /tap_demo_user/);
 assert.doesNotMatch(twoFactorStatus, /tap_demo_email/);

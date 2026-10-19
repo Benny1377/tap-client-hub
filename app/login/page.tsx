@@ -4,6 +4,7 @@ import { Suspense, useState, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
 import { PageSkeleton } from "@/components/loading-skeleton";
+import { safeNextPath } from "@/lib/safe-next";
 
 function LoginContent() {
   const [email, setEmail] = useState("");
@@ -29,7 +30,37 @@ function LoginContent() {
 
   const router = useRouter();
   const searchParams = useSearchParams();
-  const next = searchParams.get("next") || "/";
+  const next = safeNextPath(searchParams.get("next"));
+  const resumeTwoFactor = searchParams.get("step") === "2fa";
+
+  // The session passed the password step earlier but not the code (for example the
+  // tab was reloaded): show the code screen and send a code, once.
+  useEffect(() => {
+    if (!resumeTwoFactor) return;
+    let cancelled = false;
+    fetch("/api/2fa/status", { cache: "no-store" })
+      .then(r => r.json())
+      .then(status => {
+        if (cancelled) return;
+        if (!status?.authenticated) { router.replace("/login"); return; }
+        if (status.verified) { router.replace(next); return; }
+        setStep("2fa");
+        setTwoFAMessage("Sending verification code...");
+        fetch("/api/2fa/challenge", { method: "POST" })
+          .then(r => r.json())
+          .then(d => { if (!cancelled) setTwoFAMessage(d.message || "Check your email for the code"); })
+          .catch(() => { if (!cancelled) setTwoFAMessage("Enter the code from your email"); });
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [resumeTwoFactor, next, router]);
+
+  // Leaving the code screen ends the half-signed-in session, so the password is asked again.
+  async function backToSignIn() {
+    setStep("login"); setError(null); setTwoFACode(""); setTwoFAMessage("");
+    await fetch("/api/demo-login", { method: "DELETE", credentials: "include" }).catch(() => {});
+    if (resumeTwoFactor) router.replace("/login");
+  }
 
 
   async function handlePasswordSubmit(e: React.FormEvent) {
@@ -37,35 +68,19 @@ function LoginContent() {
     setError(null);
     setLoading(true);
 
-    // Usernames resolve server-side to the matching internal Supabase email.
-    const identityResponse = await fetch("/api/auth/resolve-login", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ identifier: email }),
-    });
-    if (!identityResponse.ok) {
-      setError("Unable to sign in. Check your username and password.");
-      setLoading(false);
-      return;
-    }
-    const { email: authEmail } = await identityResponse.json();
-
     // Authenticate server-side so the browser does not call the protected
     // Supabase hostname directly. The route sets the SSR auth cookies.
     const authResponse = await fetch("/api/auth/sign-in", {
       method: "POST",
       credentials: "include",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email: authEmail, password }),
+      // Usernames resolve to the account email on the server.
+      body: JSON.stringify({ identifier: email, password }),
     });
     const authResult = await authResponse.json().catch(() => null);
 
     if (authResponse.ok) {
-      await fetch("/api/auth/mark-password-change", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ password }),
-      });
+      await fetch("/api/auth/mark-password-change", { method: "POST" });
       // Check if 2FA is enabled for this user
       try {
         const res = await fetch("/api/2fa/status");
@@ -246,7 +261,7 @@ function LoginContent() {
 
               <button
                 type="button"
-                onClick={() => { setStep("login"); setError(null); setTwoFACode(""); setTwoFAMessage(""); document.cookie = "tap_demo_user=; path=/; max-age=0"; document.cookie = "tap_demo_email=; path=/; max-age=0"; }}
+                onClick={() => { void backToSignIn(); }}
                 className="w-full py-2 rounded-lg text-sm border border-[var(--line)] text-[var(--ink)]"
               >
                 Back to sign in

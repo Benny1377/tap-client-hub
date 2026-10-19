@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { PageSkeleton } from "@/components/loading-skeleton";
+import { MIN_PASSWORD_LENGTH } from "@/lib/password-policy";
 
 interface UserDetails {
   id: string; email: string; name: string; role: string;
@@ -15,6 +16,7 @@ export default function SettingsPage() {
   const [loading, setLoading] = useState(true);
 
   // Password change
+  const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [pwSaving, setPwSaving] = useState(false);
   const [pwError, setPwError] = useState("");
@@ -61,8 +63,12 @@ export default function SettingsPage() {
 
   // ── Password change ──
   async function handleChangePassword() {
-    if (!newPassword.trim() || newPassword.length < 6) {
-      setPwError("Password must be at least 6 characters");
+    if (!currentPassword) {
+      setPwError("Enter your current password");
+      return;
+    }
+    if (!newPassword.trim() || newPassword.length < MIN_PASSWORD_LENGTH) {
+      setPwError(`Password must be at least ${MIN_PASSWORD_LENGTH} characters`);
       return;
     }
     setPwSaving(true); setPwError(""); setPwSuccess("");
@@ -70,7 +76,7 @@ export default function SettingsPage() {
       const res = await fetch(`/api/profiles/${user!.id}/password`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ password: newPassword.trim() }),
+        body: JSON.stringify({ password: newPassword.trim(), currentPassword }),
       });
       if (!res.ok) {
         const data = await res.json();
@@ -78,6 +84,7 @@ export default function SettingsPage() {
       }
       setPwSuccess("Password updated successfully.");
       setNewPassword("");
+      setCurrentPassword("");
     } catch (err: any) {
       setPwError(err.message);
     } finally {
@@ -189,11 +196,18 @@ export default function SettingsPage() {
         <div className="panel" style={{
           background: "var(--card)", border: "1px solid var(--line)", borderRadius: 16, padding: 20,
         }}>
+          <input
+            type="password" value={currentPassword} autoComplete="current-password"
+            onChange={e => { setCurrentPassword(e.target.value); setPwError(""); setPwSuccess(""); }}
+            placeholder="Current password"
+            aria-label="Current password"
+            style={{ width: "100%", padding: "10px 13px", border: "1px solid var(--line)", borderRadius: 9, font: "inherit", fontSize: 14, background: "var(--card)", boxSizing: "border-box", marginBottom: 12 }}
+          />
           <div style={{ position: "relative", marginBottom: 12 }}>
             <input
-              type={showPassword ? "text" : "password"} value={newPassword}
+              type={showPassword ? "text" : "password"} value={newPassword} autoComplete="new-password" aria-label="New password"
               onChange={e => { setNewPassword(e.target.value); setPwError(""); setPwSuccess(""); }}
-              placeholder="New password (min 6 characters)"
+              placeholder={`New password (min ${MIN_PASSWORD_LENGTH} characters)`}
               style={{ width: "100%", padding: "10px 40px 10px 13px", border: "1px solid var(--line)", borderRadius: 9, font: "inherit", fontSize: 14, background: "var(--card)", boxSizing: "border-box" }}
             />
             <button
@@ -216,7 +230,7 @@ export default function SettingsPage() {
           {pwSuccess && <div style={{ background: "var(--green-soft)", color: "var(--green)", padding: "10px 13px", borderRadius: 9, fontSize: 13, marginBottom: 12, fontWeight: 600 }}>{pwSuccess}</div>}
           <button
             onClick={handleChangePassword}
-            disabled={pwSaving || !newPassword.trim()}
+            disabled={pwSaving || !newPassword.trim() || !currentPassword}
             style={{
               all: "unset", cursor: "pointer", background: !newPassword.trim() ? "var(--line)" : "var(--ink)", color: "#fff",
               padding: "10px 16px", borderRadius: 11, fontWeight: 600, fontSize: "13.5px",

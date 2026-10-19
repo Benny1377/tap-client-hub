@@ -5,6 +5,7 @@ import { randomUUID } from "crypto";
 import { requireClientDataEditAccess, resolveAccessIdentity } from "@/lib/access-server";
 import { isPowerUser } from "@/lib/access-policy";
 import { calculatePayrollStartDate, normalizePayDay } from "@/lib/payroll-schedule";
+import { alreadyStored, commentAuthor, storedCommentAuthors } from "@/lib/comment-authors";
 
 // ── Helper: create a Supabase client ──
 async function getSupabase() {
@@ -408,6 +409,8 @@ export async function GET(request: Request) {
 export async function PUT(request: Request) {
   const access = await requireClientDataEditAccess();
   if (access.status) return NextResponse.json({ error: access.status === 401 ? "Unauthorized" : "Forbidden" }, { status: access.status });
+  // Comments and status changes are credited to the signed-in user, never to a name the browser sends.
+  const actorName = access.identity!.name;
   try {
     const supabase = await getSupabase();
     const body = await request.json();
@@ -450,7 +453,7 @@ export async function PUT(request: Request) {
     if (active !== undefined) {
       clientUpdates.active = active;
       clientUpdates.active_updated_at = new Date().toISOString();
-      if (authorName) clientUpdates.active_updated_by = authorName;
+      if (authorName !== undefined) clientUpdates.active_updated_by = actorName;
     }
 
     if (Object.keys(clientUpdates).length > 0) {
@@ -555,19 +558,18 @@ export async function PUT(request: Request) {
         const body = cm.text || cm.body || "";
         if (!body) continue;
         const month = cm.month ?? null;
-        const author = cm.author || "";
-        // Skip if identical comment already exists
+        // Skip if this comment is already stored
         const { data: existing, error: commentLookupError } = await supabase.from("comments")
-          .select("id").eq("entity_type", "service").eq("entity_id", csId)
-          .eq("month", month).eq("body", body).eq("author_label", author);
+          .select("id, created_at, author_label").eq("entity_type", "service").eq("entity_id", csId)
+          .eq("month", month).eq("body", body);
         if (commentLookupError) throw new Error(`Comment lookup error: ${commentLookupError.message}`);
-        if (existing && existing.length > 0) continue;
+        if (alreadyStored(existing || [], cm)) continue;
         const { error: commentInsertError } = await supabase.from("comments").insert({
           entity_type: "service",
           entity_id: csId,
           month,
           body,
-          author_label: author,
+          author_label: actorName,
           created_at: cm.createdAt ? new Date(cm.createdAt).toISOString() : new Date().toISOString(),
         });
         if (commentInsertError) throw new Error(`Comment insert error: ${commentInsertError.message}`);
@@ -585,6 +587,7 @@ export async function PUT(request: Request) {
         ...(existingRows || []).map((row: any) => row.id),
         ...normalizedItems.map((item: any) => item.itemId),
       ])];
+      const priorAuthors = await storedCommentAuthors(supabase, "stx_line_item", commentEntityIds);
       if (commentEntityIds.length > 0) {
         const { error: commentDeleteErr } = await supabase.from("comments").delete()
           .eq("entity_type", "stx_line_item").in("entity_id", commentEntityIds);
@@ -619,7 +622,7 @@ export async function PUT(request: Request) {
             entity_id: itemId,
             month: cm.month ?? null,
             body,
-            author_label: cm.author || "",
+            author_label: commentAuthor(priorAuthors, itemId, cm, actorName),
             category: cm.category || "Other",
             created_at: cm.createdAt ? new Date(cm.createdAt).toISOString() : new Date().toISOString(),
           });
@@ -642,6 +645,7 @@ export async function PUT(request: Request) {
         ...(existingRows || []).map((row: any) => row.id),
         ...normalizedItems.map((item: any) => item.itemId),
       ])];
+      const priorAuthors = await storedCommentAuthors(supabase, "state_renewal_item", commentEntityIds);
       if (commentEntityIds.length > 0) {
         const { error: commentDeleteErr } = await supabase.from("comments").delete()
           .eq("entity_type", "state_renewal_item").in("entity_id", commentEntityIds);
@@ -673,7 +677,7 @@ export async function PUT(request: Request) {
           entity_id: itemId,
           month: cm.month ?? null,
           body,
-          author_label: cm.author || "",
+          author_label: commentAuthor(priorAuthors, itemId, cm, actorName),
           created_at: cm.createdAt ? new Date(cm.createdAt).toISOString() : new Date().toISOString(),
         });
         if (commentInsertErr) throw new Error(`SR comment insert error: ${commentInsertErr.message}`);
@@ -898,6 +902,8 @@ export async function POST(request: Request) {
 export async function PATCH(request: Request) {
   const access = await requireClientDataEditAccess();
   if (access.status) return NextResponse.json({ error: access.status === 401 ? "Unauthorized" : "Forbidden" }, { status: access.status });
+  // Comments and status changes are credited to the signed-in user, never to a name the browser sends.
+  const actorName = access.identity!.name;
   try {
     const supabase = await getSupabase();
     const body = await request.json();
@@ -1013,19 +1019,18 @@ export async function PATCH(request: Request) {
         const body = c.text || c.body || "";
         if (!body) continue;
         const month = c.month ?? null;
-        const author = c.author || "";
         const { data: existingComments, error: commentLookupErr } = await supabase.from("comments")
-          .select("id").eq("entity_type", "service").eq("entity_id", csId)
-          .eq("month", month).eq("body", body).eq("author_label", author);
+          .select("id, created_at, author_label").eq("entity_type", "service").eq("entity_id", csId)
+          .eq("month", month).eq("body", body);
         if (commentLookupErr) throw new Error(`Comment lookup error: ${commentLookupErr.message}`);
-        if (existingComments && existingComments.length > 0) continue;
+        if (alreadyStored(existingComments || [], c)) continue;
 
         const { error: commentInsertErr } = await supabase.from("comments").insert({
           entity_type: "service",
           entity_id: csId,
           month,
           body,
-          author_label: author,
+          author_label: actorName,
           created_at: c.createdAt ? new Date(c.createdAt).toISOString() : new Date().toISOString(),
         });
         if (commentInsertErr) throw new Error(`Comment insert error: ${commentInsertErr.message}`);
@@ -1047,6 +1052,7 @@ export async function PATCH(request: Request) {
         ...(existingRows || []).map((row: any) => row.id),
         ...normalizedItems.map((item: any) => item.itemId),
       ])];
+      const priorAuthors = await storedCommentAuthors(supabase, "stx_line_item", commentEntityIds);
       if (commentEntityIds.length > 0) {
         const { error: commentDeleteErr } = await supabase.from("comments").delete()
           .eq("entity_type", "stx_line_item").in("entity_id", commentEntityIds);
@@ -1083,7 +1089,7 @@ export async function PATCH(request: Request) {
             entity_id: itemId,
             month: cm.month ?? null,
             body,
-            author_label: cm.author || "",
+            author_label: commentAuthor(priorAuthors, itemId, cm, actorName),
             category: cm.category || "Other",
             created_at: cm.createdAt ? new Date(cm.createdAt).toISOString() : new Date().toISOString(),
           });
@@ -1104,6 +1110,7 @@ export async function PATCH(request: Request) {
         ...(existingRows || []).map((row: any) => row.id),
         ...normalizedItems.map((item: any) => item.itemId),
       ])];
+      const priorAuthors = await storedCommentAuthors(supabase, "state_renewal_item", commentEntityIds);
       if (commentEntityIds.length > 0) {
         const { error: commentDeleteErr } = await supabase.from("comments").delete()
           .eq("entity_type", "state_renewal_item").in("entity_id", commentEntityIds);
@@ -1139,7 +1146,7 @@ export async function PATCH(request: Request) {
           entity_id: itemId,
           month: cm.month ?? null,
           body,
-          author_label: cm.author || "",
+          author_label: commentAuthor(priorAuthors, itemId, cm, actorName),
           created_at: cm.createdAt ? new Date(cm.createdAt).toISOString() : new Date().toISOString(),
         });
         if (commentInsertErr) throw new Error(`SR comment insert error: ${commentInsertErr.message}`);

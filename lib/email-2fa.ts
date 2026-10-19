@@ -3,34 +3,52 @@
  * Functions accept a supabase client rather than creating their own.
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { CODE_RESEND_COOLDOWN_MS, CODE_TTL_MS, MAX_CODE_ATTEMPTS, codeMatches, newCode, parseStoredCode, storedCode } from "@/lib/two-factor";
 
 // Keep this aligned with the verified Resend sending domain.
 export const TWO_FACTOR_FROM = "TAP Hub <security@email.aifusioniqlabs.com>";
 
 /**
- * Generate a 6-digit code and store it on the user's profile.
+ * Generate a 6-digit code and store only its hash on the user's profile.
+ * A new code is refused within CODE_RESEND_COOLDOWN_MS of the last one
+ * (retryAfterSeconds is then set), so the email cannot be sent in a loop.
  */
 export async function generateAndStoreCode(
   supabase: SupabaseClient<any, any, any>,
   userId: string,
-): Promise<{ code: string; ok: boolean; error?: string }> {
-  const code = Math.floor(100000 + Math.random() * 900000).toString();
-  const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString(); // 10 min
+): Promise<{ code: string; ok: boolean; error?: string; retryAfterSeconds?: number }> {
+  const now = Date.now();
+  const { data: current } = await supabase
+    .from("profiles")
+    .select("email_2fa_code_expires_at")
+    .eq("id", userId)
+    .maybeSingle();
+  const lastExpiry = current?.email_2fa_code_expires_at ? new Date(current.email_2fa_code_expires_at).getTime() : NaN;
+  const sentAt = lastExpiry - CODE_TTL_MS;
+  if (Number.isFinite(sentAt) && now - sentAt < CODE_RESEND_COOLDOWN_MS) {
+    return { code: "", ok: false, error: "cooldown", retryAfterSeconds: Math.ceil((CODE_RESEND_COOLDOWN_MS - (now - sentAt)) / 1000) };
+  }
 
+  const code = newCode();
   const { error } = await supabase
     .from("profiles")
     .update({
-      email_2fa_code: code,
-      email_2fa_code_expires_at: expiresAt,
+      email_2fa_code: storedCode(userId, code),
+      email_2fa_code_expires_at: new Date(now + CODE_TTL_MS).toISOString(),
     })
     .eq("id", userId);
 
   if (error) {
     console.error("generateAndStoreCode error:", error.message);
-    return { code, ok: false, error: error.message };
+    return { code: "", ok: false, error: error.message };
   }
 
   return { code, ok: true };
+}
+
+/** The response for a refused resend; the message is shown on the code screen. */
+export function cooldownMessage(retryAfterSeconds = 30): string {
+  return `A code was sent a moment ago. Check your email, or wait ${retryAfterSeconds} seconds to request another.`;
 }
 
 /**
@@ -98,34 +116,44 @@ export async function sendCodeEmail(
 }
 
 /**
- * Verify a code against the stored one (within expiry).
+ * Verify a code against the stored hash (within expiry). Every guess is counted
+ * before it is compared, with a compare-and-set on the stored value, so parallel
+ * guesses cannot exceed MAX_CODE_ATTEMPTS; after that the code is discarded.
+ * Codes are never logged.
  */
 export async function verifyCode(
   supabase: SupabaseClient<any, any, any>,
   userId: string,
   code: string,
 ): Promise<boolean> {
+  const input = String(code ?? "").trim();
+  if (!/^\d{6}$/.test(input)) return false;
+
   const { data: profile } = await supabase
     .from("profiles")
     .select("email_2fa_code, email_2fa_code_expires_at")
     .eq("id", userId)
     .maybeSingle();
 
-  if (!profile?.email_2fa_code || !profile?.email_2fa_code_expires_at) {
-    console.warn("verifyCode: no code or expiry found for user", userId);
+  if (!profile?.email_2fa_code || !profile?.email_2fa_code_expires_at) return false;
+  if (new Date(profile.email_2fa_code_expires_at) < new Date()) return false;
+
+  const stored = String(profile.email_2fa_code);
+  const parsed = parseStoredCode(stored);
+  if (!parsed || parsed.attempts >= MAX_CODE_ATTEMPTS) {
+    // Unreadable (for example a pre-hash code) or used up: discard it so a new one must be requested.
+    await supabase.from("profiles").update({ email_2fa_code: null, email_2fa_code_expires_at: null }).eq("id", userId).eq("email_2fa_code", stored);
     return false;
   }
 
-  if (new Date(profile.email_2fa_code_expires_at) < new Date()) {
-    console.warn("verifyCode: code expired for user", userId);
-    return false;
-  }
+  const counted = `v1:${parsed.hash}:${parsed.attempts + 1}`;
+  const { data: claimed } = await supabase
+    .from("profiles")
+    .update({ email_2fa_code: counted })
+    .eq("id", userId)
+    .eq("email_2fa_code", stored)
+    .select("id");
+  if (!claimed || claimed.length === 0) return false;
 
-  const stored = String(profile.email_2fa_code).trim();
-  const input = String(code).trim();
-  const match = stored === input;
-  if (!match) {
-    console.warn(`verifyCode: mismatch for user ${userId} — stored="${stored}" vs input="${input}"`);
-  }
-  return match;
+  return codeMatches(userId, input, parsed.hash);
 }

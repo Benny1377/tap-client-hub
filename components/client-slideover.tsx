@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { Client, ServiceKey, CommentEntry, SalesTaxLineItem } from "@/lib/types";
-import { SERVICE_META, STAFF } from "@/lib/data";
+import { SERVICE_META } from "@/lib/data";
+import { useSession } from "@/components/practiceops/session";
 import { PAY_DAY_OPTIONS, calculatePayrollStartDate, normalizePayDay, formatPayrollStartDate } from "@/lib/payroll-schedule";
 
 // ── Utility: display stored banking references in the authorized client view ──
@@ -93,6 +94,7 @@ interface ClientSlideoverProps {
 }
 
 export default function ClientSlideover({ client, open, onClose, onSave, onDelete, onStageChange, moduleKey, currentUser, canEditClientData = true, stxLineItemFocus }: ClientSlideoverProps) {
+  const session = useSession();
   // Resolve virtual module keys to real service keys (annual_reports is now its own key)
   const resolvedKey = moduleKey === "annual_reports" ? "annual_reports" : moduleKey;
   const isWorklistTab = !!moduleKey;
@@ -587,13 +589,9 @@ export default function ClientSlideover({ client, open, onClose, onSave, onDelet
   )];
 
   // ── Helpers ──
+  // Shown until the next reload; the server stores the signed-in user as the author.
   function getAuthorName(): string {
-    if (currentUser) return currentUser;
-    if (typeof document !== "undefined") {
-      const m = document.cookie.match(/(?:^|;\s*)tap_demo_email=([^;]*)/);
-      if (m?.[1]) return decodeURIComponent(m[1]);
-    }
-    return "You";
+    return currentUser || session.userName || session.userEmail || "You";
   }
 
   function getServiceComments(svcKey: string, monthIdx: number): CommentEntry[] {

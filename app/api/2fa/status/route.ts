@@ -1,12 +1,14 @@
 import { NextResponse } from "next/server";
-import { resolveAccessIdentity } from "@/lib/access-server";
+import { resolveAccessSession } from "@/lib/access-server";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 export const dynamic = "force-dynamic";
 
 export async function GET() {
   try {
-    const identity = await resolveAccessIdentity();
+    // The login page asks this between the password and code steps, so it reports
+    // the half-signed-in state instead of treating it as signed out.
+    const { identity, twoFactorPending } = await resolveAccessSession();
     if (!identity) {
       return NextResponse.json(
         { enabled: false, authenticated: false },
@@ -25,6 +27,7 @@ export async function GET() {
     return NextResponse.json({
       enabled: profile?.email_2fa_enabled ?? false,
       authenticated: true,
+      verified: !twoFactorPending,
     });
   } catch (error) {
     console.error("2FA status error:", error);

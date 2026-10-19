@@ -49,9 +49,8 @@ class Session {
   }
   async signIn(name) {
     const { email, password } = credentials(name);
-    const resolved = await this.call("POST", "/api/auth/resolve-login", { identifier: email });
-    const signIn = await this.call("POST", "/api/auth/sign-in", { email: resolved.json?.email || email, password });
-    return { resolveStatus: resolved.status, signInStatus: signIn.status, signInError: signIn.json?.error, hasSessionCookie: [...this.jar.keys()].some((k) => /^sb-.*-auth-token/.test(k)) };
+    const signIn = await this.call("POST", "/api/auth/sign-in", { identifier: email, password });
+    return { signInStatus: signIn.status, signInError: signIn.json?.error, hasSessionCookie: [...this.jar.keys()].some((k) => /^sb-.*-auth-token/.test(k)) };
   }
 }
 

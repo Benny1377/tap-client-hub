@@ -8,7 +8,6 @@ import {
   getGroups,
   getStaffOptions,
   getStats,
-  deleteVaultEntriesByClient,
 } from "@/lib/data";
 import { useClients } from "@/hooks/use-clients-context";
 import ClientSlideover from "@/components/client-slideover";
@@ -170,9 +169,6 @@ export default function ClientsPage() {
     } catch {}
     deleteFromState(clientId);
     setSelectedClientId(null);
-    try {
-      deleteVaultEntriesByClient(clientId);
-    } catch {}
   }, [deleteFromState]);
 
   const handleModalSave = useCallback(async (data: Omit<Client, "id" | "cid">) => {

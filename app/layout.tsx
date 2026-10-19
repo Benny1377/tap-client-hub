@@ -99,7 +99,12 @@ export default function RootLayout({
     setAccessLoading(true);
     fetch("/api/me", { credentials: "include", cache: "no-store" })
       .then(async response => {
-        if (!response.ok) throw new Error("Unauthorized");
+        if (!response.ok) {
+          const body = await response.json().catch(() => null);
+          // Signed in with the password but the 2FA code is still due: back to the code screen.
+          if (body?.twoFactorRequired) throw new Error("TWO_FACTOR_REQUIRED");
+          throw new Error("Unauthorized");
+        }
         return response.json();
       })
       .then(data => {
@@ -111,9 +116,14 @@ export default function RootLayout({
         setUserEmail(String(data.email || ""));
         setAccessLoading(false);
       })
-      .catch(() => {
+      .catch((error: unknown) => {
         if (cancelled) return;
         setAccessLoading(false);
+        if (error instanceof Error && error.message === "TWO_FACTOR_REQUIRED") {
+          const here = `${window.location.pathname}${window.location.search}`;
+          router.replace(`/login?step=2fa&next=${encodeURIComponent(here)}`);
+          return;
+        }
         router.replace("/login");
       });
     return () => { cancelled = true; };

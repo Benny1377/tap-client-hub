@@ -1,8 +1,14 @@
 import { createAdminClient } from "@/lib/supabase/admin";
+import { requireClientDataEditAccess, requireClientDataReadAccess } from "@/lib/access-server";
 import { NextResponse } from "next/server";
+
+// Same access as the client worklists: reading needs a module, writing needs the
+// client-data edit permission that GET/PATCH /api/clients already require.
 
 // GET /api/work-periods?client_id=X&service_code=FIN&year=2026
 export async function GET(request: Request) {
+  const access = await requireClientDataReadAccess();
+  if (access.status) return NextResponse.json({ error: access.status === 401 ? "Unauthorized" : "Forbidden" }, { status: access.status });
   try {
     const supabase = createAdminClient();
     const { searchParams } = new URL(request.url);
@@ -86,6 +92,8 @@ export async function GET(request: Request) {
 // The snake_case fields are the established frontend contract. Camel-case aliases
 // remain accepted for compatibility with older callers.
 export async function POST(request: Request) {
+  const access = await requireClientDataEditAccess();
+  if (access.status) return NextResponse.json({ error: access.status === 401 ? "Unauthorized" : "Forbidden" }, { status: access.status });
   try {
     const supabase = createAdminClient();
     const body = await request.json();

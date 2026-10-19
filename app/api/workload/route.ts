@@ -1,4 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
+import { resolveAccessIdentity } from "@/lib/access-server";
+import { isPowerUser } from "@/lib/access-policy";
 import { NextResponse } from "next/server";
 
 const FREQ_TOUCHPOINTS: Record<string, number> = {
@@ -15,6 +17,9 @@ const CODE_TO_KEY: Record<string, string> = {
  * Returns per-staff workload summary with monthly touchpoint distribution.
  */
 export async function GET() {
+  const identity = await resolveAccessIdentity();
+  if (!identity) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!isPowerUser(identity.role) && !identity.modules.includes("Workload")) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const supabase = await createClient();
 
   const { data: dbClients, error: clientsError } = await supabase

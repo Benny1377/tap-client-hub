@@ -8,6 +8,7 @@ import { COMMENT_CATEGORIES, normalizeCommentCategory, type CommentCategory } fr
 
 import type { Client, ServiceConfig, ServiceKey, MonthStatus } from "@/lib/types";
 import { MONTHS_SHORT } from "@/lib/data";
+import { useSession } from "@/components/practiceops/session";
 import { filterWorklistKpi, type WorklistKpi } from "@/lib/worklist-kpi-filter";
 import { collectAssignmentOptions, matchesAssignmentFilter } from "@/lib/worklist-assignment-filter";
 import { exportClientCsv, serviceLabel } from "@/lib/export-csv";
@@ -288,6 +289,7 @@ export default function WorklistTable({
   onPayrollMissingRuns,
   onDataChange,
 }: WorklistTableProps) {
+  const { userName, userEmail } = useSession();
   const currentYear = new Date().getFullYear();
   const currentMonth = new Date().getMonth();
   const isHistorical = year < currentYear;
@@ -485,13 +487,8 @@ export default function WorklistTable({
   };
 
   // ── Comment helpers ──
-  const getAuthorName = (): string => {
-    if (typeof document !== "undefined") {
-      const m = document.cookie.match(/(?:^|;\s*)tap_demo_email=([^;]*)/);
-      if (m?.[1]) return decodeURIComponent(m[1]);
-    }
-    return "You";
-  };
+  // Shown until the next reload; the server stores the signed-in user as the author.
+  const getAuthorName = (): string => userName || userEmail || "You";
 
   const addComment = useCallback(async (clientId: string, monthIdx: number, text: string, stxItemId?: string, renewalItemId?: string, category: CommentCategory = "Other") => {
     if (!text.trim()) return;

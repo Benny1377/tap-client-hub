@@ -58,8 +58,7 @@ class Session {
   }
   async signIn(name) {
     const email = env[`TEST_${name}_EMAIL`];
-    const resolved = await this.call("POST", "/api/auth/resolve-login", { identifier: email });
-    const r = await this.call("POST", "/api/auth/sign-in", { email: resolved.json?.email || email, password: env[`TEST_${name}_PASSWORD`] });
+    const r = await this.call("POST", "/api/auth/sign-in", { identifier: email, password: env[`TEST_${name}_PASSWORD`] });
     if (r.status !== 200) throw new Error(`${name} could not sign in (${r.status})`);
     return this;
   }
