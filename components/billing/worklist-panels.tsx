@@ -26,7 +26,7 @@ const AGING_BANDS = [
   { key: "current", testId: "aging-current", label: "Current", color: "var(--green)" },
   { key: "days_1_30", testId: "aging-1-30", label: "1–30 days", color: "var(--blue)" },
   { key: "days_31_60", testId: "aging-31-60", label: "31–60 days", color: "var(--amber)" },
-  { key: "days_61_90", testId: "aging-61-90", label: "61–90 days", color: "#c0612b" },
+  { key: "days_61_90", testId: "aging-61-90", label: "61–90 days", color: "var(--red)" },
   { key: "days_over_90", testId: "aging-90", label: "90+ days", color: "var(--red)" },
 ] as const;
 
@@ -66,8 +66,9 @@ export function WorklistSummary({ worklist, minimumBalance = null }: { worklist:
   return (
     <div>
       <div className="bc-source">
-        Reading every issued invoice in <b>TAP Hub Billing</b>, less the payments allocated to it, so Collections always works the
-        current balance, never a stale report. Ages count from each due date. <b>As of {worklist.as_of_date} (firm date).</b>
+        Reading every issued invoice in <b>TAP Hub Billing</b>, less the payments allocated to it, plus invoices from approved{" "}
+        <b>A/R reports</b>. An A/R report is a dated snapshot: if it disagrees with Billing, that invoice waits for review. Ages count
+        from each due date. <b>As of {worklist.as_of_date} (firm date).</b>
       </div>
       <div className="bc-tiles">
         <Tile testId="net" label="Net AR outstanding" value={formatMoney(summary.net_ar_estimate)} tone="red" detail={`${summary.owing_accounts} account${summary.owing_accounts === 1 ? "" : "s"} still owe`} />
@@ -254,6 +255,17 @@ export function LadderRungs({ rules }: { rules: CollectionRule[] }) {
 // Phase 3 adds a sanitized `last_delivery` per invoice; absent until the backend ships it.
 type WorklistInvoice = CollectionsAccount["invoices"][number] & { last_delivery?: LastDelivery | null };
 
+/** Where an invoice's balance comes from, and whether a source difference is blocking it (Phase 4). */
+export function SourceNote({ invoice }: { invoice: Pick<WorklistInvoice, "source" | "source_as_of" | "discrepancy_status"> }) {
+  if (invoice.source !== "pdf_import" && invoice.discrepancy_status !== "blocked") return null;
+  return (
+    <div data-invoice-source={invoice.source} data-discrepancy={invoice.discrepancy_status}>
+      {invoice.source === "pdf_import" ? <span className="bc-pill blue">From A/R report{invoice.source_as_of ? ` · as of ${invoice.source_as_of}` : ""}</span> : null}
+      {invoice.discrepancy_status === "blocked" ? <span className="bc-pill red">Balances differ: review in A/R reports</span> : null}
+    </div>
+  );
+}
+
 function Pager({ first, last, total, onPrevious, onNext, previousDisabled, nextDisabled, testId }: {
   first: number; last: number; total: number; onPrevious: () => void; onNext: () => void; previousDisabled: boolean; nextDisabled: boolean; testId?: string;
 }) {
@@ -323,8 +335,8 @@ export function WorklistTable({ worklist, onSelectClient, onPage, stageLabels = 
                       </thead>
                       <tbody>
                         {(account.invoices as WorklistInvoice[]).map((invoice) => (
-                          <tr key={invoice.invoice_id} data-worklist-invoice={invoice.invoice_id} data-next-stage={invoice.next_stage ?? ""} data-awaiting={invoice.awaiting_approval ? invoice.awaiting_approval.stage : undefined}>
-                            <td className="bc-nowrap">{invoice.invoice_number}</td>
+                          <tr key={invoice.row_key || invoice.invoice_id} data-worklist-invoice={invoice.invoice_id ?? invoice.source_invoice_id ?? undefined} data-row-key={invoice.row_key} data-next-stage={invoice.next_stage ?? ""} data-awaiting={invoice.awaiting_approval ? invoice.awaiting_approval.stage : undefined}>
+                            <td className="bc-nowrap">{invoice.invoice_number}<SourceNote invoice={invoice} /></td>
                             <td className="bc-nowrap">{invoice.due_date}</td>
                             <td className="r">{formatMoney(invoice.balance)}</td>
                             <td className="r">{invoice.days_past_due}</td>
@@ -444,9 +456,9 @@ export function WhoIsWhere({ worklist, rules = [], stageLabels = STAGE_LABELS, f
               {rows.map(({ account, invoice }) => {
                 const gate = Boolean(invoice.awaiting_approval) || (invoice.next_stage ?? 0) >= 4;
                 return (
-                  <tr key={invoice.invoice_id} data-who-row={invoice.invoice_id}>
+                  <tr key={invoice.row_key || invoice.invoice_id} data-who-row={invoice.invoice_id ?? invoice.source_invoice_id ?? undefined} data-row-key={invoice.row_key}>
                     <td><button type="button" className="bc-name" onClick={() => onSelectClient(account.client_id)}>{account.client_name}</button></td>
-                    <td>{invoice.invoice_number}</td>
+                    <td>{invoice.invoice_number}<SourceNote invoice={invoice} /></td>
                     <td className="r bc-red">{formatMoney(invoice.balance)}</td>
                     <td className={`r${invoice.days_past_due >= 90 ? " old" : ""}`}>{invoice.days_past_due}d</td>
                     <td>{nextStepText(invoice, rules, stageLabels, firmTimezone)}{invoice.on_hold ? <span className="bc-pill amber" style={{ marginLeft: 6 }}>Hold</span> : null}<LastTouch delivery={invoice.last_delivery} stageLabels={stageLabels} firmTimezone={firmTimezone} /></td>
@@ -486,12 +498,12 @@ export function PreviewResults({ preview, onPage, stageLabels = STAGE_LABELS }: 
             </thead>
             <tbody>
               {actions.map((action) => (
-                <tr key={`${action.invoice_id}-${action.stage}`} data-preview-action={action.invoice_id} data-disposition={action.disposition}>
+                <tr key={`${action.row_key || action.invoice_id}-${action.stage}`} data-preview-action={action.invoice_id ?? action.source_invoice_id ?? undefined} data-row-key={action.row_key} data-disposition={action.disposition}>
                   <td>
                     {action.client_name}
                     {action.contact_phone ? <div className="bc-small">{action.contact_phone}</div> : null}
                   </td>
-                  <td>{action.invoice_number}</td>
+                  <td>{action.invoice_number}<SourceNote invoice={action} /></td>
                   <td className="r">{formatMoney(action.balance)}</td>
                   <td className="r">{action.days_past_due}</td>
                   <td>{stageLabel(action.stage, stageLabels)}</td>

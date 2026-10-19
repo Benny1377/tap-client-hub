@@ -1,13 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getAuthUser, getSupabaseClient } from "@/lib/supabase/auth-user";
+import { getAuthUser } from "@/lib/supabase/auth-user";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { verifyCode } from "@/lib/email-2fa";
+import { TWO_FACTOR_COOKIE, twoFactorCookieOptions, twoFactorCookieValue } from "@/lib/two-factor";
 
+/** POST /api/2fa/verify - confirm the setup code and turn 2FA on. */
 export async function POST(req: NextRequest) {
   const auth = await getAuthUser(req.headers.get("cookie") || "");
   if (!auth) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
 
-  const { user, supabase } = auth;
+  const { user } = auth;
 
   let body: { code?: string } = {};
   try { body = await req.json(); } catch {
@@ -38,5 +40,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Failed to save: " + error.message }, { status: 500 });
   }
 
-  return NextResponse.json({ success: true });
+  // This browser has just proven the code, so it stays signed in once 2FA is on.
+  const response = NextResponse.json({ success: true });
+  response.cookies.set(TWO_FACTOR_COOKIE, twoFactorCookieValue(user.id), twoFactorCookieOptions);
+  return response;
 }

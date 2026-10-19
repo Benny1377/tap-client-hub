@@ -157,7 +157,13 @@ export async function PATCH(request: Request) {
   const body = await request.json();
   const updates: Record<string, any> = {};
 
-  if (body.who !== undefined) updates.who = body.who;
+  if (body.who !== undefined) {
+    // Staff edit only their own entries and cannot hand one to someone else.
+    if (!canManageTimeEntries(access) && body.who !== access.id) {
+      return NextResponse.json({ error: "You may only edit your own time entries" }, { status: 403 });
+    }
+    updates.who = body.who;
+  }
   if (body.client_id !== undefined) updates.client_id = normalizeClientId(body.client_id);
   if (body.task !== undefined) updates.task = body.task;
   if (body.seconds !== undefined) updates.seconds = body.seconds;

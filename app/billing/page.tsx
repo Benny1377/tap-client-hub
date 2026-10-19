@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { readyData } from "@/lib/billing-ui/ledger";
 import { receivableFor } from "@/lib/billing-ui/view-model";
 import { useLedger } from "@/components/billing/use-ledger";
@@ -8,7 +8,20 @@ import { ClientPicker, headingStyle, hintStyle, panelStyle, SectionView } from "
 import { InvoiceDetail, InvoiceList, NewInvoiceForm } from "@/components/billing/invoice-panels";
 import { ClientAgingSummary, PaymentsPanel, ReceivablesTable } from "@/components/billing/payment-panels";
 
+// The design splits Billing into tabs; these are the ones with a live backend.
+const TABS = [
+  { id: "invoices", label: "Invoices" },
+  { id: "payments", label: "Payments" },
+  { id: "receivables", label: "Receivables" },
+] as const;
+type TabId = (typeof TABS)[number]["id"];
+
+function TabPanel({ id, active, children }: { id: TabId; active: TabId; children: ReactNode }) {
+  return <div role="tabpanel" id={`billing-${id}`} aria-labelledby={`billing-tab-${id}`} hidden={id !== active}>{children}</div>;
+}
+
 export default function BillingPage() {
+  const [tab, setTab] = useState<TabId>("invoices");
   const [clientId, setClientId] = useState<string | null>(null);
   const [selectedInvoiceId, setSelectedInvoiceId] = useState<string | null>(null);
   const { api, viewer, clients, state, mutate } = useLedger(clientId, ["invoices", "receivables", "payments"]);
@@ -16,14 +29,33 @@ export default function BillingPage() {
   const invoices = readyData(state.invoices, []);
   const receivables = readyData(state.receivables, { receivables: [] }).receivables;
   const selectedInvoice = invoices.find((invoice) => invoice.id === selectedInvoiceId) || null;
+  const drafts = invoices.filter((invoice) => invoice.status === "draft").length;
 
   return (
     <div className="bc-page">
-      <div className="bc-head" style={{ justifyContent: "flex-end" }}>
+      <div className="bc-tabrow">
+        <div className="bc-subnav" role="tablist" aria-label="Billing views">
+          {TABS.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              role="tab"
+              id={`billing-tab-${item.id}`}
+              aria-controls={`billing-${item.id}`}
+              aria-selected={tab === item.id}
+              className="bc-snb"
+              onClick={() => setTab(item.id)}
+            >
+              {item.label}
+              {item.id === "invoices" && drafts > 0 ? <span className="bc-count" aria-label={`${drafts} drafts`}>{drafts}</span> : null}
+            </button>
+          ))}
+        </div>
         <ClientPicker clients={clients} value={clientId} onChange={(id) => { setClientId(id); setSelectedInvoiceId(null); }} />
       </div>
 
-      <div style={{ display: "flex", gap: 20, flexWrap: "wrap", alignItems: "flex-start", marginTop: 22 }}>
+      <TabPanel id="invoices" active={tab}>
+      <div style={{ display: "flex", gap: 20, flexWrap: "wrap", alignItems: "flex-start" }}>
         <section style={{ ...panelStyle, flex: "1 1 360px" }} aria-label="Invoices">
           <h2 style={headingStyle}>Invoices</h2>
           <SectionView state={state.invoices} label="invoices">
@@ -71,8 +103,10 @@ export default function BillingPage() {
           ) : <p style={hintStyle}>Select an invoice to see its lines and actions.</p>}
         </section>
       </div>
+      </TabPanel>
 
-      <section style={{ ...panelStyle, marginTop: 20 }} aria-label="Payments">
+      <TabPanel id="payments" active={tab}>
+      <section style={panelStyle} aria-label="Payments">
         <h2 style={headingStyle}>Payments and allocations</h2>
         <SectionView state={state.payments} label="payments">
           {(payments) => (
@@ -93,8 +127,10 @@ export default function BillingPage() {
           )}
         </SectionView>
       </section>
+      </TabPanel>
 
-      <section style={{ ...panelStyle, marginTop: 20 }} aria-label="Receivables">
+      <TabPanel id="receivables" active={tab}>
+      <section style={panelStyle} aria-label="Receivables">
         <h2 style={headingStyle}>Receivables</h2>
         <SectionView state={state.receivables} label="receivables">
           {(data) => (
@@ -106,6 +142,7 @@ export default function BillingPage() {
           )}
         </SectionView>
       </section>
+      </TabPanel>
     </div>
   );
 }

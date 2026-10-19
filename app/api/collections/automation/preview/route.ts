@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireBillingPowerUser } from "@/lib/billing-access";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { isRetryableDelivery } from "@/lib/collections-delivery";
-import type { CollectionsAutomationPreviewResponse, CollectionsDeliveryAttemptRef, CollectionsPreviewAction } from "@/lib/collections-api";
+import { deliveryReasonText, isRetryableDelivery } from "@/lib/collections-delivery";
+import type { CollectionsAutomationPreviewResponse, CollectionsDeliveryAttemptRef, CollectionsPreviewAction, CollectionsReceivablesResponse } from "@/lib/collections-api";
+import { mergeApprovedPdfReceivables } from "@/lib/collections-import-worklist";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -15,7 +16,14 @@ function isValidDate(value: string) {
   return parsed.getUTCFullYear() === year && parsed.getUTCMonth() === month - 1 && parsed.getUTCDate() === day;
 }
 type WorklistInvoice = {
-  invoice_id: string;
+  invoice_id: string | null;
+  source_invoice_id?: string | null;
+  source?: "billing" | "pdf_import";
+  row_key?: string;
+  canonical_collection_identity?: string;
+  source_batch_id?: string | null;
+  source_as_of?: string | null;
+  discrepancy_status?: "none" | "blocked" | "resolved";
   invoice_number: string;
   balance: string;
   days_past_due: number;
@@ -100,6 +108,15 @@ export async function POST(request: NextRequest) {
     if (rows.length === 0 || pageOffset + rows.length >= totalAccounts) break;
   }
 
+  const merged = await mergeApprovedPdfReceivables(db, {
+    as_of_date: resolvedAsOfDate,
+    currency: "USD",
+    summary: { gross_open_balance: "0", unallocated_credit: "0", net_ar_estimate: "0", aging: { current: "0", days_1_30: "0", days_31_60: "0", days_61_90: "0", days_over_90: "0" }, open_invoice_count: 0, owing_accounts: 0, credit_review_accounts: 0, chronic_accounts: 0, oldest_days_past_due: 0 },
+    accounts: accounts as unknown as CollectionsReceivablesResponse["accounts"],
+    pagination: { limit: 200, offset: 0, total_accounts: totalAccounts },
+  });
+  accounts.splice(0, accounts.length, ...(merged.accounts as unknown as WorklistAccount[]));
+
   const allActions: CollectionsPreviewAction[] = accounts.flatMap((account) => account.invoices.flatMap((invoice) => {
     const directOwnerEscalation = Number(invoice.balance) >= directThreshold
       && invoice.completed_stage < 4
@@ -109,6 +126,7 @@ export async function POST(request: NextRequest) {
 
     const suppressionReasons: string[] = [];
     const reviewWarnings: string[] = [];
+    if (invoice.discrepancy_status === "blocked") suppressionReasons.push("source_discrepancy_blocked");
     // The invoice flag already includes both account- and invoice-scoped holds.
     // The account aggregate is true when any one invoice is held and must not
     // suppress sibling invoices.
@@ -125,11 +143,23 @@ export async function POST(request: NextRequest) {
 
     const actionType = stage <= 3 ? "reminder_candidate" : stage === 4 ? "owner_escalation_review" : "formal_notice_approval_review";
     const requiresApproval = stage >= 4 || automaticByStage.get(stage) !== true;
+    const canonicalIdentity = invoice.canonical_collection_identity
+      || (invoice.invoice_id ? `billing:${invoice.invoice_id}` : invoice.source_invoice_id ? `pdf_import:${invoice.source_invoice_id}` : null);
+    if (!canonicalIdentity) return [];
     return [{
       client_id: account.client_id,
       client_name: account.client_name,
       contact_phone: account.contact_phone,
       invoice_id: invoice.invoice_id,
+      source_invoice_id: invoice.source_invoice_id || null,
+      source: invoice.source || "billing",
+      row_key: invoice.row_key || `collection:${canonicalIdentity}`,
+      canonical_collection_identity: canonicalIdentity,
+      source_batch_id: invoice.source_batch_id || null,
+      source_as_of: invoice.source_as_of || null,
+      discrepancy_status: invoice.discrepancy_status || "none",
+      reason_code: invoice.discrepancy_status === "blocked" ? "SOURCE_DISCREPANCY_BLOCKED" : null,
+      reason_text: invoice.discrepancy_status === "blocked" ? deliveryReasonText("SOURCE_DISCREPANCY_BLOCKED") : null,
       invoice_number: invoice.invoice_number,
       balance: invoice.balance,
       days_past_due: invoice.days_past_due,
@@ -144,16 +174,17 @@ export async function POST(request: NextRequest) {
   }));
   const actions = allActions.slice(offset, offset + limit);
   if (actions.length) {
+    const identities = Array.from(new Set(actions.map((action) => action.canonical_collection_identity)));
     const { data: attempts, error: attemptError } = await db.from("collection_delivery_attempts")
-      .select("id,invoice_id,stage,status,reason_code,last_error_code,attempt_count,created_at,updated_at")
-      .in("invoice_id", actions.map((action) => action.invoice_id));
+      .select("id,canonical_collection_identity,stage,status,reason_code,last_error_code,attempt_count,created_at,updated_at")
+      .in("canonical_collection_identity", identities);
     if (attemptError) return apiError("Unable to load existing delivery attempts", "PREVIEW_DELIVERIES_READ_FAILED", 500);
-    const byInvoiceStage = new Map<string, { id: string; status: string; reason_code: string | null; last_error_code: string | null; attempt_count: number; created_at: string; updated_at: string }>(
-      ((attempts || []) as Array<{ id: string; invoice_id: string; stage: number; status: string; reason_code: string | null; last_error_code: string | null; attempt_count: number; created_at: string; updated_at: string }>)
-        .map((attempt) => [`${attempt.invoice_id}:${attempt.stage}`, attempt]),
+    const byIdentityStage = new Map<string, { id: string; status: string; reason_code: string | null; last_error_code: string | null; attempt_count: number; created_at: string; updated_at: string }>(
+      ((attempts || []) as Array<{ id: string; canonical_collection_identity: string; stage: number; status: string; reason_code: string | null; last_error_code: string | null; attempt_count: number; created_at: string; updated_at: string }>)
+        .map((attempt) => [`${attempt.canonical_collection_identity}:${attempt.stage}`, attempt]),
     );
     for (const action of actions) {
-      const attempt = byInvoiceStage.get(`${action.invoice_id}:${action.stage}`);
+      const attempt = byIdentityStage.get(`${action.canonical_collection_identity}:${action.stage}`);
       (action as CollectionsPreviewAction).delivery_attempt = attempt ? {
         attempt_id: attempt.id,
         status: attempt.status as CollectionsDeliveryAttemptRef["status"],

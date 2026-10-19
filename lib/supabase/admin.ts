@@ -2,15 +2,16 @@ import { createClient } from "@supabase/supabase-js";
 
 /**
  * Supabase client with service_role key — bypasses RLS.
- * Use ONLY in API routes that need to query profiles without an auth session
- * (e.g., 2FA login flow).
+ * Use only in API routes, after the route has checked who is calling.
  *
- * Falls back to anon key if SERVICE_ROLE_KEY is not set (e.g., local dev).
- * Auth admin operations (createUser, updateUserById) will fail without it.
+ * There is deliberately no fallback to the anon key: a deployment missing the
+ * service-role key fails loudly instead of quietly running privileged code
+ * paths with public credentials.
  */
 export function createAdminClient() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !key) throw new Error("NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set");
   return createClient(url, key, { db: { schema: "tap_hub_project" } });
 }
 

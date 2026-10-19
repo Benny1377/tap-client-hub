@@ -53,9 +53,11 @@ const tests = [
     assert.match(sendEmailRoute, /Authorization:\s*`Bearer \$\{resendKey\}`/);
     assert.match(email2fa, /Authorization:\s*`Bearer \$\{resendKey\}`/);
   }],
-  ["2FA authentication uses the TAP Hub Supabase project", () => {
-    assert.match(authUser, /rqxscydyvrvbdkqagemy/);
-    assert.doesNotMatch(authUser, /phgogybfgovrlcdmifpv/);
+  // The project comes from NEXT_PUBLIC_SUPABASE_URL; no project or host is hardcoded,
+  // so a missing setting fails instead of sending sessions to another host.
+  ["2FA authentication uses the configured Supabase project, with no hardcoded host", () => {
+    assert.match(authUser, /process\.env\.NEXT_PUBLIC_SUPABASE_URL!/);
+    assert.doesNotMatch(authUser, /phgogybfgovrlcdmifpv|mom-ai-agency|https:\/\//);
   }],
   ["assigned staff names resolve to profile IDs and empty service lists do not throw", () => {
     assert.match(clientsRoute, /\.from\(["']profiles["']\)[\s\S]{0,250}\.eq\(["']full_name["'], assignedStaffVal\)/);

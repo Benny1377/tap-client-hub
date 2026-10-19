@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireLedgerReadAccess } from "@/lib/billing-access";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { CollectionsReceivablesResponse } from "@/lib/collections-api";
+import { mergeApprovedPdfReceivables } from "@/lib/collections-import-worklist";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -40,37 +41,60 @@ export async function GET(request: NextRequest) {
   if (!Number.isInteger(offset) || offset < 0 || offset > 100000) return badRequest("offset must be a non-negative integer", "INVALID_OFFSET");
 
   const db = createAdminClient();
-  const { data, error } = await db.rpc("get_collections_worklist", {
-    p_client_id: clientId || null,
-    p_as_of_date: asOfDate || null,
-    p_limit: limit,
-    p_offset: offset,
-  });
-  if (error || !data) {
-    return NextResponse.json(
+  let response: CollectionsReceivablesResponse | null = null;
+  const allAccounts: CollectionsReceivablesResponse["accounts"] = [];
+  for (let pageOffset = 0; ; pageOffset += 200) {
+    const { data, error } = await db.rpc("get_collections_worklist", {
+      p_client_id: clientId || null, p_as_of_date: asOfDate || null, p_limit: 200, p_offset: pageOffset,
+    });
+    if (error || !data) return NextResponse.json(
       { error: "Unable to load Collections receivables", code: "COLLECTIONS_READ_MODEL_FAILED" },
       { status: 500, headers: { "Cache-Control": "no-store" } },
     );
+    const page = data as CollectionsReceivablesResponse;
+    response ||= { ...page, accounts: [] };
+    allAccounts.push(...(page.accounts || []));
+    if (!page.accounts?.length || pageOffset + page.accounts.length >= Number(page.pagination?.total_accounts || 0)) break;
   }
-  const response = data as CollectionsReceivablesResponse;
+  if (!response) return NextResponse.json({ error: "Unable to load Collections receivables", code: "COLLECTIONS_READ_MODEL_FAILED" }, { status: 500, headers: { "Cache-Control": "no-store" } });
+  response.accounts = allAccounts;
+  response = await mergeApprovedPdfReceivables(db, response);
+  response.pagination = { limit, offset, total_accounts: response.accounts.length };
+  response.accounts = response.accounts.slice(offset, offset + limit);
   const invoices = (response.accounts || []).flatMap((account) => account.invoices || []);
-  if (invoices.length) {
+  for (const invoice of invoices) {
+    if (invoice.source !== "pdf_import") {
+      // Billing-selected rows keep what the PDF merge attached (linked source
+      // invoice, batch, discrepancy, an earlier canonical identity); only fill gaps.
+      invoice.source = "billing";
+      invoice.source_invoice_id ??= null;
+      invoice.canonical_collection_identity ||= `billing:${invoice.invoice_id}`;
+      invoice.row_key ||= `collection:${invoice.canonical_collection_identity}`;
+      invoice.source_batch_id ??= null;
+      invoice.source_as_of ??= null;
+      invoice.discrepancy_status ||= "none";
+    }
+  }
+  const billingInvoices = invoices.filter((invoice) => invoice.source !== "pdf_import" && invoice.invoice_id);
+  const billingIds = billingInvoices.map((invoice) => invoice.invoice_id as string);
+  if (billingIds.length) {
     const latest = await db.from("collection_delivery_attempts")
-      .select("id,invoice_id,stage,status,created_at,updated_at")
-      .in("invoice_id", invoices.map((invoice) => invoice.invoice_id))
+      .select("id,invoice_id,source_invoice_id,canonical_collection_identity,stage,status,created_at,updated_at")
+      .in("canonical_collection_identity", billingInvoices.map((invoice) => invoice.canonical_collection_identity))
       .order("updated_at", { ascending: false }).order("id", { ascending: false });
     if (latest.error) {
       return NextResponse.json({ error: "Unable to load delivery summary", code: "DELIVERY_SUMMARY_READ_FAILED" }, { status: 500, headers: { "Cache-Control": "no-store" } });
     }
-    const byInvoice = new Map<string, NonNullable<(typeof invoices)[number]["last_delivery"]>>();
+    const byIdentity = new Map<string, NonNullable<(typeof invoices)[number]["last_delivery"]>>();
     for (const attempt of latest.data || []) {
-      if (!byInvoice.has(attempt.invoice_id)) byInvoice.set(attempt.invoice_id, {
+      if (attempt.canonical_collection_identity && !byIdentity.has(attempt.canonical_collection_identity)) byIdentity.set(attempt.canonical_collection_identity, {
         stage: attempt.stage, status: attempt.status, occurred_at: attempt.updated_at || attempt.created_at,
       });
     }
-    for (const invoice of invoices) invoice.last_delivery = byInvoice.get(invoice.invoice_id) || null;
+    // PDF-sourced rows already carry last_delivery from the merge.
+    for (const invoice of billingInvoices) invoice.last_delivery = byIdentity.get(invoice.canonical_collection_identity) || null;
   } else {
-    for (const invoice of invoices) invoice.last_delivery = null;
+    for (const invoice of billingInvoices) invoice.last_delivery = null;
   }
   return NextResponse.json(response, { headers: { "Cache-Control": "no-store" } });
 }

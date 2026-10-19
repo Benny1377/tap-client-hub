@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-const source = readFileSync(new URL("../app/page.tsx", import.meta.url), "utf8");
+// The Clients page moved to app/clients/page.tsx with the PracticeOps launch pad (app/page.tsx).
+const source = readFileSync(new URL("../app/clients/page.tsx", import.meta.url), "utf8").replace(/\r\n/g, "\n");
 const groupCardStart = source.indexOf("function GroupCard(");
 const groupCardEnd = source.indexOf("// ── Client Card ──", groupCardStart);
 
@@ -20,14 +21,18 @@ assert.notEqual(entityMapEnd, -1, "GroupCard modal entity-tile boundary must exi
 // Keep this contract scoped to GroupCard's popup entity tile, not ClientCard.
 const modalEntityTile = groupCard.slice(entityMapStart, entityMapEnd);
 
+// PracticeOps renders the type badge through the shared TypeTag component.
+assert.match(modalEntityTile, /<TypeTag\s+type=\{c\.type\}\s*\/>/, "each GroupCard modal entity tile must retain its BIZ/PERS type badge");
+const typeTagStart = source.indexOf("function TypeTag(");
+assert.notEqual(typeTagStart, -1, "TypeTag must exist");
 assert.match(
-  modalEntityTile,
-  /<span\s+className=\{`badge\s+\$\{c\.type\s*===\s*"Business"\s*\?\s*"b-biz"\s*:\s*"b-per"\}`\}\s*>\s*\{c\.type\s*===\s*"Business"\s*\?\s*"BIZ"\s*:\s*"PERS"\}\s*<\/span>/,
-  "each GroupCard modal entity tile must retain its BIZ/PERS type badge",
+  source.slice(typeTagStart, source.indexOf("\n}", typeTagStart)),
+  /\{type\s*===\s*"Business"\s*\?\s*"BIZ"\s*:\s*"PERS"\}/,
+  "TypeTag must show BIZ for businesses and PERS otherwise",
 );
 assert.match(
   modalEntityTile,
-  /\{\s*c\.active\s*===\s*false\s*&&\s*\(\s*<span\b[\s\S]*?>\s*INACTIVE\s*<\/span>\s*\)\s*\}/,
+  /\{\s*c\.active\s*===\s*false\s*&&\s*\(?\s*<span\b[\s\S]*?>\s*INACTIVE\s*<\/span>\s*\)?\s*\}/,
   "the GroupCard modal INACTIVE badge must be structurally controlled by c.active === false",
 );
 

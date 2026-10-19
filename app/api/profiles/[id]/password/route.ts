@@ -1,11 +1,30 @@
+import { createClient } from "@supabase/supabase-js";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { NextResponse } from "next/server";
 import { resolveAccessIdentity } from "@/lib/access-server";
+import { isPowerUser } from "@/lib/access-policy";
+import { passwordProblem } from "@/lib/password-policy";
+
+/** True when `password` is the current password for `email`. The check's own session is ended at once. */
+async function currentPasswordMatches(email: string, password: string): Promise<boolean> {
+  const verifier = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+  const { data, error } = await verifier.auth.signInWithPassword({ email, password });
+  if (error || !data.session) return false;
+  await verifier.auth.signOut({ scope: "local" }).catch(() => {});
+  return true;
+}
 
 /**
  * POST /api/profiles/[id]/password
  * Change a user's password using the Supabase admin API (bypasses RLS).
- * Body: { password: string }
+ * Body: { password: string, currentPassword?: string }
+ *
+ * - Your own password: the current password is required, so a borrowed or
+ *   stolen session cannot lock the real user out.
+ * - Someone else's: needs user-management rights; only an Owner/Admin may reset
+ *   an Owner/Admin account.
  */
 export async function POST(
   request: Request,
@@ -20,13 +39,11 @@ export async function POST(
     if (!identity.canManageUsers && identity.id !== id) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
-    const { password } = await request.json();
+    const { password, currentPassword } = await request.json();
 
-    if (!password || password.length < 6) {
-      return NextResponse.json(
-        { error: "Password must be at least 6 characters" },
-        { status: 400 }
-      );
+    const problem = passwordProblem(password);
+    if (problem) {
+      return NextResponse.json({ error: problem }, { status: 400 });
     }
 
     const supabase = createAdminClient();
@@ -37,9 +54,21 @@ export async function POST(
     let authUserId = id;
     const { data: profile } = await supabase
       .from("profiles")
-      .select("email")
+      .select("email, role")
       .eq("id", id)
       .maybeSingle();
+
+    const ownPassword = identity.id === id;
+    if (ownPassword) {
+      if (typeof currentPassword !== "string" || !currentPassword || !(await currentPasswordMatches(identity.email, currentPassword))) {
+        return NextResponse.json({ error: "Your current password is incorrect." }, { status: 400 });
+      }
+    } else if (!profile) {
+      // Without this, the email fallback below would change the caller's own password.
+      return NextResponse.json({ error: "User not found" }, { status: 404 });
+    } else if (!isPowerUser(identity.role) && isPowerUser(profile.role)) {
+      return NextResponse.json({ error: "Only an Owner or Admin can reset an Owner or Admin password." }, { status: 403 });
+    }
 
     if (profile?.email || identity.email) {
       const canonicalEmail = (profile?.email || identity.email).trim().toLowerCase();

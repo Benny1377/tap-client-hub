@@ -67,12 +67,21 @@ assert.match(layout, /accessLoading/);
 assert.match(layout, /fetch\("\/api\/me"/);
 assert.match(layout, /canAccessPathname\(role, userModules, pathname\)/);
 assert.match(layout, /router\.replace\(firstAllowedRoute/);
-assert.match(layout, /router\.push\(item\.href\)/);
-assert.match(layout, /Loading navigation/);
+assert.match(read("components/practiceops/ops-rail.tsx"), /router\.push\(item\.href\)/, "the Operations rail navigates by item href");
+assert.match(layout, /Loading page access/);
+// PracticeOps shell: the launch pad is open to every signed-in user; Clients moved to /clients and still needs the Clients module.
+assert.equal(policy.canAccessPathname("staff", [], "/"), true);
+assert.equal(policy.canAccessPathname("staff", [], "/clients"), false);
+assert.equal(policy.canAccessPathname("staff", ["Clients"], "/clients"), true);
+assert.equal(policy.firstAllowedRoute("staff", ["Clients"]), "/clients");
 assert.doesNotMatch(layout, /useState\(\(\) =>[\s\S]{0,500}tap_demo_role/);
+// The "Viewing as" picker was removed: it changed only the menus, never the server's permissions.
+assert.doesNotMatch(layout, /Viewing as|tap_demo_role=\$\{/, "no client-side role switcher");
 
 const meRoute = read("app/api/me/route.ts");
-assert.match(meRoute, /resolveAccessIdentity/);
+// /api/me reads the session state so it can say when the 2FA code is still due.
+assert.match(meRoute, /resolveAccessSession\(\)/);
+assert.match(meRoute, /twoFactorRequired: true/);
 assert.match(meRoute, /status: 401/);
 
 for (const route of [
@@ -108,7 +117,10 @@ const demoLoginRoute = read("app/api/demo-login/route.ts");
 assert.match(demoLoginRoute, /status: 410/);
 assert.doesNotMatch(demoLoginRoute, /TapHub2026|createDemoSession/);
 const loginPage = read("app/login/page.tsx");
-assert.doesNotMatch(loginPage, /api\/demo-login/);
+// The login page never uses the retired demo sign-in (POST); leaving the code screen
+// signs out through the logout endpoint (DELETE).
+assert.doesNotMatch(loginPage, /api\/demo-login", \{ method: "POST"/);
+assert.match(loginPage, /api\/demo-login", \{ method: "DELETE"/);
 assert.doesNotMatch(loginPage, /TapHub2026|TapHub2024|MaxHub2025/);
 const proxy = read("proxy.ts");
 assert.doesNotMatch(proxy, /tap_demo_session|tap_demo_user/);
@@ -119,7 +131,8 @@ assert.doesNotMatch(legacyAuth, /tap_demo_user/);
 assert.doesNotMatch(legacyAuth, /tap_demo_email/);
 
 const twoFactorStatus = read("app/api/2fa/status/route.ts");
-assert.match(twoFactorStatus, /resolveAccessIdentity/);
+// Asked between the password and code steps, so it reads the half-signed-in state.
+assert.match(twoFactorStatus, /resolveAccessSession\(\)/);
 assert.match(twoFactorStatus, /status: 401/);
 assert.doesNotMatch(twoFactorStatus, /tap_demo_user/);
 assert.doesNotMatch(twoFactorStatus, /tap_demo_email/);

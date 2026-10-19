@@ -40,3 +40,11 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Local fake Resend request log and control file (tools/collections-local/fake-resend.mjs)
+tools/collections-local/.fake-resend/
+
+# Database exports and real data never belong in Git
+/backups/
+/docs/datamodel/csv_dataset/
+/docs/datamodel/*.zip

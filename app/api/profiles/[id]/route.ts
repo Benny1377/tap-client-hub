@@ -1,6 +1,7 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { NextResponse } from "next/server";
 import { requireUserManagementAccess } from "@/lib/access-server";
+import { isPowerUser } from "@/lib/access-policy";
 
 export const dynamic = "force-dynamic";
 
@@ -25,12 +26,15 @@ export async function DELETE(
     // profile email before deleting, just as the PATCH handler does.
     const { data: profileData } = await supabase
       .from("profiles")
-      .select("id, email")
+      .select("id, email, role")
       .eq("id", id)
       .maybeSingle();
-    const profile = profileData as { id: string; email?: string | null } | null;
+    const profile = profileData as { id: string; email?: string | null; role?: string | null } | null;
     if (!profile) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
+    }
+    if (!isPowerUser(access.identity!.role) && isPowerUser(profile.role)) {
+      return NextResponse.json({ error: "Only an Owner or Admin can create, change or remove Owner/Admin accounts." }, { status: 403 });
     }
 
     let authUserId = id;

@@ -3,6 +3,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { NextResponse } from "next/server";
 import { requireUserDirectoryAccess, requireUserManagementAccess, requireUserProfileEditAccess } from "@/lib/access-server";
 import { effectiveModules, sanitizeModulesForRole, sanitizeManagerModules, isPowerUser, normalizeRole } from "@/lib/access-policy";
+import { passwordProblem } from "@/lib/password-policy";
 import { usernameFromFullName } from "@/lib/profile-identity";
 
 export const dynamic = "force-dynamic";
@@ -122,6 +123,11 @@ export async function POST(request: Request) {
     const normalizedEmail = String(email).trim().toLowerCase();
     if (!/^\S+@\S+\.\S+$/.test(normalizedEmail)) {
       return NextResponse.json({ error: "A valid email address is required" }, { status: 400 });
+    }
+    const createProblem = passwordProblem(password);
+    if (createProblem) return NextResponse.json({ error: createProblem }, { status: 400 });
+    if (!isPowerUser(access.identity!.role) && isPowerUser(role)) {
+      return NextResponse.json({ error: "Only an Owner or Admin can create, change or remove Owner/Admin accounts." }, { status: 403 });
     }
 
     // Public sign-up is intentionally disabled in production. Provision users
@@ -279,7 +285,20 @@ export async function PATCH(request: Request) {
       return NextResponse.json({ success: true });
     }
 
-    // ── Owner/Admin full edit (unchanged) ──
+    // ── Owner/Admin full edit (also used by a manager granted user management) ──
+    // A manager with user management may edit ordinary accounts fully, but never
+    // an Owner/Admin account and never grant an Owner/Admin role.
+    if (!isPowerUser(access.identity!.role)) {
+      const { data: targetRoleRow } = await adminSupabase.from("profiles").select("role").eq("id", id).maybeSingle();
+      if (!targetRoleRow) return NextResponse.json({ error: "User not found" }, { status: 404 });
+      if (isPowerUser((targetRoleRow as { role?: string | null }).role) || (role !== undefined && isPowerUser(role))) {
+        return NextResponse.json({ error: "Only an Owner or Admin can create, change or remove Owner/Admin accounts." }, { status: 403 });
+      }
+    }
+    if (body.password) {
+      const resetProblem = passwordProblem(body.password);
+      if (resetProblem) return NextResponse.json({ error: resetProblem }, { status: 400 });
+    }
     const { data: targetProfileData } = await adminSupabase.from("profiles").select("email").eq("id", id).maybeSingle();
     const targetEmail = (targetProfileData as unknown as { email?: string } | null)?.email?.toLowerCase();
     const { data: authUsers } = await adminSupabase.auth.admin.listUsers({ page: 1, perPage: 1000 });

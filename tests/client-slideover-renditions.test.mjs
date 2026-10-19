@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-const source = readFileSync(new URL("../components/client-slideover.tsx", import.meta.url), "utf8");
+// Line endings normalised: the marker below is matched with "\n", which a Windows checkout writes as "\r\n".
+const source = readFileSync(new URL("../components/client-slideover.tsx", import.meta.url), "utf8").replace(/\r\n/g, "\n");
 const cardStart = source.indexOf("function SingleServiceCard(");
 const universalEnd = source.indexOf("// ══════════════════════════════════════════════════════════════\n  // MODULE-SPECIFIC VIEW", cardStart);
 

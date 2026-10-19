@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 import { createHash } from "node:crypto";
 import { authContext, authError, authRequestId } from "@/lib/auth-debug";
+import { TWO_FACTOR_COOKIE } from "@/lib/two-factor";
+import { resolveLoginEmail } from "@/lib/login-identity";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -16,7 +18,7 @@ export async function POST(request: NextRequest) {
   const startedAt = Date.now();
   const response = NextResponse.json({ requestId });
 
-  let body: { email?: unknown; password?: unknown };
+  let body: { email?: unknown; identifier?: unknown; password?: unknown };
   try {
     body = await request.json();
   } catch (error) {
@@ -24,8 +26,19 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Invalid request", requestId }, { status: 400, headers: { "x-auth-request-id": requestId } });
   }
 
-  const email = typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
+  // A username or an email. Usernames resolve to the profile's email here, on the
+  // server, so the address is never sent back to the browser.
+  const typed = typeof body.identifier === "string" ? body.identifier : typeof body.email === "string" ? body.email : "";
   const password = typeof body.password === "string" ? body.password : "";
+  let email = typed.trim().toLowerCase();
+  if (email && !email.includes("@")) {
+    try {
+      email = await resolveLoginEmail(email);
+    } catch (error) {
+      console.error("[auth.sign-in] username lookup failed", { ...context, error: authError(error), elapsedMs: Date.now() - startedAt });
+      return NextResponse.json({ error: "Unable to sign in right now.", requestId }, { status: 500, headers: { "x-auth-request-id": requestId } });
+    }
+  }
   console.info("[auth.sign-in] start", {
     ...context,
     emailDomain: email.includes("@") ? email.split("@").pop() : "missing",
@@ -71,6 +84,7 @@ export async function POST(request: NextRequest) {
     }
 
     console.info("[auth.sign-in] success", { ...context, userIdPresent: Boolean(data.user?.id), elapsedMs: Date.now() - startedAt });
+    response.cookies.delete(TWO_FACTOR_COOKIE);
     response.headers.set("x-auth-request-id", requestId);
     response.headers.set("cache-control", "no-store");
     return response;

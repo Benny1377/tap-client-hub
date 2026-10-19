@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAuthUser } from "@/lib/supabase/auth-user";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { generateAndStoreCode, sendCodeEmail, verifyCode } from "@/lib/email-2fa";
+import { cooldownMessage, generateAndStoreCode, sendCodeEmail, verifyCode } from "@/lib/email-2fa";
 
 export async function POST(req: NextRequest) {
   const auth = await getAuthUser(req.headers.get("cookie") || "");
@@ -9,9 +9,11 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   }
 
-  const { user, supabase } = auth;
+  const { user } = auth;
+  // Use admin client (service_role key) for reads and writes to bypass RLS
+  const adminSupabase = createAdminClient();
 
-  const { data: profile } = await supabase
+  const { data: profile } = await adminSupabase
     .from("profiles")
     .select("email_2fa_enabled")
     .eq("id", user.id)
@@ -23,9 +25,6 @@ export async function POST(req: NextRequest) {
 
   let body: { code?: string } = {};
   try { body = await req.json(); } catch {}
-
-  // Use admin client (service_role key) for writes to bypass RLS
-  const adminSupabase = createAdminClient();
 
   // If code provided, verify and disable
   if (body.code) {
@@ -48,6 +47,10 @@ export async function POST(req: NextRequest) {
 
   // No code — send challenge email first
   const result = await generateAndStoreCode(adminSupabase, user.id);
+  if (result.error === "cooldown") {
+    const message = cooldownMessage(result.retryAfterSeconds);
+    return NextResponse.json({ error: message, message, retryAfterSeconds: result.retryAfterSeconds }, { status: 429 });
+  }
   if (!result.ok) {
     console.error("disable: failed to store code:", result.error);
     return NextResponse.json({ error: "Failed to generate code. Try again." }, { status: 500 });

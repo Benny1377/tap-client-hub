@@ -1,5 +1,6 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
+import { TWO_FACTOR_COOKIE } from "@/lib/two-factor";
 
 // Retired because the former shared-password flow allowed account takeover.
 // Users must authenticate with their own Supabase Auth credentials.
@@ -17,6 +18,7 @@ export async function DELETE() {
   response.cookies.delete("tap_demo_email");
   response.cookies.delete("tap_demo_role");
   response.cookies.delete("tap_modules");
+  response.cookies.delete(TWO_FACTOR_COOKIE);
   // The legacy endpoint is still the app's logout URL. Clear Supabase's
   // chunked HttpOnly auth cookies here so logout continues to work.
   const cookieStore = await cookies();

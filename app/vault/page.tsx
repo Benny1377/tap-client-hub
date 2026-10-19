@@ -8,8 +8,10 @@ import User2faList from "@/components/user-2fa-list";
 import { PageSkeleton } from "@/components/loading-skeleton";
 
 export default function VaultPage() {
-  const [unlocked, setUnlocked] = useState(false);
-  const [userRole, setUserRole] = useState<string | null>(null);
+  // What the server allows this user (from /api/me): adding, editing and deleting
+  // logins needs Owner/Admin or the client-data edit permission (as /api/credentials).
+  const [canEdit, setCanEdit] = useState(false);
+  const [canManageUsers, setCanManageUsers] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [vaultEntries, setVaultEntries] = useState<VaultEntry[]>([]);
   const [loading, setLoading] = useState(true);
@@ -22,7 +24,18 @@ export default function VaultPage() {
 
   const { clients: supabaseClients } = useClients();
 
-  const canEdit = userRole === "admin" || userRole === "manager";
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/me", { cache: "no-store" })
+      .then(r => (r.ok ? r.json() : null))
+      .then(me => {
+        if (cancelled || !me) return;
+        setCanEdit(me.role === "owner" || me.role === "admin" || me.allowEditClientData === true);
+        setCanManageUsers(me.canManageUsers === true);
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
 
   const loadCredentials = useCallback(async () => {
     try {
@@ -117,32 +130,6 @@ export default function VaultPage() {
     [supabaseClients],
   );
 
-  // ── Locked state ──
-  if (!unlocked) {
-    return (
-      <div className="panel" style={{ background: "var(--card)", border: "1px solid var(--line)", borderRadius: 16, overflow: "hidden" }}>
-        <div className="vault-lock" style={{
-          display: "flex", flexDirection: "column", alignItems: "center",
-          justifyContent: "center", padding: "70px 20px", textAlign: "center",
-        }}>
-          <div className="big" style={{ fontSize: 46 }}>🔒</div>
-          <h2 style={{ fontFamily: '"Fraunces",Georgia,serif', fontSize: 24, margin: "14px 0 6px" }}>Restricted area</h2>
-          <p style={{ color: "var(--muted)", maxWidth: 440, marginBottom: 18 }}>
-            Portal logins live behind a separate lock with their own permission list — so the rest of
-            the team can use the client files without ever seeing passwords.
-          </p>
-          <button className="btn" onClick={() => { setUnlocked(true); setUserRole("admin"); }} style={{
-            all: "unset", cursor: "pointer", background: "var(--ink)", color: "#fff",
-            padding: "10px 16px", borderRadius: 11, fontWeight: 600, fontSize: "13.5px",
-            display: "inline-flex", gap: 7, alignItems: "center",
-          }}>
-            Unlock (demo)
-          </button>
-        </div>
-      </div>
-    );
-  }
-
   if (loading) return <PageSkeleton rows={6} />;
   if (error) {
     return (
@@ -161,7 +148,7 @@ export default function VaultPage() {
     <div className="space-y-4">
       {/* ── Vault note banner ── */}
       <div className="vault-note" style={{
-        background: "var(--amber-soft)", border: "1px solid #ead9b6", color: "#7a5210",
+        background: "var(--amber-soft)", border: "1px solid var(--amber-line)", color: "var(--amber)",
         borderRadius: 13, padding: "13px 16px", fontSize: 13, display: "flex", gap: 10,
       }}>
         <span style={{ fontSize: 18, lineHeight: "20px" }}>🏦</span>
@@ -186,7 +173,7 @@ export default function VaultPage() {
 
         {canEdit && (
           <button className="btn" onClick={handleAdd} disabled={saving} style={{
-            all: "unset", cursor: "pointer", background: "var(--ink)", color: "#fff",
+            all: "unset", cursor: "pointer", background: "var(--ink)", color: "var(--paper)",
             padding: "10px 16px", borderRadius: 11, fontWeight: 600, fontSize: "13.5px",
             display: "inline-flex", gap: 7, alignItems: "center", whiteSpace: "nowrap",
           }}>
@@ -195,8 +182,8 @@ export default function VaultPage() {
         )}
       </div>
 
-      {/* ── 2FA Admin Management ── */}
-      <details className="vgroup" style={{
+      {/* ── 2FA Admin Management (user managers only; the server enforces it too) ── */}
+      {canManageUsers && <details className="vgroup" style={{
         background: "var(--card)", border: "1px solid var(--line)", borderRadius: 13,
         marginBottom: 10, overflow: "hidden",
       }}>
@@ -214,7 +201,7 @@ export default function VaultPage() {
         <div style={{ padding: "0 14px 14px" }}>
           <User2faList />
         </div>
-      </details>
+      </details>}
 
       {/* ── Vault groups (details/summary) ── */}
       {grouped.map(([name, entries]) => (
@@ -323,7 +310,7 @@ export default function VaultPage() {
                 letter-spacing: 0.04em;
                 text-transform: uppercase;
                 padding: 11px 12px;
-                background: #faf7f0;
+                background: var(--card2);
                 border-bottom: 1px solid var(--line);
               }
               .vault-table tbody td {
@@ -335,7 +322,7 @@ export default function VaultPage() {
                 border-bottom: none;
               }
               .vault-table tbody tr:hover {
-                background: #fcfaf4;
+                background: var(--card2);
               }
               .vt-mono {
                 font-family: "SF Mono","Fira Code","Consolas",monospace;

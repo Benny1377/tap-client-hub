@@ -92,9 +92,9 @@ export default function SupportInboxPage() {
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(150px, 1fr))", gap: 12, marginBottom: 16 }}>
         <Metric label="Tickets shown" value={counts.total} />
-        <Metric label="Open" value={counts.open} accent="#9a5a00" />
-        <Metric label="In progress" value={counts.inProgress} accent="#255bb5" />
-        <Metric label="Urgent unresolved" value={counts.urgent} accent="#b42318" />
+        <Metric label="Open" value={counts.open} accent="var(--amber)" />
+        <Metric label="In progress" value={counts.inProgress} accent="var(--brand)" />
+        <Metric label="Urgent unresolved" value={counts.urgent} accent="var(--red)" />
       </div>
 
       <section style={panelStyle}>
@@ -103,7 +103,7 @@ export default function SupportInboxPage() {
           <Field label="Search"><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Ticket, reporter, subject..." style={{ ...inputStyle, minWidth: 245 }} /></Field>
         </div>
 
-        {error && <div role="alert" style={{ border: "1px solid #f5c2c7", background: "#fff1f2", color: "#9f1239", borderRadius: 10, padding: "12px 14px", fontSize: 13.5 }}>{error}</div>}
+        {error && <div role="alert" style={{ border: "1px solid var(--red-line)", background: "var(--red-soft)", color: "var(--red)", borderRadius: 10, padding: "12px 14px", fontSize: 13.5 }}>{error}</div>}
         {loading && <p style={{ color: "var(--muted)", margin: 0 }}>Loading tickets...</p>}
         {!loading && !error && filtered.length === 0 && <p style={{ color: "var(--muted)", margin: 0 }}>No tickets match these filters.</p>}
         {!loading && !error && filtered.length > 0 && <div style={{ overflowX: "auto" }}>
@@ -116,7 +116,7 @@ export default function SupportInboxPage() {
               <td style={cellStyle}><Badge text={ticket.priority === "urgent" ? "Urgent" : "Normal"} tone={ticket.priority === "urgent" ? "red" : "gray"} /></td>
               <td style={cellStyle}><Badge text={STATUS_LABELS[ticket.status]} tone={ticket.status === "open" ? "amber" : ticket.status === "in_progress" ? "blue" : "green"} /></td>
               <td style={cellStyle}>{displayDate(ticket.lastActivityAt || ticket.createdAt)}</td>
-              <td style={cellStyle}>{ticket.firstResponseAt ? displayDate(ticket.firstResponseAt) : <span style={{ color: "#9a5a00" }}>Awaiting response</span>}</td>
+              <td style={cellStyle}>{ticket.firstResponseAt ? displayDate(ticket.firstResponseAt) : <span style={{ color: "var(--amber)" }}>Awaiting response</span>}</td>
             </tr>)}</tbody>
           </table>
         </div>}
@@ -127,10 +127,10 @@ export default function SupportInboxPage() {
 
 function Metric({ label, value, accent = "var(--ink)" }: { label: string; value: number; accent?: string }) { return <div style={{ ...panelStyle, padding: "14px 16px" }}><div style={{ color: "var(--muted)", fontSize: 12 }}>{label}</div><div style={{ color: accent, fontSize: 25, lineHeight: 1.25, fontWeight: 700, marginTop: 3 }}>{value}</div></div>; }
 function Field({ label, children }: { label: string; children: React.ReactNode }) { return <label style={{ display: "grid", gap: 5, color: "var(--muted)", fontSize: 11.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".04em" }}>{label}{children}</label>; }
-function Badge({ text, tone }: { text: string; tone: "red" | "gray" | "amber" | "blue" | "green" }) { const colors = { red: ["#fff1f2", "#b42318"], gray: ["#f3f4f6", "#4b5563"], amber: ["#fff7e6", "#9a5a00"], blue: ["#eff6ff", "#1d4ed8"], green: ["#ecfdf3", "#15803d"] } as const; return <span style={{ display: "inline-block", padding: "4px 8px", borderRadius: 999, background: colors[tone][0], color: colors[tone][1], fontSize: 12, fontWeight: 700 }}>{text}</span>; }
+function Badge({ text, tone }: { text: string; tone: "red" | "gray" | "amber" | "blue" | "green" }) { const colors = { red: ["var(--red-soft)", "var(--red)"], gray: ["var(--card2)", "var(--muted)"], amber: ["var(--amber-soft)", "var(--amber)"], blue: ["var(--blue-soft)", "var(--brand)"], green: ["var(--green-soft)", "var(--green)"] } as const; return <span style={{ display: "inline-block", padding: "4px 8px", borderRadius: 999, background: colors[tone][0], color: colors[tone][1], fontSize: 12, fontWeight: 700 }}>{text}</span>; }
 
 const panelStyle: React.CSSProperties = { background: "var(--card)", border: "1px solid var(--line)", borderRadius: 14, padding: 18 };
-const inputStyle: React.CSSProperties = { color: "var(--ink)", background: "#fff", border: "1px solid var(--line)", borderRadius: 9, font: "inherit", fontSize: 13, padding: "9px 10px", minWidth: 160 };
-const buttonStyle: React.CSSProperties = { border: "none", borderRadius: 9, padding: "10px 14px", color: "#fff", background: "var(--ink)", cursor: "pointer", fontWeight: 700, fontSize: 13 };
+const inputStyle: React.CSSProperties = { color: "var(--ink)", background: "var(--card)", border: "1px solid var(--line)", borderRadius: 9, font: "inherit", fontSize: 13, padding: "9px 10px", minWidth: 160 };
+const buttonStyle: React.CSSProperties = { border: "none", borderRadius: 9, padding: "10px 14px", color: "var(--paper)", background: "var(--ink)", cursor: "pointer", fontWeight: 700, fontSize: 13 };
 const headerStyle: React.CSSProperties = { textAlign: "left", color: "var(--muted)", fontSize: 11, letterSpacing: ".04em", textTransform: "uppercase", padding: "10px 8px", whiteSpace: "nowrap" };
 const cellStyle: React.CSSProperties = { color: "var(--ink)", padding: "12px 8px", verticalAlign: "top", whiteSpace: "nowrap" };

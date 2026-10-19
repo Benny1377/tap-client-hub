@@ -2,8 +2,10 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { matchesClientSearch } from "../lib/data.ts";
 
-const read = (path) => readFileSync(new URL(path, import.meta.url), "utf8");
-const page = read("../app/page.tsx");
+// Line endings normalised so the checks behave the same on Windows checkouts.
+const read = (path) => readFileSync(new URL(path, import.meta.url), "utf8").replace(/\r\n/g, "\n");
+// The Clients page moved to app/clients/page.tsx with the PracticeOps launch pad (app/page.tsx).
+const page = read("../app/clients/page.tsx");
 const modal = read("../components/client-modal.tsx");
 const slideover = read("../components/client-slideover.tsx");
 
@@ -27,8 +29,11 @@ assert.equal(matchesClientSearch(client, "Acme"), true, "ordinary text search mu
 assert.equal(matchesClientSearch(client, "9999999999"), false);
 assert.match(page, /matchesClientSearch\((?:c|client), search\)/, "Clients page must use the tested search helper");
 
-// ISS-009: client cards display the requested four ZIP characters.
-assert.match(page, /String\(c\.zip\)\.replace\(\/\\\.0\+\$\/\, \"\"\)\.(?:substring|slice)\(0, 4\)/);
+// ISS-009: client cards display the requested four ZIP characters (PracticeOps: the zip4 helper).
+const zip4Start = page.indexOf("function zip4(");
+assert.notEqual(zip4Start, -1, "Clients page must keep its ZIP display helper");
+assert.match(page.slice(zip4Start, page.indexOf("\n}", zip4Start)), /\.replace\(\/\\\.0\+\$\/, ""\)[\s\S]*\.(?:substring|slice)\(0, 4\)/, "ZIP display must strip .0 and show four characters");
+assert.match(page, /\{zip4\((?:c|client)\.zip\)\}/, "client cards must use the ZIP display helper");
 for (const route of ["fin", "pr", "stx", "t9", "rend", "annual"]) {
   const source = read(`../app/${route}/page.tsx`);
   assert.match(source, /onClientClick=/, `${route} module must wire client-card opening`);
@@ -45,7 +50,10 @@ assert.match(modal, /ein:\s*clientEin\.trim\(\)/, "Add Client must persist Payro
 assert.match(modal, /reportingNotes:\s*prReportingNotes/, "Add Client must persist Payroll Notes on the payroll service");
 
 const universalDetails = slideover.slice(slideover.lastIndexOf("{/* Group */}"), slideover.lastIndexOf("{/* ── Services ── */}"));
-assert.doesNotMatch(universalDetails, /\{false &&|General Notes|>EIN</, "general Clients details must not contain dead EIN or General Notes UI");
+// General Notes was deliberately added back to the general details (9625c95, after ISS-011);
+// EIN stays in Payroll and no dead UI may remain.
+assert.doesNotMatch(universalDetails, /\{false &&|>EIN</, "general Clients details must not contain dead UI or EIN");
+assert.match(universalDetails, /General Notes/, "general Clients details keep the General Notes field");
 
 const universalPayroll = slideover.slice(slideover.indexOf("{/* Payroll: credentials section */}"), slideover.indexOf("{/* Sales Tax line items */}"));
 assert.match(universalPayroll, />EIN</, "universal Payroll card must expose EIN");

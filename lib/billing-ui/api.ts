@@ -22,6 +22,17 @@ import type {
   Viewer,
 } from "./types";
 import type { DeliveriesQuery, DeliveriesResponse, DeliverySetup, DeliveryTestRunResult } from "./delivery";
+import type { ClassifyDisposition, CrossCheckResult, DiscrepancyResolution, ImportBatch, ImportBatchDetail, ImportInvoice, ImportInvoiceInput, ImportPolicy } from "./imports";
+
+/** Source-aware invoice target accepted by the hold and event routes (Phase 4 addendum). */
+export type InvoiceTarget = { source: "billing"; invoice_id: string } | { source: "pdf_import"; source_invoice_id: string };
+
+/** Turn a hold/activity form's invoice choice into the route's fields; empty means the whole client. */
+export function invoiceTargetFields(choice: string | null | undefined, pdfPrefix = "pdf_import:"): { invoice_id?: string | null; target?: InvoiceTarget } {
+  if (!choice) return { invoice_id: null };
+  if (choice.startsWith(pdfPrefix)) return { target: { source: "pdf_import", source_invoice_id: choice.slice(pdfPrefix.length) } };
+  return { invoice_id: choice };
+}
 
 export type ApiErrorKind = "unauthorized" | "forbidden" | "not_found" | "conflict" | "invalid" | "server" | "network";
 
@@ -46,7 +57,8 @@ async function request<T>(fetchImpl: FetchLike, url: string, init?: RequestInit)
     response = await fetchImpl(url, {
       ...init,
       cache: "no-store",
-      headers: init?.body ? { "Content-Type": "application/json" } : undefined,
+      // JSON bodies only; a FormData upload sets its own multipart boundary.
+      headers: typeof init?.body === "string" ? { "Content-Type": "application/json" } : undefined,
     });
   } catch {
     return { ok: false, status: 0, kind: "network", message: "Could not reach TAP Hub. Check your connection and try again." };
@@ -69,6 +81,11 @@ async function request<T>(fetchImpl: FetchLike, url: string, init?: RequestInit)
     if (typeof payload.code === "string") failure.code = payload.code;
     return failure;
   }
+  // A success with no JSON body (for example an HTML page from a dev-server reload)
+  // would reach panels as null data; report it as a failure the panels can show.
+  if (body === null && response.status !== 204) {
+    return { ok: false, status: response.status, kind: "server", message: "TAP Hub sent an unexpected response. Reload the page and try again." };
+  }
   return { ok: true, status: response.status, data: body as T };
 }
 
@@ -87,9 +104,11 @@ function withClient(path: string, clientId?: string | null) {
 export function createBillingApi(fetchImpl: FetchLike) {
   return {
     async viewer(): Promise<ApiResult<Viewer>> {
-      const result = await request<{ role?: string; modules?: string[] }>(fetchImpl, "/api/me");
+      const result = await request<{ id?: string; role?: string; modules?: string[] }>(fetchImpl, "/api/me");
       if (result.ok === false) return result;
-      return { ok: true, status: result.status, data: { role: result.data.role || "staff", modules: result.data.modules || [] } };
+      const viewer: Viewer = { role: result.data.role || "staff", modules: result.data.modules || [] };
+      if (typeof result.data.id === "string") viewer.id = result.data.id;
+      return { ok: true, status: result.status, data: viewer };
     },
     async clients(): Promise<ApiResult<ClientOption[]>> {
       const result = await request<{ clients?: Array<{ id?: unknown; name?: unknown }> }>(fetchImpl, "/api/clients?fields=lite");
@@ -137,6 +156,7 @@ export function createBillingApi(fetchImpl: FetchLike) {
     deliveries: (params: DeliveriesQuery = {}) => {
       const query = new URLSearchParams();
       if (params.invoiceId) query.set("invoice_id", params.invoiceId);
+      if (params.sourceInvoiceId) query.set("source_invoice_id", params.sourceInvoiceId);
       if (params.status) query.set("status", params.status);
       if (params.limit !== undefined) query.set("limit", String(params.limit));
       if (params.offset !== undefined) query.set("offset", String(params.offset));
@@ -177,13 +197,47 @@ export function createBillingApi(fetchImpl: FetchLike) {
     reverseAllocation: (id: string) =>
       post<{ allocation: PaymentAllocation }>(fetchImpl, `/api/billing/allocations/${encodeURIComponent(id)}`, {}),
 
-    logEvent: (input: { client_id: string; event_type: string; invoice_id?: string | null; stage?: number | null; detail?: Record<string, unknown>; approval_event_id?: string | null }) =>
+    /** A Billing invoice goes as invoice_id; a report-only invoice as target (Phase 4 source identity). */
+    logEvent: (input: { client_id: string; event_type: string; invoice_id?: string | null; target?: InvoiceTarget; stage?: number | null; detail?: Record<string, unknown>; approval_event_id?: string | null }) =>
       post<{ event: CollectionEvent }>(fetchImpl, "/api/collections/events", input),
     approveEvent: (eventId: string, eventType: "escalated" | "formal_notice_approved", detail?: Record<string, unknown>) =>
       post<{ event: CollectionEvent }>(fetchImpl, "/api/collections/events/approve", { event_id: eventId, event_type: eventType, detail }),
-    placeHold: (input: { client_id: string; reason: string; invoice_id?: string | null; expires_on?: string | null }) =>
+    placeHold: (input: { client_id: string; reason: string; invoice_id?: string | null; target?: InvoiceTarget; expires_on?: string | null }) =>
       post<{ hold: CollectionHold }>(fetchImpl, "/api/collections/holds", input),
     releaseHold: (id: string) => patch<{ hold: CollectionHold }>(fetchImpl, "/api/collections/holds", { id }),
+
+    // ---- Phase 4 A/R PDF intake. Each route checks the configurable import permission
+    // (upload / review / approve); the database enforces uploader/corrector separation.
+    imports: () => request<{ batches: ImportBatch[] }>(fetchImpl, "/api/collections/imports"),
+    importBatch: (id: string) => request<ImportBatchDetail>(fetchImpl, `/api/collections/imports/${encodeURIComponent(id)}`),
+    uploadImport: (file: File) => {
+      const form = new FormData();
+      form.append("file", file, file.name);
+      return request<{ batch: Pick<ImportBatch, "id" | "status" | "created_at"> & Partial<ImportBatch>; duplicate: boolean }>(fetchImpl, "/api/collections/imports", { method: "POST", body: form });
+    },
+    /** Extracts page/row text only. Parsing never confirms an invoice. */
+    parseImport: (id: string) =>
+      request<{ batch_id: string; status: string; report_type: string; source_as_of: string | null; page_count: number; extracted_line_count: number }>(fetchImpl, `/api/collections/imports/${encodeURIComponent(id)}/parse`, { method: "POST" }),
+    classifyImportRow: (batchId: string, rowId: string, disposition: ClassifyDisposition, note?: string) =>
+      patch<{ row: { id: string; review_disposition: string } }>(fetchImpl, `/api/collections/imports/${encodeURIComponent(batchId)}`, { row_id: rowId, disposition, ...(note ? { note } : {}) }),
+    reviewImportInvoice: (batchId: string, input: ImportInvoiceInput) =>
+      post<{ invoice: ImportInvoice; source_invoice_id: string }>(fetchImpl, `/api/collections/imports/${encodeURIComponent(batchId)}`, input),
+    /** Reviewer-confirmed report type and as-of date when parsing couldn't read them (before any invoice is reviewed). */
+    correctImportMetadata: (batchId: string, input: { report_type: "aging_detail" | "aging_summary"; source_as_of: string }) =>
+      patch<{ batch: { id: string; status: string; report_type: string; source_as_of: string } }>(fetchImpl, `/api/collections/imports/${encodeURIComponent(batchId)}/metadata`, { ...input, confirmed: true }),
+    approveImport: (batchId: string) =>
+      post<{ batch: { batch_id: string; status: "approved"; invoice_count: number } }>(fetchImpl, `/api/collections/imports/${encodeURIComponent(batchId)}/approve`, {}),
+    crossCheckImport: (summaryBatchId: string, input: { detail_batch_id: string; summary_total: number; note: string }) =>
+      post<{ cross_check: CrossCheckResult }>(fetchImpl, `/api/collections/imports/${encodeURIComponent(summaryBatchId)}/cross-check`, input),
+    /** Choosing the balance that drives collection actions; needs approve permission. */
+    resolveDiscrepancy: (sourceInvoiceId: string, input: { selected_source: "billing" | "pdf_import"; resolution_note: string }) =>
+      post<DiscrepancyResolution>(fetchImpl, `/api/collections/imports/invoices/${encodeURIComponent(sourceInvoiceId)}/resolve`, input),
+    /** A 60-second signed link to the stored original; the server audits each request. */
+    /** Owner/Admin only: who may upload, review and approve A/R reports. */
+    importPermissions: () => request<{ policy: ImportPolicy; updated_by: string | null; updated_at: string | null }>(fetchImpl, "/api/collections/imports/permissions"),
+    updateImportPermissions: (policy: ImportPolicy) =>
+      patch<{ policy: ImportPolicy; updated_by: string | null; updated_at: string | null }>(fetchImpl, "/api/collections/imports/permissions", { policy }),
+    importFileUrl: (batchId: string) => request<{ url: string; expires_in_seconds: number }>(fetchImpl, `/api/collections/imports/${encodeURIComponent(batchId)}/file`),
   };
 }
 

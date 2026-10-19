@@ -1,9 +1,15 @@
 import { createAdminClient } from "@/lib/supabase/admin";
+import { requireClientDataEditAccess, requireClientDataReadAccess } from "@/lib/access-server";
 import { NextResponse } from "next/server";
+
+// Same access as the client worklists: reading needs a module, writing needs the
+// client-data edit permission that GET/PATCH /api/clients already require.
 
 // GET /api/period-counts?client_service_id=X&year=2026
 // GET /api/period-counts?year=2026 (batch: all counts for that year)
 export async function GET(request: Request) {
+  const access = await requireClientDataReadAccess();
+  if (access.status) return NextResponse.json({ error: access.status === 401 ? "Unauthorized" : "Forbidden" }, { status: access.status });
   const supabase = createAdminClient();
   const { searchParams } = new URL(request.url);
   const csId = searchParams.get("client_service_id");
@@ -38,6 +44,8 @@ function intToPeriod(n: number): string {
 // POST /api/period-counts — upsert a count for a month
 // Body: { client_service_id, period: "YYYY-MM", processed }
 export async function POST(request: Request) {
+  const access = await requireClientDataEditAccess();
+  if (access.status) return NextResponse.json({ error: access.status === 401 ? "Unauthorized" : "Forbidden" }, { status: access.status });
   const supabase = createAdminClient();
   const body = await request.json();
   const { client_service_id, period, processed } = body;

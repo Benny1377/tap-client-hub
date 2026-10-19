@@ -61,6 +61,7 @@ export const DELIVERY_REASON_LABELS: Record<CollectionsDeliveryReasonCode, strin
   PROVIDER_OUTCOME_UNKNOWN: "Provider outcome is unknown; review before retrying.",
   PROVIDER_PAYLOAD_CHANGED: "Message content changed since the prior attempt; review required.",
   ATTEMPT_LIMIT_REACHED: "Retry limit reached.",
+  SOURCE_DISCREPANCY_BLOCKED: "Imported balance differs from Billing; review required.",
 };
 
 /** What still blocks test mode, from GET /api/collections/delivery-status `missing`. */
@@ -123,6 +124,8 @@ export interface DeliveryTestRunResult {
 
 export interface DeliveriesQuery {
   invoiceId?: string | null;
+  /** Report-only invoice (Phase 4); sent as source_invoice_id. */
+  sourceInvoiceId?: string | null;
   status?: DeliveryStatus | null;
   limit?: number;
   offset?: number;

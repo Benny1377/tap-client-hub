@@ -1,9 +1,0 @@
-id,code,name,active,tracking
-ace4d84c-1795-4860-8112-6cb8bc7e03f6,FIN,Monthly Financials,True,stage
-7b1e59d4-5515-4bf0-a215-bc91ad847aea,PR,Payroll,True,count
-bb56f337-8368-4c90-8564-8ee5c40e66c0,STX,Sales Tax,True,stage
-15c27f34-edc5-4341-8ee2-9289fe6fdaf4,T9,1099s,True,count
-ab7747b0-7fb2-429a-aac4-4801ee6ffbef,REND,Renditions,True,stage
-ee1c1084-a65b-4dec-8e2d-f84b4b19e740,TAX,Tax Returns,True,stage
-392cf3b1-d70e-4726-8a7e-360125911751,ANNUAL,Annual Reports,True,stage
-e1749fac-cfeb-4d6b-9098-e1e54563639d,RENEWAL,State Renewal,True,stage

@@ -42,8 +42,8 @@ try {
     insert into tap_hub_project.invoice_lines (invoice_id, description, quantity, unit_amount, amount)
       values ('${invoiceId}', 'Synthetic concurrent-claim test', 1, 100, 100);
     insert into tap_hub_project.collection_delivery_attempts
-      (id, client_id, invoice_id, stage, status, idempotency_key, actor)
-      values ('${attemptId}', '${CLIENT_ID}', '${invoiceId}', 1, 'queued', '${idempotencyKey}', '${OWNER_ID}');
+      (id, client_id, invoice_id, source, source_invoice_id, canonical_collection_identity, stage, status, idempotency_key, actor)
+      values ('${attemptId}', '${CLIENT_ID}', '${invoiceId}', 'billing', null, 'billing:${invoiceId}', 1, 'queued', 'collections:billing:${invoiceId}:stage:1', '${OWNER_ID}');
     commit;`);
 
   const claim = `set session_replication_role = replica; select coalesce(tap_hub_project.claim_collection_test_delivery('${attemptId}', '${OWNER_ID}'), 'CLAIMED');`;

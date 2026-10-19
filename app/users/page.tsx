@@ -228,7 +228,7 @@ export default function UsersPage() {
 
       {/* ── Info banner ── */}
       <div className="vault-note" style={{
-        background: "var(--amber-soft)", border: "1px solid #ead9b6", color: "#7a5210",
+        background: "var(--amber-soft)", border: "1px solid var(--amber-line)", color: "var(--amber)",
         borderRadius: 13, padding: "13px 16px", marginBottom: 14, fontSize: 13, display: "flex", gap: 10,
       }}>
         <span>🔐</span>
@@ -269,7 +269,7 @@ export default function UsersPage() {
       {/* ── Add button ── */}
       {canManageUsers && <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 8 }}>
         <button className="btn" onClick={() => openModal("new")} style={{
-          all: "unset", cursor: "pointer", background: "var(--ink)", color: "#fff",
+          all: "unset", cursor: "pointer", background: "var(--ink)", color: "var(--paper)",
           padding: "10px 16px", borderRadius: 11, fontWeight: 600, fontSize: "13.5px",
           display: "inline-flex", gap: 7, alignItems: "center",
         }}>
@@ -375,13 +375,13 @@ export default function UsersPage() {
               }}>Full name</label>
               <input className="ef" style={{
                 width: "100%", padding: "9px 11px", border: "1px solid var(--line)",
-                borderRadius: 9, font: "inherit", fontSize: 14, background: "#fff", marginBottom: 4,
+                borderRadius: 9, font: "inherit", fontSize: 14, background: "var(--card)", marginBottom: 4,
               }} value={editForm.name || ""} onChange={e => setEditForm(p => ({ ...p, name: e.target.value }))} />
 
               {canManageUsers && modalUser !== "new" && (
                 <>
                   <label className="el" style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".05em", textTransform: "uppercase", color: "var(--muted)", margin: "12px 0 4px", display: "block" }}>Email address</label>
-                  <input className="ef" type="email" style={{ width: "100%", padding: "9px 11px", border: "1px solid var(--line)", borderRadius: 9, font: "inherit", fontSize: 14, background: "#fff", marginBottom: 4 }} value={editForm.email || ""} onChange={e => setEditForm(p => ({ ...p, email: e.target.value }))} />
+                  <input className="ef" type="email" style={{ width: "100%", padding: "9px 11px", border: "1px solid var(--line)", borderRadius: 9, font: "inherit", fontSize: 14, background: "var(--card)", marginBottom: 4 }} value={editForm.email || ""} onChange={e => setEditForm(p => ({ ...p, email: e.target.value }))} />
                   <p style={{ margin: "2px 0 0", color: "var(--muted)", fontSize: 12 }}>This is also the address that receives email two-factor codes.</p>
                 </>
               )}
@@ -396,7 +396,7 @@ export default function UsersPage() {
                   }}>Email address</label>
                   <input className="ef" type="email" style={{
                     width: "100%", padding: "9px 11px", border: "1px solid var(--line)",
-                    borderRadius: 9, font: "inherit", fontSize: 14, background: "#fff", marginBottom: 4,
+                    borderRadius: 9, font: "inherit", fontSize: 14, background: "var(--card)", marginBottom: 4,
                   }} value={editForm.email || ""} onChange={e => setEditForm(p => ({ ...p, email: e.target.value }))} placeholder="user@tapallc.com" />
 
                   <label className="el" style={{
@@ -407,7 +407,7 @@ export default function UsersPage() {
                   <div style={{ position: "relative", marginBottom: 4 }}>
                     <input className="ef" type={showPassword ? "text" : "password"} style={{
                       width: "100%", padding: "9px 40px 9px 11px", border: "1px solid var(--line)",
-                      borderRadius: 9, font: "inherit", fontSize: 14, background: "#fff", boxSizing: "border-box",
+                      borderRadius: 9, font: "inherit", fontSize: 14, background: "var(--card)", boxSizing: "border-box",
                     }} value={editForm.password || ""} onChange={e => setEditForm(p => ({ ...p, password: e.target.value }))} placeholder="Min 6 characters" />
                     <button
                       type="button"
@@ -443,7 +443,7 @@ export default function UsersPage() {
               }}>Location</label>
               <input className="ef" style={{
                 width: "100%", padding: "9px 11px", border: "1px solid var(--line)",
-                borderRadius: 9, font: "inherit", fontSize: 14, background: "#fff", marginBottom: 4,
+                borderRadius: 9, font: "inherit", fontSize: 14, background: "var(--card)", marginBottom: 4,
               }} value={editForm.location || ""} onChange={e => setEditForm(p => ({ ...p, location: e.target.value }))} placeholder="e.g. Houston, TX or Pune, India" />
 
               {/* Role + Reports to */}
@@ -456,7 +456,7 @@ export default function UsersPage() {
                   }}>Role</label>
                   <select className="ef" disabled={!canManageUsers} style={{
                     width: "100%", padding: "9px 11px", border: "1px solid var(--line)",
-                    borderRadius: 9, font: "inherit", fontSize: 14, background: "#fff", marginBottom: 4,
+                    borderRadius: 9, font: "inherit", fontSize: 14, background: "var(--card)", marginBottom: 4,
                   }} value={editForm.role || ""} onChange={e => setEditForm(p => ({ ...p, role: e.target.value }))}>
                     {ROLE_OPTIONS.map(r => <option key={r}>{r}</option>)}
                   </select>
@@ -469,7 +469,7 @@ export default function UsersPage() {
                   }}>Reports to</label>
                   <select className="ef" style={{
                     width: "100%", padding: "9px 11px", border: "1px solid var(--line)",
-                    borderRadius: 9, font: "inherit", fontSize: 14, background: "#fff", marginBottom: 4,
+                    borderRadius: 9, font: "inherit", fontSize: 14, background: "var(--card)", marginBottom: 4,
                   }} value={editForm.mgr || ""} onChange={e => setEditForm(p => ({ ...p, mgr: e.target.value }))}>
                     <option value="—">—</option>
                     {users.filter(x => /Manager|Owner/.test(x.role)).map(x => (
@@ -488,7 +488,7 @@ export default function UsersPage() {
               {modalUser === "new" ? (
                 <input className="ef" style={{
                   width: "100%", padding: "9px 11px", border: "1px solid var(--line)",
-                  borderRadius: 9, font: "inherit", fontSize: 14, background: "#fff", marginBottom: 4,
+                  borderRadius: 9, font: "inherit", fontSize: 14, background: "var(--card)", marginBottom: 4,
                 }} value={editForm.username || ""} onChange={e => setEditForm(p => ({ ...p, username: e.target.value }))} placeholder="Auto-generated from email" />
               ) : (
                 <div style={{
@@ -564,7 +564,7 @@ export default function UsersPage() {
                   <div style={{ position: "relative", marginBottom: 4 }}>
                     <input className="ef" type={showPassword ? "text" : "password"} style={{
                       width: "100%", padding: "9px 40px 9px 11px", border: "1px solid var(--line)",
-                      borderRadius: 9, font: "inherit", fontSize: 14, background: "#fff", boxSizing: "border-box",
+                      borderRadius: 9, font: "inherit", fontSize: 14, background: "var(--card)", boxSizing: "border-box",
                     }} value={editForm.password || ""} onChange={e => setEditForm(p => ({ ...p, password: e.target.value }))} placeholder="Min 6 characters" />
                     <button
                       type="button"

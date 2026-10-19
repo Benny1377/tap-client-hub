@@ -21,6 +21,7 @@ import {
 } from "@/lib/billing-ui/delivery";
 import { formatFirmDate, formatFirmDateTime, stageLabel, STAGE_LABELS, viewerIsPowerUser, type StageLabels } from "@/lib/billing-ui/view-model";
 import { ActionButton, ConfirmAction, ErrorBanner, OwnerAdminOnly } from "./ui";
+import { PDF_OPTION_PREFIX } from "./collections-panels";
 
 /** Status pill using the contract's wording. */
 export function DeliveryStatusPill({ status }: { status: string }) {
@@ -175,7 +176,7 @@ export function DeliveryHistoryView({ result, status, invoiceId, invoiceOptions,
   result: ApiResult<DeliveriesResponse> | null;
   status: DeliveryStatus | "";
   invoiceId: string;
-  invoiceOptions: Array<{ id: string; invoice_number: string }>;
+  invoiceOptions: Array<{ id: string; invoice_number: string; source?: string }>;
   stageLabels?: StageLabels;
   firmTimezone?: string;
   onFilter: (filters: { status: DeliveryStatus | ""; invoiceId: string }) => void;
@@ -197,7 +198,7 @@ export function DeliveryHistoryView({ result, status, invoiceId, invoiceOptions,
           <span>Invoice</span>
           <select className="bc-in" value={invoiceId} onChange={(event) => onFilter({ status, invoiceId: event.target.value })}>
             <option value="">All invoices</option>
-            {invoiceOptions.map((option) => <option key={option.id} value={option.id}>{option.invoice_number}</option>)}
+            {invoiceOptions.map((option) => <option key={option.id} value={option.id}>{option.invoice_number}{option.source === "pdf_import" ? " (A/R report)" : ""}</option>)}
           </select>
         </label>
       </div>
@@ -215,13 +216,13 @@ export function DeliveryHistoryView({ result, status, invoiceId, invoiceOptions,
                   {result.data.items.map((item) => (
                     <tr key={item.attempt_id} data-delivery-attempt={item.attempt_id} data-retryable={item.retryable}>
                       <td className="bc-small bc-nowrap">{formatFirmDateTime(item.created_at, firmTimezone)}</td>
-                      <td className="bc-nowrap">{item.invoice_number}</td>
+                      <td className="bc-nowrap">{item.invoice_number}{(item as { source?: string }).source === "pdf_import" ? <div className="bc-small">A/R report</div> : null}</td>
                       <td>{stageLabel(item.stage, stageLabels)}</td>
                       <td>
                         <DeliveryStatusPill status={item.status} />
                         {item.accepted_at ? <div className="bc-small">{formatFirmDateTime(item.accepted_at, firmTimezone)}</div> : null}
                       </td>
-                      <td className="bc-muted">{deliveryReasonLabel(item.reason_code, item.reason_text) || "—"}{item.next_attempt_at ? <div className="bc-small">Next try {formatFirmDateTime(item.next_attempt_at, firmTimezone)}</div> : null}</td>
+                      <td className="bc-muted">{deliveryReasonLabel(item.reason_code, item.reason_text) || "—"}{item.next_attempt_at && (item.status === "failed" || item.status === "queued") ? <div className="bc-small">Next try {formatFirmDateTime(item.next_attempt_at, firmTimezone)}</div> : null}</td>
                       <td className="r">{item.attempt_count}</td>
                       <td>{item.status === "failed" && item.retryable ? <ActionButton quiet label="Retry" onAction={() => onRetry(item.attempt_id)} /> : null}</td>
                     </tr>
@@ -245,7 +246,7 @@ export function DeliveryHistoryView({ result, status, invoiceId, invoiceOptions,
 export function DeliveryHistoryPanel({ api, viewer, invoiceOptions, stageLabels, firmTimezone, refreshKey = 0 }: {
   api: BillingApi;
   viewer: Viewer | null;
-  invoiceOptions: Array<{ id: string; invoice_number: string }>;
+  invoiceOptions: Array<{ id: string; invoice_number: string; source?: string }>;
   stageLabels?: StageLabels;
   firmTimezone?: string;
   refreshKey?: number;
@@ -254,7 +255,12 @@ export function DeliveryHistoryPanel({ api, viewer, invoiceOptions, stageLabels,
   const [filters, setFilters] = useState<{ status: DeliveryStatus | ""; invoiceId: string; offset: number }>({ status: "", invoiceId: "", offset: 0 });
   const [result, setResult] = useState<ApiResult<DeliveriesResponse> | null>(null);
   const load = useCallback(
-    () => api.deliveries({ status: filters.status || null, invoiceId: filters.invoiceId || null, limit: HISTORY_PAGE, offset: filters.offset }).then(setResult),
+    // A report-only invoice filters by its source identity (Phase 4 contract), not invoice_id.
+    () => api.deliveries({
+      status: filters.status || null,
+      ...(filters.invoiceId.startsWith(PDF_OPTION_PREFIX) ? { sourceInvoiceId: filters.invoiceId.slice(PDF_OPTION_PREFIX.length) } : { invoiceId: filters.invoiceId || null }),
+      limit: HISTORY_PAGE, offset: filters.offset,
+    }).then(setResult),
     [api, filters],
   );
   useEffect(() => { if (power) void load(); }, [power, load, refreshKey]);

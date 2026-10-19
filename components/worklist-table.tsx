@@ -1,12 +1,14 @@
 "use client";
 
 import { useMemo, useState, useCallback, useEffect, useRef } from "react";
+import { Icon } from "@/components/practiceops/icons";
 import { createPortal } from "react-dom";
 import { formatPayrollStartDate, getPayrollStartDate } from "@/lib/payroll-schedule";
 import { COMMENT_CATEGORIES, normalizeCommentCategory, type CommentCategory } from "@/lib/comment-category";
 
 import type { Client, ServiceConfig, ServiceKey, MonthStatus } from "@/lib/types";
 import { MONTHS_SHORT } from "@/lib/data";
+import { useSession } from "@/components/practiceops/session";
 import { filterWorklistKpi, type WorklistKpi } from "@/lib/worklist-kpi-filter";
 import { collectAssignmentOptions, matchesAssignmentFilter } from "@/lib/worklist-assignment-filter";
 import { exportClientCsv, serviceLabel } from "@/lib/export-csv";
@@ -64,15 +66,15 @@ const US_STATES = [
 // prog=blue, wait=amber, prep=teal, done=green, na=red, lock=not due
 const STAGE_STYLES: Record<
   WorklistStage,
-  { bg: string; fg: string; border: string; cls: string; label: string }
+  { bg: string; fg: string; border: string; cls: string; label: string; po: string }
 > = {
-  "": { bg: "transparent", fg: "#c2c8d4", border: "transparent", cls: "lock", label: "Not due" },
-  ip: { bg: "var(--blue-soft)", fg: "var(--blue)", border: "#bcd0e2", cls: "prog", label: "In progress" },
-  wc: { bg: "var(--amber-soft)", fg: "var(--amber)", border: "#e8d3a6", cls: "wait", label: "Waiting on client" },
-  pp: { bg: "var(--teal-soft)", fg: "var(--teal-ink)", border: "#c5d0ec", cls: "prep", label: "Prepared" },
-  dl: { bg: "var(--red-soft)", fg: "var(--red)", border: "#e8c4bf", cls: "delay", label: "Delayed" },
-  dn: { bg: "var(--green-soft)", fg: "var(--green)", border: "#bcdcc6", cls: "done", label: "Done" },
-  na: { bg: "var(--red-soft)", fg: "var(--red)", border: "#e8c4bf", cls: "na", label: "N/A" },
+  "": { bg: "transparent", fg: "var(--faint)", border: "transparent", cls: "lock", label: "Not due", po: "" },
+  ip: { bg: "var(--blue-soft)", fg: "var(--blue)", border: "var(--brand-line)", cls: "prog", label: "In progress", po: "ip" },
+  wc: { bg: "var(--amber-soft)", fg: "var(--amber)", border: "var(--amber-line)", cls: "wait", label: "Waiting on client", po: "wc" },
+  pp: { bg: "var(--teal-soft)", fg: "var(--teal-ink)", border: "var(--brand-line)", cls: "prep", label: "Prepared", po: "pp" },
+  dl: { bg: "var(--red-soft)", fg: "var(--red)", border: "var(--red-line)", cls: "delay", label: "Delayed", po: "late" },
+  dn: { bg: "var(--green-soft)", fg: "var(--green)", border: "var(--green-line)", cls: "done", label: "Done", po: "dn" },
+  na: { bg: "var(--red-soft)", fg: "var(--red)", border: "var(--red-line)", cls: "na", label: "N/A", po: "na" },
 };
 const STAGE_CYCLE: WorklistStage[] = ["", "ip", "wc", "pp", "dl", "dn", "na"];
 
@@ -287,6 +289,7 @@ export default function WorklistTable({
   onPayrollMissingRuns,
   onDataChange,
 }: WorklistTableProps) {
+  const { userName, userEmail } = useSession();
   const currentYear = new Date().getFullYear();
   const currentMonth = new Date().getMonth();
   const isHistorical = year < currentYear;
@@ -484,13 +487,8 @@ export default function WorklistTable({
   };
 
   // ── Comment helpers ──
-  const getAuthorName = (): string => {
-    if (typeof document !== "undefined") {
-      const m = document.cookie.match(/(?:^|;\s*)tap_demo_email=([^;]*)/);
-      if (m?.[1]) return decodeURIComponent(m[1]);
-    }
-    return "You";
-  };
+  // Shown until the next reload; the server stores the signed-in user as the author.
+  const getAuthorName = (): string => userName || userEmail || "You";
 
   const addComment = useCallback(async (clientId: string, monthIdx: number, text: string, stxItemId?: string, renewalItemId?: string, category: CommentCategory = "Other") => {
     if (!text.trim()) return;
@@ -1161,14 +1159,14 @@ export default function WorklistTable({
     <div className="space-y-3">
       {/* ── Stats row (demo: stat cards) ── */}
       {variant === "t9" ? (
-        <div className="stats" style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 16 }}>
+        <div className="gauto">
           <StatCard label="Expected (year)" value={stats.expTot} color="var(--ink)" active={kpiFilter === "all"} onClick={() => setKpiFilter("all")} />
           <StatCard label="Processed" value={stats.doneTot} color="var(--green)" active={kpiFilter === "processed"} onClick={() => setKpiFilter("processed")} />
           <StatCard label="Remaining" value={Math.max(0, stats.expTot - stats.doneTot)} color="var(--amber)" active={kpiFilter === "remaining"} onClick={() => setKpiFilter("remaining")} />
           <StatCard label={stats.isCur ? `In ${stats.currentMonthName}` : `Period total`} value={stats.isCur ? stats.curMonthCount : stats.doneTot} color="var(--blue)" active={kpiFilter === "current_month"} onClick={() => setKpiFilter("current_month")} />
         </div>
       ) : variant === "payroll" ? (
-        <div className="stats" style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 16 }}>
+        <div className="gauto">
           <StatCard label="Total Clients" value={serviceClients.length} color="var(--ink)" active={kpiFilter === "all"} onClick={() => setKpiFilter("all")} />
           <StatCard label="Total Runs" value={stats.totalRuns ?? 0} color="var(--blue)" active={kpiFilter === "runs"} onClick={() => setKpiFilter("runs")} />
           <StatCard label="Max Runs" value={stats.totalMax ?? 0} color="var(--muted)" active={kpiFilter === "max_runs"} onClick={() => setKpiFilter("max_runs")} />
@@ -1176,7 +1174,7 @@ export default function WorklistTable({
           <StatCard label={stats.isCur ? `In ${stats.currentMonthName}` : `Month runs`} value={stats.monthRuns ?? 0} color="var(--amber)" active={kpiFilter === "month_runs"} onClick={() => setKpiFilter("month_runs")} />
         </div>
       ) : (
-      <div className="stats" style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 16 }}>
+      <div className="gauto">
         {!isHistorical ? (
           <>
             <StatCard label="Total Clients" value={serviceClients.length} color="var(--ink)" active={kpiFilter === "all"} onClick={() => setKpiFilter("all")} />
@@ -1197,19 +1195,21 @@ export default function WorklistTable({
       )}
 
       {/* ── Search + Cadence filter ── */}
-      <div className="flex gap-2 items-center">
-        <input
-          type="search"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search clients..."
-          className="flex-1 px-3 py-2 rounded-lg border border-[var(--line)] bg-[var(--card)] text-[13px] text-[var(--ink)] outline-none transition-colors focus:border-[var(--teal)] focus:ring-2 focus:ring-[var(--teal-soft)] placeholder:text-[var(--muted)]"
-        />
+      <div className="controls" style={{ margin: "14px 0 4px" }}>
+        <div className="searchbox">
+          <Icon name="search" />
+          <input
+            type="search"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search client or group…"
+          />
+        </div>
         {cadenceOptions.length > 0 && (
           <select
             value={cadenceFilter}
             onChange={(e) => setCadenceFilter(e.target.value)}
-            className="px-3 py-2 rounded-lg border border-[var(--line)] bg-[var(--card)] text-[13px] text-[var(--ink)] outline-none transition-colors focus:border-[var(--teal)] focus:ring-2 focus:ring-[var(--teal-soft)] cursor-pointer"
+            className="inp" style={{ width: "auto" }}
           >
             <option value="All">All cadences</option>
             {cadenceOptions.map((opt) => (
@@ -1221,7 +1221,7 @@ export default function WorklistTable({
           <select
             value={assignedFilter}
             onChange={(e) => setAssignedFilter(e.target.value)}
-            className="px-3 py-2 rounded-lg border border-[var(--line)] bg-[var(--card)] text-[13px] text-[var(--ink)] outline-none transition-colors focus:border-[var(--teal)] focus:ring-2 focus:ring-[var(--teal-soft)] cursor-pointer"
+            className="inp" style={{ width: "auto" }}
           >
             <option value="All">All staff</option>
             {assignedOptions.filter(opt => opt !== "All").map((opt) => (
@@ -1234,7 +1234,7 @@ export default function WorklistTable({
             <select
               value={filingTypeFilter}
               onChange={(e) => setFilingTypeFilter(e.target.value)}
-              className="px-3 py-2 rounded-lg border border-[var(--line)] bg-[var(--card)] text-[13px] text-[var(--ink)] outline-none transition-colors focus:border-[var(--teal)] focus:ring-2 focus:ring-[var(--teal-soft)] cursor-pointer"
+              className="inp" style={{ width: "auto" }}
             >
               <option value="All">All types</option>
               {filingTypeOptions.filter(opt => opt !== "All").map((opt) => (
@@ -1244,7 +1244,7 @@ export default function WorklistTable({
             <select
               value={dueMonthFilter}
               onChange={(e) => setDueMonthFilter(e.target.value)}
-              className="px-3 py-2 rounded-lg border border-[var(--line)] bg-[var(--card)] text-[13px] text-[var(--ink)] outline-none transition-colors focus:border-[var(--teal)] focus:ring-2 focus:ring-[var(--teal-soft)] cursor-pointer"
+              className="inp" style={{ width: "auto" }}
             >
               <option value="All">All months</option>
               {dueMonthOptions.filter(opt => opt !== "All").map((opt) => (
@@ -1254,7 +1254,7 @@ export default function WorklistTable({
           </>
         )}
         {search && filteredClients.length < serviceClients.length && (
-          <span className="text-[11px] text-[var(--muted)] whitespace-nowrap">
+          <span className="count" style={{ margin: 0 }}>
             {filteredClients.length} of {serviceClients.length}
           </span>
         )}
@@ -1262,8 +1262,8 @@ export default function WorklistTable({
 
 
       {/* ── Info line + Legend row ── */}
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", margin: "6px 2px", gap: 8 }}>
-        <div className="text-xs" style={{ color: "var(--muted)" }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
+        <div className="count">
           {serviceKey === "sales_tax"
             ? "Grouped by client — each registration tracked on its own row. Open one for its bank details and notes."
             : variant === "tax_returns"
@@ -1276,25 +1276,23 @@ export default function WorklistTable({
           type="button"
           onClick={exportCSV}
           title={`Export ${filteredClients.length} filtered ${serviceLabel(serviceKey)} clients`}
-          className="px-3 py-1.5 rounded-lg border border-[var(--line)] bg-[var(--card)] text-xs font-semibold text-[var(--ink)] hover:border-[var(--teal)]"
+          className="btn alt sm"
         >
-          Export {filteredClients.length} filtered
+          Export to Excel
         </button>
         {/* Legend — status color indicators (hidden for t9 only) */}
         {variant !== "t9" && (
-        <div className="flex flex-wrap items-center gap-3.5 text-xs" style={{ zIndex: 5 }}>
+        <div className="legend" style={{ width: "100%", margin: "4px 0 6px" }}>
           {STAGE_CYCLE.filter(s => s !== "" && s !== "na").map(s => (
-            <span key={s} className="inline-flex items-center gap-1.5" style={{ color: "var(--muted)" }}>
-              <i style={{ width: 11, height: 11, borderRadius: 3, display: "inline-block", background: STAGE_STYLES[s].fg }}></i>
-              {getStageLabel(s, variant)}
-            </span>
+            <span key={s} className="lgd"><i className={`mcell ${STAGE_STYLES[s].po}`} style={{ width: 11, height: 11, borderRadius: 3 }}></i>{getStageLabel(s, variant)}</span>
           ))}
-          <span className="inline-flex items-center gap-1.5" style={{ color: "var(--muted)" }}><i style={{ width: 11, height: 11, borderRadius: 3, display: "inline-block", background: "repeating-linear-gradient(45deg, var(--red) 0px, var(--red) 2px, transparent 2px, transparent 4px)" }}></i>N/A</span>
-          <span className="inline-flex items-center gap-1.5" style={{ color: "var(--muted)" }}><i style={{ width: 11, height: 11, borderRadius: 3, display: "inline-block", background: "#c2c8d4" }}></i>Not due</span>
+          <span className="lgd"><i className="mcell na" style={{ width: 11, height: 11, borderRadius: 3 }}></i>Not applicable</span>
+          <span className="lgd"><i style={{ background: "var(--sunk)" }}></i>Not due</span>
           {variant === "tax_returns" && (
-            <span className="inline-flex items-center gap-1.5" style={{ color: "var(--muted)" }}><i style={{ width: 6, height: 6, borderRadius: 1, display: "inline-block", background: "var(--teal)", boxShadow: "0 0 0 1.5px #fff" }}></i>Filing month</span>
+            <span className="lgd"><i style={{ width: 6, height: 6, borderRadius: 1, background: "var(--brand)", border: "none" }}></i>Filing month</span>
           )}
-          <span className="inline-flex items-center gap-1.5" style={{ color: "var(--muted)" }}><i style={{ width: 6, height: 6, borderRadius: "50%", display: "inline-block", background: "var(--blue)", boxShadow: "0 0 0 1.5px #fff" }}></i>Has comments</span>
+          <span className="lgd"><i style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--blue)", border: "none" }}></i>Has comments</span>
+          <span className="lgd-note">{isHistorical ? `${year} — read-only history` : "click a cell to advance it · a red ring means past due"}</span>
         </div>
         )}
       </div>
@@ -1310,39 +1308,39 @@ export default function WorklistTable({
           style={{ background: "var(--card)", color: "var(--ink)", fontSize: 14, lineHeight: 1 }}
           aria-label="Scroll left"
         >{'\u2039'}</button>
-      <div id={`table-scroll-${serviceKey}`} style={{ overflowX: "auto", borderRadius: 14, border: "1px solid var(--line)", scrollBehavior: "smooth" }}>
+      <div id={`table-scroll-${serviceKey}`} className="panel scroll" style={{ scrollBehavior: "smooth" }}>
       <table style={{ width: "max-content", minWidth: "100%", borderCollapse: "collapse" }}>
         <thead>
-          <tr style={{ background: "var(--card)", borderBottom: "2px solid var(--line)" }}>
-             <th className="text-left text-[10px] font-semibold text-[var(--muted)] uppercase tracking-wider px-1.5 py-2" style={{ width: 160, minWidth: 120, maxWidth: 220 }}>Client / Line Item</th>
+          <tr>
+             <th style={{ width: 160, minWidth: 120, maxWidth: 220 }}>Client / Line Item</th>
             {variant === "payroll" && (
             <>
-              <th className="text-left text-[10px] font-semibold text-[var(--muted)] uppercase tracking-wider px-1 py-2" style={{ width: 80, maxWidth: 100 }}>Pay Day</th>
+              <th style={{ width: 80, maxWidth: 100 }}>Pay Day</th>
             </>
             )}
             {variant === "tax_returns" && (
             <>
-              <th className="text-left text-[10px] font-semibold text-[var(--muted)] uppercase tracking-wider px-1 py-2" style={{ width: 70, maxWidth: 80 }}>Filing St</th>
-              <th className="text-left text-[10px] font-semibold text-[var(--muted)] uppercase tracking-wider px-1 py-2" style={{ width: 80, maxWidth: 100 }}>Filing Type</th>
+              <th style={{ width: 70, maxWidth: 80 }}>Filing St</th>
+              <th style={{ width: 80, maxWidth: 100 }}>Filing Type</th>
             </>
             )}
             {((serviceKey === "renditions" || serviceKey === "annual_reports")) && showRenewalColumns && (
             <>
-              <th className="text-left text-[10px] font-semibold text-[var(--muted)] uppercase tracking-wider px-1 py-2" style={{ width: 50, maxWidth: 60 }}>State</th>
-              <th className="text-left text-[10px] font-semibold text-[var(--muted)] uppercase tracking-wider px-1 py-2" style={{ width: 70, maxWidth: 80 }}>Due</th>
+              <th style={{ width: 50, maxWidth: 60 }}>State</th>
+              <th style={{ width: 70, maxWidth: 80 }}>Due</th>
             </>
             )}
-            <th className="text-left text-[10px] font-semibold text-[var(--muted)] uppercase tracking-wider px-1 py-2" style={{ width: 120, maxWidth: 150 }}>Assigned</th>
+            <th style={{ width: 120, maxWidth: 150 }}>Assigned</th>
             {serviceKey !== "renditions" && serviceKey !== "annual_reports" && serviceKey !== "tax_returns" && variant !== "t9" && (
-            <th className="text-left text-[10px] font-semibold text-[var(--muted)] uppercase tracking-wider px-1 py-2" style={{ width: 90, maxWidth: 100 }}>Cadence</th>
+            <th style={{ width: 90, maxWidth: 100 }}>Cadence</th>
             )}
             {variant === "t9" && (
-            <th className="text-center text-[10px] font-semibold text-[var(--muted)] uppercase tracking-wider px-1 py-2" style={{ width: 60, minWidth: 60 }}>Expected</th>
+            <th className="c" style={{ width: 60, minWidth: 60 }}>Expected</th>
             )}
             {MONTHS_SHORT.map((m, mi) => {
               return (
                 <th key={m}
-                  className="text-center text-[10px] font-semibold text-[var(--muted)] uppercase tracking-wider px-0.5 py-2"
+                  className={`mh${mi === currentMonth && !isHistorical ? " now" : ""}`}
                   style={{
                     width: variant === "t9" ? 44 : 30,
                   }}
@@ -1351,7 +1349,7 @@ export default function WorklistTable({
             })}
             {variant === "t9" && (
             <>
-              <th className="text-center text-[10px] font-semibold text-[var(--muted)] uppercase tracking-wider px-0.5 py-2" style={{ width: 60, minWidth: 60 }}>Left</th>
+              <th className="c" style={{ width: 60, minWidth: 60 }}>Left</th>
             </>
             )}
           </tr>
@@ -1447,7 +1445,7 @@ export default function WorklistTable({
                     <td colSpan={colCount}>
                       <b>{client._groupOrigId ? (() => {
                         const found = serviceClients.find((c: any) => (c._originalClientId || c.id) === client._groupOrigId);
-                        return found ? <>{found.name}{found.active === false && <span style={{ marginLeft: 8, fontSize: 9, fontWeight: 700, color: "#c62828", background: "rgba(255,255,255,.85)", padding: "1px 6px", borderRadius: 3 }}>INACTIVE</span>}</> : '';
+                        return found ? <>{found.name}{found.active === false && <span style={{ marginLeft: 8, fontSize: 9, fontWeight: 700, color: "var(--red)", background: "rgba(255,255,255,.85)", padding: "1px 6px", borderRadius: 3 }}>INACTIVE</span>}</> : '';
                       })() : ''}</b> <span style={{ color: "rgba(255,255,255,.7)" }}>· {client._groupCount} {svcLabel}{client._groupCount !== 1 ? "s" : ""}</span>
                     </td>
                   </tr>
@@ -1483,7 +1481,8 @@ export default function WorklistTable({
                   <tr key={client.id} className="transition-colors" style={{ borderBottom: "1px solid var(--line)" }}>
                     <td className="px-1.5 py-1" style={{ width: 160, minWidth: 120, maxWidth: 220 }}>
                       <button onClick={() => onClientClick?.(client.id)}
-                        className="text-xs font-medium text-[var(--ink)] truncate text-left w-full bg-transparent border-none cursor-pointer hover:text-[var(--teal)] transition-colors p-0">{client.name}</button>
+                        className="rowname"
+                        style={{ all: "unset", cursor: "pointer", display: "block", maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontWeight: 600 }}>{client.name}</button>
                     </td>
                     <td className="px-1 py-1 text-[11px] text-[var(--muted)] whitespace-nowrap truncate" style={{ width: 120, maxWidth: 150 }}>
                       <span className="text-[var(--ink)]">{toShortName(svc.assignedTo || svc.processor || "—")}</span>
@@ -1500,7 +1499,7 @@ export default function WorklistTable({
                       const hasT9Cmt = (svc.comments || []).some((c: any) => c.month === i);
                       const t9MonthComments = (svc.comments || []).filter((c: any) => c.month === i);
                       return (
-                        <td key={mo} className={`mtd${isCM ? " mtd-now" : ""}`} style={{ position: "relative", width: 44, minWidth: 44, maxWidth: 44 }}>
+                        <td key={mo} className={`mtd${isCM ? " now" : ""}`} style={{ position: "relative", width: 44, minWidth: 44, maxWidth: 44 }}>
                           {isEditing ? (
                             <input
                               type="number"
@@ -1516,8 +1515,8 @@ export default function WorklistTable({
                               autoFocus
                               className="inline-flex items-center justify-center w-full h-6 rounded text-[11px] font-semibold tabular-nums text-center"
                               style={{
-                                backgroundColor: "#fff",
-                                border: "2px solid var(--teal)",
+                                backgroundColor: "var(--card)",
+                                border: "2px solid var(--brand)",
                                 color: "var(--ink)",
                                 outline: "none",
                               }}
@@ -1525,11 +1524,7 @@ export default function WorklistTable({
                           ) : (
                             <div
                               onClick={!isHistorical ? () => t9StartEdit(client.id, i, n) : undefined}
-                              className={`inline-flex items-center justify-center w-full h-6 rounded text-[11px] font-semibold tabular-nums transition-colors ${!isHistorical ? "cursor-pointer" : "cursor-default"} hover:scale-110 hover:shadow-sm active:scale-95`}
-                              style={{
-                                backgroundColor: n > 0 ? "var(--green-soft)" : "transparent",
-                                color: n > 0 ? "var(--green)" : "var(--muted)",
-                              }}
+                              className={`mcell${n > 0 ? " has" : ""}${isHistorical ? " ro" : ""}`}
                               title={`${mo}: ${n} processed — click to edit`}
                             >{n || "·"}</div>
                           )}
@@ -1546,7 +1541,7 @@ export default function WorklistTable({
                                 if (!isOpen) setCommentText("");
                               }}
                               className="cdot"
-                              style={{ all: "unset", cursor: "pointer", position: "absolute", top: 1, right: 1, zIndex: 3, width: 6, height: 6, borderRadius: "50%", background: "var(--blue)", boxShadow: "0 0 0 1.5px #fff" }}
+                              style={{ all: "unset", cursor: "pointer", position: "absolute", top: 1, right: 1, zIndex: 3, width: 6, height: 6, borderRadius: "50%", background: "var(--blue)", boxShadow: "0 0 0 1.5px var(--card)" }}
                               title={`Comments for ${mo}`}
                             />
                           )}
@@ -1591,7 +1586,7 @@ export default function WorklistTable({
                                 />
                                 <button
                                   onClick={() => addComment(client.id, i, commentText, activeStxItemId ?? undefined)}
-                                  style={{ all: "unset", cursor: "pointer", background: "var(--teal)", color: "#fff", padding: "5px 10px", borderRadius: 7, fontWeight: 600, fontSize: 12 }}
+                                  style={{ all: "unset", cursor: "pointer", background: "var(--brand)", color: "#fff", padding: "5px 10px", borderRadius: 7, fontWeight: 600, fontSize: 12 }}
                                 >Send</button>
                               </div>
                             </div>
@@ -1615,10 +1610,12 @@ export default function WorklistTable({
                   {/* Client / Line Item name (clickable) */}
                   <td className="px-1.5 py-1" style={{ width: 160, minWidth: 120, maxWidth: 220 }}>
                       <button onClick={() => onClientClick?.(client.id)}
-                        className="text-xs font-medium text-[var(--ink)] truncate text-left w-full bg-transparent border-none cursor-pointer hover:text-[var(--teal)] transition-colors p-0"
+                        className="rowname"
+                        style={{ all: "unset", cursor: "pointer", display: "block", maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontWeight: 600 }}
                         title={`Open ${isRenewalItem ? renewalDisplayName : displayName} details`}
                       >{isRenewalItem ? renewalDisplayName : displayName}
                       </button>
+                      {!isRenewalItem && client.cid ? <div className="sub mono">{client.cid}</div> : null}
                     </td>
 
                   {/* Payroll-specific columns: Pay Day (read-only) */}
@@ -1744,7 +1741,7 @@ export default function WorklistTable({
                     const hasCmt = commentSource.some((c: any) => c.month === i);
                     const monthComments = commentSource.filter((c: any) => c.month === i);
                     return (
-                      <td key={i} className={`mtd${isCurrentMonth ? " mtd-now" : ""}`} style={{ position: "relative" }}>
+                      <td key={i} className={`mtd${isCurrentMonth ? " now" : ""}`} style={{ position: "relative" }}>
                         {/* ── Filing month corner indicator ── */}
                         {isFilingMonth && (
                           <div style={{
@@ -1753,26 +1750,13 @@ export default function WorklistTable({
                             background: "var(--teal)",
                             borderRadius: 1,
                             zIndex: 2,
-                            boxShadow: "0 0 0 1.5px #fff",
+                            boxShadow: "0 0 0 1.5px var(--card)",
                           }} />
                         )}
                         <div
                           onClick={cellReadOnly ? undefined : (e) => { e.stopPropagation(); handleCellClick(client.id, i, e); }}
-                          className="mcell"
-                          style={{
-                            width: "100%", height: 24, borderRadius: 4,
-                            border: `${(serviceKey === "renditions" || serviceKey === "annual_reports") && !isActive ? "1px solid transparent" : `1px solid ${!isActive ? "transparent" : style.border}`}`,
-                            background: (serviceKey === "renditions" || serviceKey === "annual_reports")
-                              ? (!isActive ? "var(--line)" : stage === "na" ? `repeating-linear-gradient(45deg, ${style.bg} 0px, ${style.bg} 3px, #c0c4cc40 3px, #c0c4cc40 5px)` : style.bg)
-                              : (!isActive ? "transparent" : stage === "na" ? `repeating-linear-gradient(45deg, ${style.bg} 0px, ${style.bg} 3px, #c0c4cc40 3px, #c0c4cc40 5px)` : style.bg),
-                            color: !isActive ? (lockHist ? "var(--muted)" : "transparent") : style.fg,
-                            display: "flex", alignItems: "center", justifyContent: "center",
-                            margin: "0 auto",
-                            fontWeight: 600, fontSize: 11, userSelect: "none",
-                            cursor: (!isActive || cellReadOnly) ? "default" : "pointer",
-                            boxShadow: "none",
-                            opacity: (serviceKey === "renditions" || serviceKey === "annual_reports") ? 1 : (!isActive && !lockHist ? 0 : 1),
-                          } as React.CSSProperties}
+                          className={`mcell ${!isActive ? "off" : style.po}${cellReadOnly && isActive ? " ro" : ""}`}
+                          style={!isActive && (serviceKey === "renditions" || serviceKey === "annual_reports") ? { background: "var(--sunk)", opacity: 1 } : undefined}
                           title={`${MONTHS_SHORT[i]} — ${getStageLabel(stage, variant)}${isHistorical ? ` (${year})` : ""}${isFilingMonth ? " · Filing month" : ""}`}
                         >{isActive || lockHist ? t : ""}</div>
                         {/* ── Payroll: next pay date MM/DD in current month cell ── */}
@@ -1801,7 +1785,7 @@ export default function WorklistTable({
                             if (!isOpen) setCommentText("");
                             }}
                             className="cdot"
-                            style={{ all: "unset", cursor: "pointer", position: "absolute", top: 1, right: 1, zIndex: 3, width: 6, height: 6, borderRadius: "50%", background: "var(--blue)", boxShadow: "0 0 0 1.5px #fff" }}
+                            style={{ all: "unset", cursor: "pointer", position: "absolute", top: 1, right: 1, zIndex: 3, width: 6, height: 6, borderRadius: "50%", background: "var(--blue)", boxShadow: "0 0 0 1.5px var(--card)" }}
                             title={`Comments for ${MONTHS_SHORT[i]}`}
                             />
                         )}
@@ -1825,7 +1809,7 @@ export default function WorklistTable({
                                   <div key={cm.id} style={{ background: "var(--paper)", borderRadius: 7, padding: "6px 8px", position: "relative" }}>
                                     <div style={{ fontSize: 10, color: "var(--muted)", marginBottom: 3 }}>
                                       <b>{cm.author}</b> · {new Date(cm.createdAt).toLocaleString()}
-                                      {isStxItem && <span style={{ marginLeft: 5, padding: "1px 4px", borderRadius: 4, background: "#e8f0fe", color: "#1d4ed8", fontWeight: 700 }}>{normalizeCommentCategory(cm.category)}</span>}
+                                      {isStxItem && <span style={{ marginLeft: 5, padding: "1px 4px", borderRadius: 4, background: "var(--blue-soft)", color: "var(--brand)", fontWeight: 700 }}>{normalizeCommentCategory(cm.category)}</span>}
                                     </div>
                                     <div style={{ fontSize: 12, color: "var(--ink)", lineHeight: 1.4 }}>{cm.text}</div>
                                     <button
@@ -1847,7 +1831,7 @@ export default function WorklistTable({
                               />
                               <button
                                 onClick={() => { addComment(client.id, i, commentText, activeStxItemId ?? undefined, activeRenewalItemId ?? undefined, commentCategory); setCommentCategory("Other"); }}
-                                style={{ all: "unset", cursor: "pointer", background: "var(--teal)", color: "#fff", padding: "5px 10px", borderRadius: 7, fontWeight: 600, fontSize: 12 }}
+                                style={{ all: "unset", cursor: "pointer", background: "var(--brand)", color: "#fff", padding: "5px 10px", borderRadius: 7, fontWeight: 600, fontSize: 12 }}
                               >Send</button>
                             </div>
                             {isStxItem && (
@@ -1918,8 +1902,8 @@ export default function WorklistTable({
             top: dropdownPos.top,
             left: dropdownPos.left,
             transform: "translateX(-50%)",
-            background: "#fff",
-            border: "1px solid #d8d2c4",
+            background: "var(--card)",
+            border: "1px solid var(--line)",
             borderRadius: 10,
             boxShadow: "0 8px 28px rgba(15,23,42,.18)",
             padding: "4px 0",
@@ -1943,17 +1927,17 @@ export default function WorklistTable({
                   padding: "7px 14px", cursor: "pointer", fontSize: 13, whiteSpace: "nowrap",
                   fontWeight: isCurrent ? 700 : 400,
                   color: isCurrent ? "var(--ink)" : "var(--muted)",
-                  background: isCurrent ? "#f0f4f8" : "transparent",
-                  borderBottom: s !== "na" ? "1px solid #f0ede8" : "none",
+                  background: isCurrent ? "var(--card2)" : "transparent",
+                  borderBottom: s !== "na" ? "1px solid var(--card2)" : "none",
                 }}
-                onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = "#f5f7fa"; }}
-                onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = isCurrent ? "#f0f4f8" : "transparent"; }}
+                onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = "var(--card2)"; }}
+                onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = isCurrent ? "var(--card2)" : "transparent"; }}
               >
                 <i style={{
                   width: 12, height: 12, borderRadius: 4,
                   display: "inline-block", flexShrink: 0,
                   background: s === "na" ? "repeating-linear-gradient(45deg, var(--red) 0px, var(--red) 2px, transparent 2px, transparent 4px)"
-                    : s === "" ? "#c2c8d4" : ss.fg,
+                    : s === "" ? "var(--faint)" : ss.fg,
                 }} />
                 <span>{s === "" ? "Not Started" : getStageLabel(s, variant)}</span>
                 {isCurrent && <span style={{ marginLeft: "auto", color: "var(--teal)", fontSize: 14 }}>✓</span>}
@@ -2029,28 +2013,17 @@ function StatCard({
   return (
     <button
       type="button"
-      className="statcard"
+      className="stat"
       onClick={onClick}
       aria-pressed={active}
       style={{
-        flex: 1, minWidth: 120,
-        backgroundColor: "var(--card)",
-        border: active ? `2px solid ${color || "var(--teal)"}` : "1px solid var(--line)",
-        borderRadius: 13,
-        padding: "13px 16px",
-        boxShadow: "0 1px 2px rgba(33,31,26,0.04)",
+        textAlign: "left", cursor: onClick ? "pointer" : "default",
+        borderColor: active ? "var(--brand)" : undefined,
+        boxShadow: active ? "0 0 0 3px var(--brand-soft)" : undefined,
       }}
     >
-      <div style={{
-        fontFamily: '"Fraunces",Georgia,serif',
-        fontWeight: 600, fontSize: 26, lineHeight: 1,
-        color: color || "var(--ink)",
-      }}>
-        {value}
-      </div>
-      <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 4 }}>
-        {label}
-      </div>
+      <div className="k">{label}</div>
+      <div className="v num" style={{ color: color && color !== "var(--ink)" ? color : undefined }}>{value}</div>
     </button>
   );
 }

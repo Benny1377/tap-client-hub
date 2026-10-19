@@ -37,8 +37,9 @@ export async function proxy(request: NextRequest) {
     return NextResponse.redirect(loginUrl);
   }
 
-  // Redirect authenticated users away from login
-  if (hasAuthToken && pathname.startsWith("/login")) {
+  // Redirect authenticated users away from login, except to the code screen
+  // (?step=2fa), where a session that has passed the password step waits for 2FA.
+  if (hasAuthToken && pathname.startsWith("/login") && request.nextUrl.searchParams.get("step") !== "2fa") {
     return NextResponse.redirect(new URL("/", request.url));
   }
 

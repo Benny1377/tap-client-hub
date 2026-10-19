@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { Client, ServiceKey } from "@/lib/types";
-import { SERVICE_META, STAFF } from "@/lib/data";
+import { SERVICE_META } from "@/lib/data";
 import { calculatePayrollStartDate } from "@/lib/payroll-schedule";
 
 interface ClientModalProps {
@@ -12,7 +12,28 @@ interface ClientModalProps {
   onSave: (client: Client | Omit<Client, "id" | "cid">) => Promise<void> | void;
 }
 
-const STAFF_NAMES = [...STAFF.map(s => s.name), "Unassigned"];
+/**
+ * Active staff for the "Assigned to" choices, from the profile directory (the same
+ * source the client panel uses). The value is the profile's full name, which is
+ * what /api/clients matches on.
+ */
+function useStaffNames(): string[] {
+  const [names, setNames] = useState<string[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/profile-directory")
+      .then(r => (r.ok ? r.json() : []))
+      .then((data: unknown) => {
+        if (cancelled || !Array.isArray(data)) return;
+        setNames(data
+          .filter((u: { status?: string; name?: string }) => u.status === "Active" && u.name)
+          .map((u: { name: string }) => u.name));
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+  return [...names, "Unassigned"];
+}
 
 // ── Phone normalization helper ──
 function normalizePhone(value: string): string {
@@ -33,6 +54,7 @@ function isInvalidPhone(value: string): boolean {
 const FILING_TYPES = ["C Corp.", "S Corp.", "Partnership", "SMLLC", "Personal", "Trust", "Non Profit", "Retirem Plan"];
 
 export default function ClientModal({ open, client, onClose, onSave }: ClientModalProps) {
+  const staffNames = useStaffNames();
   const isEdit = !!client;
 
   const [previewCid] = useState(() => "TP|BS|" + String(Math.floor(1000 + Math.random() * 9000)).padStart(4, "0"));
@@ -312,11 +334,11 @@ export default function ClientModal({ open, client, onClose, onSave }: ClientMod
           <label style={labelStyle}>Additional email <span className="opt" style={{ fontWeight: 500, color: "var(--muted)", textTransform: "none", letterSpacing: 0 }}>(optional)</span></label>
           <input style={inputStyle} value={addEmail} onChange={e => setAddEmail(e.target.value)} placeholder="cc@email.com" />
           <label style={labelStyle}>Phone</label>
-          <input style={{ ...inputStyle, borderColor: isInvalidPhone(phone) ? "var(--red,#e74c3c)" : undefined }} value={phone} onChange={e => setPhone(e.target.value)} onBlur={e => setPhone(normalizePhone(e.target.value))} placeholder="(713) 555-0100" />
-          {isInvalidPhone(phone) && <div style={{ color: "var(--red,#e74c3c)", fontSize: 12, marginTop: 4 }}>Enter a valid 10-digit phone number.</div>}
+          <input style={{ ...inputStyle, borderColor: isInvalidPhone(phone) ? "var(--red,var(--red))" : undefined }} value={phone} onChange={e => setPhone(e.target.value)} onBlur={e => setPhone(normalizePhone(e.target.value))} placeholder="(713) 555-0100" />
+          {isInvalidPhone(phone) && <div style={{ color: "var(--red,var(--red))", fontSize: 12, marginTop: 4 }}>Enter a valid 10-digit phone number.</div>}
           <label style={labelStyle}>Additional phone <span className="opt" style={{ fontWeight: 500, color: "var(--muted)", textTransform: "none", letterSpacing: 0 }}>(optional)</span></label>
-          <input style={{ ...inputStyle, borderColor: isInvalidPhone(addPhone) ? "var(--red,#e74c3c)" : undefined }} value={addPhone} onChange={e => setAddPhone(e.target.value)} onBlur={e => setAddPhone(normalizePhone(e.target.value))} placeholder="(713) 555-0200" />
-          {isInvalidPhone(addPhone) && <div style={{ color: "var(--red,#e74c3c)", fontSize: 12, marginTop: 4 }}>Enter a valid 10-digit phone number.</div>}
+          <input style={{ ...inputStyle, borderColor: isInvalidPhone(addPhone) ? "var(--red,var(--red))" : undefined }} value={addPhone} onChange={e => setAddPhone(e.target.value)} onBlur={e => setAddPhone(normalizePhone(e.target.value))} placeholder="(713) 555-0200" />
+          {isInvalidPhone(addPhone) && <div style={{ color: "var(--red,var(--red))", fontSize: 12, marginTop: 4 }}>Enter a valid 10-digit phone number.</div>}
           <label style={labelStyle}>Street address</label>
           <input style={inputStyle} value={address} onChange={e => setAddress(e.target.value)} placeholder="123 Main St." />
           <div className="two" style={{ display: "flex", gap: 12 }}>
@@ -361,7 +383,7 @@ export default function ClientModal({ open, client, onClose, onSave }: ClientMod
             )}
             <label style={{ ...labelStyle, marginTop: 8 }}>Assigned to</label>
             <select style={inputStyle} value={finAssigned} onChange={e => setFinAssigned(e.target.value)}>
-              {STAFF_NAMES.map(s => <option key={s} value={s}>{s}</option>)}
+              {staffNames.map(s => <option key={s} value={s}>{s}</option>)}
             </select>
           </ServiceCard>
 
@@ -441,7 +463,7 @@ export default function ClientModal({ open, client, onClose, onSave }: ClientMod
             </div>
             <div style={{ marginTop: 8 }}>
               <label style={labelStyle}>Payroll Emails</label>
-              <div style={{ display: "flex", flexDirection: "column", gap: 4, padding: "4px 8px", border: "1px solid var(--line)", borderRadius: 7, fontSize: 13, background: "#fff", minHeight: 30 }}>
+              <div style={{ display: "flex", flexDirection: "column", gap: 4, padding: "4px 8px", border: "1px solid var(--line)", borderRadius: 7, fontSize: 13, background: "var(--card)", minHeight: 30 }}>
                   {prEmails.map((em, i) => (
                     <span key={i} style={{ display: "inline-flex", alignItems: "center", gap: 3, background: "var(--blue-soft)", color: "var(--blue)", borderRadius: 6, padding: "3px 8px", fontSize: 11, fontWeight: 600, justifyContent: "space-between" }}>
                       {em}
@@ -471,13 +493,13 @@ export default function ClientModal({ open, client, onClose, onSave }: ClientMod
                         inp.value = "";
                         inp.focus();
                       }}
-                      style={{ all: "unset", cursor: "pointer", padding: "2px 8px", background: "var(--ink)", color: "#fff", borderRadius: 6, fontSize: 16, fontWeight: 700, lineHeight: 1 }}>+</button>
+                      style={{ all: "unset", cursor: "pointer", padding: "2px 8px", background: "var(--ink)", color: "var(--paper)", borderRadius: 6, fontSize: 16, fontWeight: 700, lineHeight: 1 }}>+</button>
                   </div>
               </div>
             </div>
             <label style={{ ...labelStyle, marginTop: 8 }}>Assigned to</label>
             <select style={inputStyle} value={prAssigned} onChange={e => setPrAssigned(e.target.value)}>
-              {STAFF_NAMES.map(s => <option key={s} value={s}>{s}</option>)}
+              {staffNames.map(s => <option key={s} value={s}>{s}</option>)}
             </select>
           </ServiceCard>
 
@@ -494,11 +516,11 @@ export default function ClientModal({ open, client, onClose, onSave }: ClientMod
               <div style={{ background: "var(--card)", border: "1px solid var(--line)", borderRadius: 10, padding: 12, marginBottom: 8 }}>
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 8 }}>
                   <div>
-                    <label style={{ fontSize: 10, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", display: "block", marginBottom: 3 }}>Service name <span style={{ color: "var(--red,#e74c3c)" }}>*</span></label>
+                    <label style={{ fontSize: 10, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", display: "block", marginBottom: 3 }}>Service name <span style={{ color: "var(--red,var(--red))" }}>*</span></label>
                     <input style={{ width: "100%", padding: "7px 9px", border: "1px solid var(--line)", borderRadius: 7, fontSize: 13 }} value={newStxName} onChange={e => setNewStxName(e.target.value)} placeholder="e.g. Texas Sales Tax" />
                   </div>
                   <div>
-                    <label style={{ fontSize: 10, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", display: "block", marginBottom: 3 }}>RT <span style={{ color: "var(--red,#e74c3c)" }}>*</span></label>
+                    <label style={{ fontSize: 10, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", display: "block", marginBottom: 3 }}>RT <span style={{ color: "var(--red,var(--red))" }}>*</span></label>
                     <input style={{ width: "100%", padding: "7px 9px", border: "1px solid var(--line)", borderRadius: 7, fontSize: 13 }} value={newStxRt} onChange={e => setNewStxRt(e.target.value)} placeholder="e.g. 123456" />
                   </div>
                   <div>
@@ -508,7 +530,7 @@ export default function ClientModal({ open, client, onClose, onSave }: ClientMod
                     </select>
                   </div>
                   <div>
-                    <label style={{ fontSize: 10, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", display: "block", marginBottom: 3 }}>Tax ID <span style={{ color: "var(--red,#e74c3c)" }}>*</span></label>
+                    <label style={{ fontSize: 10, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", display: "block", marginBottom: 3 }}>Tax ID <span style={{ color: "var(--red,var(--red))" }}>*</span></label>
                     <input style={{ width: "100%", padding: "7px 9px", border: "1px solid var(--line)", borderRadius: 7, fontSize: 13 }} value={newStxTaxId} onChange={e => setNewStxTaxId(e.target.value)} placeholder="e.g. 74-1234567" />
                   </div>
                 </div>
@@ -532,7 +554,7 @@ export default function ClientModal({ open, client, onClose, onSave }: ClientMod
                     <select style={{ width: "100%", padding: "7px 9px", border: "1px solid var(--line)", borderRadius: 7, fontSize: 13 }}
                       value={newStxAssigned} onChange={e => setNewStxAssigned(e.target.value)}>
                       <option value="">—</option>
-                      {STAFF_NAMES.map(s => <option key={s} value={s}>{s}</option>)}
+                      {staffNames.map(s => <option key={s} value={s}>{s}</option>)}
                     </select>
                   </div>
                 </div>
@@ -540,8 +562,8 @@ export default function ClientModal({ open, client, onClose, onSave }: ClientMod
                   disabled={!newStxName.trim() || !newStxRt.trim() || !newStxTaxId.trim()}
                   style={{
                     all: "unset", cursor: "pointer", padding: "7px 14px", borderRadius: 8, fontWeight: 600, fontSize: 13,
-                    background: (!newStxName.trim() || !newStxRt.trim() || !newStxTaxId.trim()) ? "var(--line,#d8d2c4)" : "var(--ink)",
-                    color: (!newStxName.trim() || !newStxRt.trim() || !newStxTaxId.trim()) ? "var(--muted,#aaa)" : "#fff",
+                    background: (!newStxName.trim() || !newStxRt.trim() || !newStxTaxId.trim()) ? "var(--line,var(--line))" : "var(--ink)",
+                    color: (!newStxName.trim() || !newStxRt.trim() || !newStxTaxId.trim()) ? "var(--muted,var(--faint))" : "#fff",
                   }}
                   onClick={() => {
                     setStxLineItems(prev => [...prev, {
@@ -596,7 +618,7 @@ export default function ClientModal({ open, client, onClose, onSave }: ClientMod
             </div>
             <label style={{ ...labelStyle, marginTop: 8 }}>Assigned to</label>
             <select style={inputStyle} value={t9Assigned} onChange={e => setT9Assigned(e.target.value)}>
-              {STAFF_NAMES.map(s => <option key={s} value={s}>{s}</option>)}
+              {staffNames.map(s => <option key={s} value={s}>{s}</option>)}
             </select>
           </ServiceCard>
 
@@ -641,7 +663,7 @@ export default function ClientModal({ open, client, onClose, onSave }: ClientMod
                 </div>
                 <input style={inputStyle} value={newRenewalIds} onChange={e => setNewRenewalIds(e.target.value)} placeholder="IDs (e.g. EIN, state IDs)" />
                 <select style={inputStyle} value={newRenewalAssigned} onChange={e => setNewRenewalAssigned(e.target.value)}>
-                  {STAFF_NAMES.map(s => <option key={s} value={s}>{s}</option>)}
+                  {staffNames.map(s => <option key={s} value={s}>{s}</option>)}
                 </select>
                 <div style={{ display: "flex", gap: 8 }}>
                   <button onClick={() => setAddingRenewal(false)}
@@ -656,7 +678,7 @@ export default function ClientModal({ open, client, onClose, onSave }: ClientMod
                     setNewRenewalIds(""); setNewRenewalAssigned("Unassigned");
                     setAddingRenewal(false);
                   }}
-                    style={{ all: "unset", cursor: "pointer", padding: "4px 12px", borderRadius: 6, fontSize: 12, fontWeight: 600, background: "var(--ink)", color: "#fff" }}>Add</button>
+                    style={{ all: "unset", cursor: "pointer", padding: "4px 12px", borderRadius: 6, fontSize: 12, fontWeight: 600, background: "var(--ink)", color: "var(--paper)" }}>Add</button>
                 </div>
               </div>
             ) : (
@@ -675,7 +697,7 @@ export default function ClientModal({ open, client, onClose, onSave }: ClientMod
             </select>
             <label style={{ ...labelStyle, marginTop: 8 }}>Assigned to</label>
             <select style={inputStyle} value={taxAssigned} onChange={e => setTaxAssigned(e.target.value)}>
-              {STAFF_NAMES.map(s => <option key={s} value={s}>{s}</option>)}
+              {staffNames.map(s => <option key={s} value={s}>{s}</option>)}
             </select>
             <div className="two" style={{ display: "flex", gap: 12 }}>
               <div style={{ flex: 1 }}>
@@ -732,7 +754,7 @@ function ServiceCard({ icon, label, checked, onChange, children }: {
         <div className={`svcsub${checked ? " open" : ""}`} style={{
           maxHeight: checked ? 9999 : 0, opacity: checked ? 1 : 0,
           padding: checked ? "6px 13px 13px" : "0 13px",
-          transition: ".18s", background: "#faf7f0",
+          transition: ".18s", background: "var(--card2)",
           borderTop: checked ? "1px solid var(--line)" : "none",
           overflow: "hidden",
         }}>

@@ -1,8 +1,16 @@
 # TAP Client Hub Current Work
 
-Last updated: 2026-10-11 Asia Kolkata
+## Current Collections status (updated 2026-10-18)
 
-Updated by: Codex (Collections Phase 2 integration)
+- The owner reports Phase 4's revised A/R PDF intake contract has Engineer A approval. The approved decisions are recorded in `docs/contracts/collections-phase-4-ar-pdf-intake.md` and `docs/contracts/collections-phase-3-source-identity-addendum.md`.
+- Phase 4 backend review fixes are pushed at `2ccdd6c` on `codex/collections-phase4-backend`. Engineer A's integrated rerun and a Vercel preview PDF-worker smoke check remain before backend/UI sign-off. No hosted migration or real PDF import has occurred.
+- Phase 1/2 and delivery-disabled Phase 3 are treated as complete for now. Provider-backed test sending remains deferred to the end of delivery; live sending is not authorized.
+- Phase 4 includes private PDF storage, upload/review/approval/access-audit APIs, explicit client linking, stale-snapshot guards, source-aware holds/events/history, and PDF-selected worklist/preview data. Follow-up review status is in `docs/handoffs/2026-10-18-collections-phase4-backend.md`.
+- Use synthetic fixtures only. The owner's supplied real AR PDFs must remain out of Git, screenshots, test databases, and shared non-production environments. Hosted migrations remain deferred.
+
+Last updated: 2026-10-18 Asia Kolkata
+
+Updated by: Codex (Phase 4 backend review fixes)
 
 ## Shared baseline
 

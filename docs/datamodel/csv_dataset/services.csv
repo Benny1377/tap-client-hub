@@ -1,9 +1,0 @@
-id,code,name,tracking
-8356fec1-1b5b-45df-ab57-276899df5e6e,FIN,Monthly Financials,stage
-19bf0c9e-eb0b-43bf-bca3-a03922a490d9,PR,Payroll,count
-848f9a5d-68e2-4293-8ae0-d0008f6d591b,STX,Sales Tax,stage
-2d705b55-89e4-4224-810b-e911a2ac451c,T9,1099s,count
-85d61aa2-c377-467c-836d-ae193122ced2,REND,Renditions,stage
-aaacc3a2-e67a-4acc-a6f0-6d62260466df,TAX,Tax Returns,stage
-fe355273-5da1-4f6b-a81c-6c863fcb66b8,ANNUAL,Annual Reports,stage
-b007e3e6-6d9e-4581-aa1f-0a8f77587bf5,RENEWAL,State Renewal,stage

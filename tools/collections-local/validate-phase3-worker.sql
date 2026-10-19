@@ -1,3 +1,5 @@
+-- Phase 4 (20261019100000) makes canonical_collection_identity required on attempts; Billing
+-- attempts here use 'billing:<invoice_id>'.
 -- Usage (local harness only, after reset.sh --local):
 --   psql postgresql://postgres:postgres@127.0.0.1:55322/postgres -X -A -t -F ' | ' -f tools/collections-local/validate-phase3-worker.sql
 -- Expected: W1 t/sending 1, W2 t, W3 t/t/1/accepted, W4 completed_stage 3, W5 DELIVERY_DISABLED,
@@ -19,8 +21,8 @@
 -- W1-W4: claim, accept, exactly one reminder_logged, replay is a no-op, stage context counts one stage.
 begin;
 :setup
-insert into tap_hub_project.collection_delivery_attempts (id, client_id, invoice_id, stage, status, idempotency_key, actor)
-values ('30000000-0000-4000-8000-000000000001', :'cli1', :'inv1', 3, 'queued', 'collections:test:w1', :'owner');
+insert into tap_hub_project.collection_delivery_attempts (id, client_id, invoice_id, stage, status, idempotency_key, actor, canonical_collection_identity)
+values ('30000000-0000-4000-8000-000000000001', :'cli1', :'inv1', 3, 'queued', 'collections:test:w1', :'owner', 'billing:' || :'inv1');
 select 'W1 claim returns null (eligible)', tap_hub_project.claim_collection_test_delivery('30000000-0000-4000-8000-000000000001', :'owner') is null;
 select 'W1 status after claim', status, attempt_count from tap_hub_project.collection_delivery_attempts where id = '30000000-0000-4000-8000-000000000001';
 select 'W2 message context has no email/name keys', not (ctx ? 'email' or ctx ? 'contact_email' or ctx ? 'client_name'), ctx->>'eligible'
@@ -38,8 +40,8 @@ rollback;
 
 -- W5: automation off -> DELIVERY_DISABLED.
 begin;
-insert into tap_hub_project.collection_delivery_attempts (id, client_id, invoice_id, stage, status, idempotency_key)
-values ('30000000-0000-4000-8000-000000000005', :'cli1', :'inv1', 3, 'queued', 'collections:test:w5');
+insert into tap_hub_project.collection_delivery_attempts (id, client_id, invoice_id, stage, status, idempotency_key, canonical_collection_identity)
+values ('30000000-0000-4000-8000-000000000005', :'cli1', :'inv1', 3, 'queued', 'collections:test:w5', 'billing:' || :'inv1');
 select 'W5 automation off', tap_hub_project.claim_collection_test_delivery('30000000-0000-4000-8000-000000000005', :'owner');
 rollback;
 
@@ -47,8 +49,8 @@ rollback;
 begin;
 :setup
 update tap_hub_project.invoices set is_synthetic = false where id = :'inv1';
-insert into tap_hub_project.collection_delivery_attempts (id, client_id, invoice_id, stage, status, idempotency_key)
-values ('30000000-0000-4000-8000-000000000006', :'cli1', :'inv1', 3, 'queued', 'collections:test:w6');
+insert into tap_hub_project.collection_delivery_attempts (id, client_id, invoice_id, stage, status, idempotency_key, canonical_collection_identity)
+values ('30000000-0000-4000-8000-000000000006', :'cli1', :'inv1', 3, 'queued', 'collections:test:w6', 'billing:' || :'inv1');
 select 'W6 non-synthetic invoice', tap_hub_project.claim_collection_test_delivery('30000000-0000-4000-8000-000000000006', :'owner');
 rollback;
 
@@ -56,8 +58,8 @@ rollback;
 begin;
 :setup
 insert into tap_hub_project.collection_holds (client_id, invoice_id, reason, placed_by) values (:'cli1', :'inv1', 'local test hold', :'owner');
-insert into tap_hub_project.collection_delivery_attempts (id, client_id, invoice_id, stage, status, idempotency_key)
-values ('30000000-0000-4000-8000-000000000007', :'cli1', :'inv1', 3, 'queued', 'collections:test:w7');
+insert into tap_hub_project.collection_delivery_attempts (id, client_id, invoice_id, stage, status, idempotency_key, canonical_collection_identity)
+values ('30000000-0000-4000-8000-000000000007', :'cli1', :'inv1', 3, 'queued', 'collections:test:w7', 'billing:' || :'inv1');
 select 'W7 active hold', tap_hub_project.claim_collection_test_delivery('30000000-0000-4000-8000-000000000007', :'owner');
 rollback;
 
@@ -65,8 +67,8 @@ rollback;
 begin;
 :setup
 update tap_hub_project.collection_settings set weekdays_only = true where id = 'default';
-insert into tap_hub_project.collection_delivery_attempts (id, client_id, invoice_id, stage, status, idempotency_key)
-values ('30000000-0000-4000-8000-000000000008', :'cli1', :'inv1', 3, 'queued', 'collections:test:w8');
+insert into tap_hub_project.collection_delivery_attempts (id, client_id, invoice_id, stage, status, idempotency_key, canonical_collection_identity)
+values ('30000000-0000-4000-8000-000000000008', :'cli1', :'inv1', 3, 'queued', 'collections:test:w8', 'billing:' || :'inv1');
 select 'W8 weekend with weekdays_only (today isodow=' || extract(isodow from tap_hub_project.collections_firm_today()) || ')',
   tap_hub_project.claim_collection_test_delivery('30000000-0000-4000-8000-000000000008', :'owner');
 rollback;
@@ -75,24 +77,24 @@ rollback;
 begin;
 :setup
 update tap_hub_project.contacts set email = null where client_id = :'cli1' and is_primary;
-insert into tap_hub_project.collection_delivery_attempts (id, client_id, invoice_id, stage, status, idempotency_key)
-values ('30000000-0000-4000-8000-000000000009', :'cli1', :'inv1', 3, 'queued', 'collections:test:w9');
+insert into tap_hub_project.collection_delivery_attempts (id, client_id, invoice_id, stage, status, idempotency_key, canonical_collection_identity)
+values ('30000000-0000-4000-8000-000000000009', :'cli1', :'inv1', 3, 'queued', 'collections:test:w9', 'billing:' || :'inv1');
 select 'W9 primary without email', tap_hub_project.claim_collection_test_delivery('30000000-0000-4000-8000-000000000009', :'owner');
 rollback;
 
 -- W10: stage 5 needs formal_notice_approved; accept of stage 5 writes no reminder_logged.
 begin;
 :setup
-insert into tap_hub_project.collection_delivery_attempts (id, client_id, invoice_id, stage, status, idempotency_key)
-values ('30000000-0000-4000-8000-00000000000a', :'cli1', :'inv1', 5, 'queued', 'collections:test:w10');
+insert into tap_hub_project.collection_delivery_attempts (id, client_id, invoice_id, stage, status, idempotency_key, canonical_collection_identity)
+values ('30000000-0000-4000-8000-00000000000a', :'cli1', :'inv1', 5, 'queued', 'collections:test:w10', 'billing:' || :'inv1');
 select 'W10 stage 5 without approval', tap_hub_project.claim_collection_test_delivery('30000000-0000-4000-8000-00000000000a', :'owner');
 rollback;
 
 -- W11: wrong stage for the invoice (stage 1 when next is 3) -> refused.
 begin;
 :setup
-insert into tap_hub_project.collection_delivery_attempts (id, client_id, invoice_id, stage, status, idempotency_key)
-values ('30000000-0000-4000-8000-00000000000b', :'cli1', :'inv1', 1, 'queued', 'collections:test:w11');
+insert into tap_hub_project.collection_delivery_attempts (id, client_id, invoice_id, stage, status, idempotency_key, canonical_collection_identity)
+values ('30000000-0000-4000-8000-00000000000b', :'cli1', :'inv1', 1, 'queued', 'collections:test:w11', 'billing:' || :'inv1');
 select 'W11 out-of-order stage', tap_hub_project.claim_collection_test_delivery('30000000-0000-4000-8000-00000000000b', :'owner');
 rollback;
 
@@ -111,8 +113,8 @@ rollback;
 -- idempotency key with the identical payload; a changed payload is refused.
 begin;
 :setup
-insert into tap_hub_project.collection_delivery_attempts (id, client_id, invoice_id, stage, status, idempotency_key, actor)
-values ('30000000-0000-4000-8000-00000000000d', :'cli1', :'inv1', 3, 'queued', 'collections:test:w13', :'owner');
+insert into tap_hub_project.collection_delivery_attempts (id, client_id, invoice_id, stage, status, idempotency_key, actor, canonical_collection_identity)
+values ('30000000-0000-4000-8000-00000000000d', :'cli1', :'inv1', 3, 'queued', 'collections:test:w13', :'owner', 'billing:' || :'inv1');
 select tap_hub_project.claim_collection_test_delivery('30000000-0000-4000-8000-00000000000d', :'owner') is null as claimed \gset w13_
 select 'W13 first fingerprint stored', tap_hub_project.record_collection_test_payload_fingerprint('30000000-0000-4000-8000-00000000000d', repeat('a', 64), :'owner');
 select 'W13 same payload accepted', tap_hub_project.record_collection_test_payload_fingerprint('30000000-0000-4000-8000-00000000000d', repeat('a', 64), :'owner');

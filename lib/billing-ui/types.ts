@@ -117,6 +117,11 @@ export interface CollectionHold {
   released_at: string | null;
   /** Invoice number from the server; null for a whole-client hold. */
   invoice_number?: string | null;
+  /** Phase 4 source identity: a hold can target a report-only invoice (invoice_id null). */
+  source?: "billing" | "pdf_import" | null;
+  source_invoice_id?: string | null;
+  canonical_collection_identity?: string | null;
+  source_as_of?: string | null;
 }
 
 export type CollectionEventType =
@@ -145,6 +150,10 @@ export interface CollectionEvent {
   approves_event_id: string | null;
   /** Invoice number from the server; null for client-level history. */
   invoice_number?: string | null;
+  source?: "billing" | "pdf_import" | null;
+  source_invoice_id?: string | null;
+  canonical_collection_identity?: string | null;
+  source_as_of?: string | null;
 }
 
 /** Shared response types for the safe Collections rules display endpoint. */
@@ -164,6 +173,8 @@ export interface ClientOption {
 }
 
 export interface Viewer {
+  /** Profile id from /api/me; used to explain separation-of-duties rules, never to authorize. */
+  id?: string;
   role: string;
   modules: string[];
 }

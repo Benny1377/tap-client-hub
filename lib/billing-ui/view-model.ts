@@ -117,13 +117,32 @@ export function activeHolds(holds: CollectionHold[], today: string, clientId?: s
   return holds.filter((hold) => holdInForce(hold, today) && (!clientId || hold.client_id === clientId));
 }
 
+type InvoiceTarget = { invoice_id?: string | null; source_invoice_id?: string | null; canonical_collection_identity?: string | null };
+
+/**
+ * The invoice a hold, event or request is about, as one comparable key; null means
+ * the whole client. Uses the server's canonical identity when present, so a Billing
+ * invoice and its linked A/R-report row compare equal (Phase 4).
+ */
+export function invoiceScope(item: InvoiceTarget) {
+  if (item.canonical_collection_identity) return item.canonical_collection_identity;
+  if (item.invoice_id) return `billing:${item.invoice_id}`;
+  if (item.source_invoice_id) return `pdf_import:${item.source_invoice_id}`;
+  return null;
+}
+
 /**
  * Whether a hold blocks an escalation or formal notice for this client and invoice.
  * Mirrors the approve and request routes: a client-wide hold blocks everything for
- * the client; an invoice hold blocks only requests about that invoice.
+ * the client; an invoice hold blocks only requests about that invoice. The target is
+ * a Billing invoice id, a source-aware record, or null for a client-level request.
  */
-export function holdBlocks(holds: CollectionHold[], today: string, clientId: string, invoiceId: string | null) {
-  return activeHolds(holds, today, clientId).some((hold) => !hold.invoice_id || hold.invoice_id === invoiceId);
+export function holdBlocks(holds: CollectionHold[], today: string, clientId: string, target: string | InvoiceTarget | null) {
+  const scope = typeof target === "string" ? `billing:${target}` : target ? invoiceScope(target) : null;
+  return activeHolds(holds, today, clientId).some((hold) => {
+    const held = invoiceScope(hold);
+    return !held || held === scope;
+  });
 }
 
 const APPROVAL_FOR: Record<string, "escalated" | "formal_notice_approved"> = {
@@ -152,7 +171,7 @@ export function approvalRequests(events: CollectionEvent[], holds: CollectionHol
     if (!approvalType) return [];
     let state: ApprovalState;
     if (approvedIds.has(request.id)) state = "approved";
-    else if (holdBlocks(holds, today, request.client_id, request.invoice_id)) state = "blocked_by_hold";
+    else if (holdBlocks(holds, today, request.client_id, request)) state = "blocked_by_hold";
     else if (!power) state = "requires_owner_admin";
     else state = "can_approve";
     return [{ request, approvalType, state }];
@@ -251,6 +270,7 @@ export const PREVIEW_REASON_LABELS: Record<string, string> = {
   below_minimum_balance: "Below minimum balance",
   contact_review_required: "Needs one primary contact with an email",
   email_contact_missing: "No client email on file",
+  source_discrepancy_blocked: "A/R report and Billing balances differ; review required",
 };
 
 export const DISPOSITION_LABELS: Record<string, string> = {
