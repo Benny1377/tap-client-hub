@@ -8,9 +8,15 @@
 - Phase 4 includes private PDF storage, upload/review/approval/access-audit APIs, explicit client linking, stale-snapshot guards, source-aware holds/events/history, and PDF-selected worklist/preview data. Follow-up review status is in `docs/handoffs/2026-10-18-collections-phase4-backend.md`.
 - Use synthetic fixtures only. The owner's supplied real AR PDFs must remain out of Git, screenshots, test databases, and shared non-production environments. Hosted migrations remain deferred.
 
-Last updated: 2026-10-18 Asia Kolkata
+## Billing project planning (initialized 2026-10-19)
 
-Updated by: Codex (Phase 4 backend review fixes)
+- Billing planning is isolated on `codex/billing-project-planning`. It records owner-approved pricing, permission, remittance, and A/R Intake boundaries without authorizing implementation.
+- The first Billing activity is a read-only Phase 0 inventory and branch reconciliation. It prevents duplicate migrations, routes, or UI while Collections completes Phase 4 validation.
+- Artifacts: `docs/decisions/2026-10-19-billing-project-foundation.md`, `docs/contracts/billing-project-foundation.md`, `docs/coordination/BILLING_PROJECT.md`, and `docs/handoffs/2026-10-19-billing-project-initialization.md`.
+
+Last updated: 2026-10-19 Asia Kolkata
+
+Updated by: Codex (Phase 4 backend review fixes; Billing planning initialization)
 
 ## Shared baseline
 
