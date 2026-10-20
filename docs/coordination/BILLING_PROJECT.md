@@ -15,7 +15,7 @@ Status: **Initialized for planning** on 2026-10-19. This register authorizes no 
 | Item | Evidence | Classification |
 | --- | --- | --- |
 | Prototype | Local `practiceops_1.html` | Workflow reference only |
-| Integration baseline | `codex/collections-phase4-backend` contains Billing UI/APIs, later Billing migrations/tests, and Collections Phase 4 A/R Intake work | Implemented branch state; hosted/release state remains unverified |
+| Integration baseline | `codex/security-fixes` at `6859607` contains the Phase 4 backend history and integrated UI history; the Billing planning branch merges cleanly | Selected Phase 0 base; hosted/release state remains unverified |
 | A/R Intake | Phase 4 contract keeps approved PDF data separate from the native ledger | Collections source, not Billing writeback |
 
 ## Approved decisions
@@ -23,7 +23,8 @@ Status: **Initialized for planning** on 2026-10-19. This register authorizes no 
 - Rate card, client override, bundle, and effective-date pricing.
 - Configurable recurring and service-completion candidate triggers.
 - Owner/Admin-managed permission policy with non-bypassable security and ledger controls.
-- Firm remittance instructions snapshot at invoice issuance.
+- `TAP-YYYY-####` issue-RPC numbering, Net 15 default terms with client override, recurring billing on the final configured service-period day with client/service override.
+- Firm remittance instructions snapshot at invoice issuance; no bank credentials, and no values in audit/error logs.
 - Reviewed, source-provenanced A/R Intake distinct from native Billing.
 
 ## Work lanes
@@ -40,11 +41,12 @@ Status: **Initialized for planning** on 2026-10-19. This register authorizes no 
 
 | ID | Owner | Status | Requirement |
 | --- | --- | --- | --- |
-| BILL-DEP-01 | Both engineers | Open | Reconcile branch ancestry and select the implementation base before new code |
-| BILL-DEP-02 | Project owner + client | Open | Define service-to-completion-event configuration before Phase 2 |
+| BILL-DEP-01 | Both engineers | Approved | Use `codex/security-fixes` at `6859607`; record exact UI ancestry in the Phase 0 review before implementation |
+| BILL-DEP-02 | Project owner + client | Open | Define service-to-completion-event configuration before the one-off portion of the single Phase 2 delivery |
 | BILL-DEP-03 | Engineer B | Open | Verify authorization, RLS, audit, and migrations locally before Phase 1 release claim |
 | BILL-DEP-04 | Engineer A + Engineer B | Open | Freeze the foundation contract and API shapes before Phase 3 |
 | BILL-DEP-05 | Project owner | Deferred | Any hosted migration, production write, provider, processor, or bank feed |
+| BILL-DEP-06 | Engineer B | Open | Add synthetic Operations service, schedule, and completion fixtures before Phase 2 validation |
 
 ## Operating rules
 

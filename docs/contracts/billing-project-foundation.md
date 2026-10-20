@@ -19,8 +19,11 @@ Excluded: bank feeds/login storage, payment processing, QuickBooks API/OAuth, ta
 - Totals, paid state, balances, and aging are server-derived read models; consumers never recompute them.
 - A billable candidate is not an invoice until a user creates or confirms a draft.
 - An issued invoice snapshots remittance instructions.
+- Remittance settings contain only the payment instructions deliberately intended for the invoice recipient. They never contain banking credentials; their values are not emitted in audit/error logs. Owner/Admin may change them, and the issue RPC reads and snapshots them server-side.
 - Native Billing and external A/R Intake remain separate; a matched-source discrepancy blocks Collections action until authorized, audited resolution.
 - Multi-row financial mutations use one database transaction/RPC and write audit data in that transaction.
+- The database, not only a route, rejects issued-invoice line changes, line amounts that differ from `quantity × unit_amount`, and a void when active payment allocations exist.
+- A draft is deleted only by an audited RPC and only if it is unissued, unallocated, and unreferenced by Collections history.
 
 ## Permission boundary
 
@@ -37,19 +40,28 @@ Every page and API resolves authenticated identity and checks module access serv
 
 Policy configuration cannot weaken database invariants, RLS, server authentication, immutable audit requirements, or collection approval separation of duties.
 
+The policy is persisted as a Billing action-policy table. Server-side permission resolution combines the authenticated user's role, assigned modules, and enabled policy actions; APIs return the resolved action set for UI presentation. Price endpoints and price-bearing fields require Owner/Admin or the Billing module. Collections-only access excludes them.
+
+## Candidate, price, and invoice defaults
+
+- A billable candidate is uniquely identified by `client_service_id`, candidate type, and a schedule-occurrence key or Operations completion-event ID. The database rejects a duplicate identity.
+- Resolve price for the candidate date in this order: active client bundle; active client-service override; active matching rate-card entry; otherwise mark the candidate `unpriced` and block invoice creation.
+- The issue RPC allocates an invoice number as `TAP-YYYY-####`; invoice numbers are identifiers, not secrets.
+- Default terms are Net 15 with a client-level override. Recurring billing defaults to the final calendar day of the configured service period, with a client/service override. One-off billing starts only after the configured completion event.
+
 ## Phased delivery
 
 | Phase | Outcome | Required evidence |
 | --- | --- | --- |
-| 0 — Integration baseline | Reconcile target branch, ancestry, migrations, APIs, UI, and tests; assign path ownership | Shared inventory and accepted merge/implementation sequence; no duplicate work |
+| 0 — Integration baseline | Use `codex/security-fixes` at `6859607`; reconcile ancestry, migrations, APIs, UI, and tests; assign path ownership | Shared inventory and accepted merge/implementation sequence; no duplicate work |
 | 1 — Native ledger release | Validate existing invoice/payment/allocation/audit/receivables foundation | Local synthetic schema/RPC/API/access/audit/RLS evidence |
-| 2 — Pricing and candidates | Rate card, overrides/bundles, effective dates, configurable trigger map, candidate review | Frozen API contract and candidate source/amount evidence |
+| 2 — Pricing and candidates | Rate card, overrides/bundles, effective dates, recurring schedules, and configured one-off completion triggers in one delivery | Frozen API contract, synthetic Operations fixtures, and candidate source/amount evidence |
 | 3 — Workbench and reconciliation | Draft-to-issue UI, remittance settings, manual payment/reconciliation | UI → API → database → reload and role-session evidence |
 | 4 — Deferred integrations | Consider delivery, processor/bank feed, portal, QuickBooks API separately | New approved contract |
 
 ## API, refresh, and validation
 
-- Mutations return stable `401 unauthenticated`, `403 forbidden`, `404 not_found`, `409 invariant_violation`, or `422 invalid_input` errors.
+- Every error response is `{ error: string, code: UPPER_SNAKE_CASE }`; the HTTP status remains authoritative (`401`, `403`, `404`, `409`, `422`, or `500`) and `code` is the stable machine-readable reason.
 - Refetch the affected candidate, invoice, client receivables, and aging after every mutation. No optimistic balance arithmetic.
 - Source-aware Collections payloads identify `billing` or `pdf_import`; native Billing writes never accept a PDF row as a ledger record.
 - Use synthetic local fixtures only. Never use real A/R PDFs, bank data, payment data, or credentials in fixtures, screenshots, or shared environments.

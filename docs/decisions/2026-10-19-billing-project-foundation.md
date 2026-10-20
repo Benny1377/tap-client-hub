@@ -6,7 +6,7 @@ Status: **Approved**. Named approver: Project owner (Tejas Wilavanya), 2026-10-1
 
 `practiceops_1.html` models the intended workflow—rate cards, client pricing and bundles, recurring and completion-triggered one-off work, draft/issued invoices, deposits/allocations, reconciliation, and derived receivables—but it is not durable or authorized implementation.
 
-The selected integration baseline, `codex/collections-phase4-backend`, contains native Billing ledger/UI/API work and Collections Phase 4 A/R PDF Intake work. Branch presence does not establish a hosted migration or production release.
+The selected integration baseline is `codex/security-fixes` at `6859607`. It contains the Phase 4 backend history and the integrated PracticeOps/Phase 4 UI history. `codex/billing-project-planning` merges cleanly into it. Branch presence does not establish a hosted migration or production release.
 
 ## Decision
 
@@ -15,11 +15,21 @@ The selected integration baseline, `codex/collections-phase4-backend`, contains 
 3. Owners/Admins manage a configurable permission policy. Initial void/reversal authority remains Owner/Admin-only. Policy cannot bypass server authorization, ledger invariants, audit writes, or separation-of-duties rules.
 4. Firm remittance settings are client-facing invoice payment instructions, never banking credentials or bank-login data. Issued invoices snapshot their instructions; later changes affect future drafts only.
 5. A/R Intake is a separate, reviewable source. It retains source provenance, client linking, invoice identity, balance, and reconciliation status. It may feed Collections but never creates or mutates native Billing invoices, payments, allocations, credits, or client records.
+6. The Billing foundation uses the route error envelope `{ error: string, code: UPPER_SNAKE_CASE }`. HTTP status is authoritative for the category; `code` is the stable machine-readable reason.
+7. Effective Billing permissions are calculated server-side from authenticated identity, assigned module(s), and a database-backed Billing action policy. Owner/Admin alone administer that policy. The UI receives the effective permissions for presentation but never authorizes an action.
+8. Price data is visible only to Owner/Admin and users assigned the Billing module. Collections-only access may read receivables but not rate cards, overrides, bundles, or price/margin details.
+9. A billable candidate has a database-enforced source identity: client service, candidate type, and either a schedule occurrence or a source completion event. Duplicate candidates are rejected, not silently merged.
+10. Price resolution is deterministic: active client bundle first; otherwise active client-service override; otherwise active matching rate-card entry; otherwise the candidate is `unpriced` and cannot be invoiced.
+11. Invoice numbers use `TAP-YYYY-####`, allocated sequentially by the issue RPC. The default is Net 15, with a client-level terms override. Recurring candidates use the final calendar day of their configured service period by default, with a client/service override; one-off candidates wait for confirmed completion.
+12. Draft deletion is allowed only through an audited RPC for an unissued, unallocated, unreferenced draft. Issuing is an atomic RPC that validates the draft, allocates/locks its number, snapshots approved remittance instructions, writes audit history, and issues the invoice.
+13. Pricing, recurring candidates, and one-off candidates remain one Phase 2 delivery. The one-off implementation may begin only when its service-to-completion-event map is defined.
 
 ## Consequences
 
 - Reuse and validate the existing native ledger before adding new Billing migrations or routes.
 - Pricing history, invoice totals, allocations, and audit history require forward-only migrations and database-enforced invariants.
+- Database rules—not route checks alone—must prevent changes to issued lines, mismatched line amounts, and voiding an invoice with active allocations. Decimal calculations belong in database numeric logic.
+- Net 15 is a commercial due-date policy, not a security mechanism. Remittance content is intentionally client-visible only when printed on an invoice; it must contain no bank-login credential, be changed only by authorized users, be audit logged without exposing values in logs, and be stored/retrieved only through server-side access controls.
 - Bank feeds, payment processing, QuickBooks API/OAuth, taxes, interest, late fees, client portal, and outbound invoice delivery remain deferred.
 
 ## Follow-up
@@ -28,4 +38,5 @@ The selected integration baseline, `codex/collections-phase4-backend`, contains 
 | --- | --- | --- |
 | Freeze the Billing foundation contract | Engineer A and Engineer B | Consumer review of the initialization handoff |
 | Define client-specific service-to-completion-event rules | Project owner with client | Before billable-candidate implementation |
+| Add synthetic Operations service, schedule, and completion fixtures to the local harness | Engineer B | Before Phase 2 validation |
 | Decide delivery, processor, and bank-feed integrations | Project owner | After manual Billing/reconciliation release |

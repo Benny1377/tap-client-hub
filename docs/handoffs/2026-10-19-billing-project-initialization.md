@@ -4,7 +4,7 @@
 | --- | --- |
 | Milestone | Billing planning and initialization |
 | Branch | `codex/billing-project-planning` |
-| Base | `codex/collections-phase4-backend` at `202cba1` |
+| Base | `codex/security-fixes` at `6859607` (selected by project owner; exact Phase 4 UI ancestry is recorded in the Phase 0 review) |
 | Contract | `docs/contracts/billing-project-foundation.md` — Draft, owner decisions approved |
 | Decision | `docs/decisions/2026-10-19-billing-project-foundation.md` — Approved |
 | Implementation status | Documentation only |
@@ -19,7 +19,7 @@
 
 ## Required Phase 0 action
 
-Perform a read-only comparison before implementation: identify exact base commit; inventory Billing tables/functions/routes/UI/types/tests; compare branch ancestry and reusable commits; confirm deterministic forward-only migration order; return path ownership and merge sequence. Do not write code until both engineers accept this plan.
+Perform a read-only comparison before implementation: verify `6859607` and its UI ancestry; inventory Billing tables/functions/routes/UI/types/tests; compare branch ancestry and reusable commits; confirm deterministic forward-only migration order; return path ownership and merge sequence. Do not write code until both engineers accept this plan.
 
 ## Safety boundary
 
