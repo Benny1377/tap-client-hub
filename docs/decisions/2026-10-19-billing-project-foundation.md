@@ -23,6 +23,13 @@ The selected integration baseline is `codex/security-fixes` at `6859607`. It con
 11. Invoice numbers use `TAP-YYYY-####`, allocated sequentially by the issue RPC. The default is Net 15, with a client-level terms override. Recurring candidates use the final calendar day of their configured service period by default, with a client/service override; one-off candidates wait for confirmed completion.
 12. Draft deletion is allowed only through an audited RPC for an unissued, unallocated, unreferenced draft. Issuing is an atomic RPC that validates the draft, allocates/locks its number, snapshots approved remittance instructions, writes audit history, and issues the invoice.
 13. Pricing, recurring candidates, and one-off candidates remain one Phase 2 delivery. The one-off implementation may begin only when its service-to-completion-event map is defined.
+14. The owner approves the Phase 0 gap resolutions below:
+    - The canonical firm timezone is **Houston, Texas**; the valid IANA identifier is `America/Chicago`. Billing reuses `collection_settings.timezone` and labels it Houston in user-facing settings.
+    - Billing staff can view price information but do not receive `pricing.manage` by default. Owner/Admin explicitly grants it through the Billing action policy.
+    - A candidate returns to `open` when its linked draft is deleted or its invoice is voided. An authorized user may dismiss it with a reason and later reopen it.
+    - Billing uses active `client_services` joined to `services` for enrollment/cadence. Recurring candidates derive from Billing rules; one-off evidence is configured from `work_periods`, `period_counts`, or explicit manual confirmation. An unmapped one-off service produces no candidate.
+    - Manual reconciliation remains UI over native payment/allocation APIs, with an optional read-only suggestion endpoint and no new deposit entity. Void reason is required; invoice list filters include status, client, and date.
+    - The two untracked prototype copies must be SHA-256 compared before one is recorded as the canonical design reference. Until then, neither is treated as a versioned contract source.
 
 ## Consequences
 
@@ -30,6 +37,7 @@ The selected integration baseline is `codex/security-fixes` at `6859607`. It con
 - Pricing history, invoice totals, allocations, and audit history require forward-only migrations and database-enforced invariants.
 - Database rules—not route checks alone—must prevent changes to issued lines, mismatched line amounts, and voiding an invoice with active allocations. Decimal calculations belong in database numeric logic.
 - Net 15 is a commercial due-date policy, not a security mechanism. Remittance content is intentionally client-visible only when printed on an invoice; it must contain no bank-login credential, be changed only by authorized users, be audit logged without exposing values in logs, and be stored/retrieved only through server-side access controls.
+- `America/Chicago` is the standards-compliant timezone identifier for Houston. It is not a Chicago-location decision; Texas firm-date behavior uses the Houston/Central time zone.
 - Bank feeds, payment processing, QuickBooks API/OAuth, taxes, interest, late fees, client portal, and outbound invoice delivery remain deferred.
 
 ## Follow-up
