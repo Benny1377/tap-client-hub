@@ -1116,8 +1116,15 @@ export default function WorklistTable({
     exportClientCsv(filteredClients, {
       serviceKey,
       filenamePrefix: serviceLabel(serviceKey),
+      year,
+      monthStatuses: serviceKey === "financials"
+        ? Object.fromEntries(filteredClients.map((client: any) => [
+            client.id,
+            worklistState[`${client.id}:${serviceKey}`] ?? [],
+          ]))
+        : undefined,
     });
-  }, [filteredClients, serviceKey]);
+  }, [filteredClients, serviceKey, worklistState, year]);
 
   // ── Pipe payroll missing runs up to parent ──
   useEffect(() => {
