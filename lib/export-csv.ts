@@ -1,4 +1,5 @@
 import type { Client, ClientService, ServiceKey } from "@/lib/types";
+import { financialsExportHeaders, financialsExportValues } from "@/lib/financials-export";
 
 const SERVICE_LABELS: Partial<Record<ServiceKey, string>> = {
   tax_returns: "Tax Returns",
@@ -20,16 +21,23 @@ function serviceFor(client: Client, serviceKey?: ServiceKey): ClientService | un
 
 export function exportClientCsv(
   clients: Client[],
-  options: { serviceKey?: ServiceKey; filenamePrefix?: string },
+  options: {
+    serviceKey?: ServiceKey;
+    filenamePrefix?: string;
+    year?: number;
+    monthStatuses?: Record<string, readonly unknown[]>;
+  },
 ): void {
   const { serviceKey, filenamePrefix = serviceKey ? SERVICE_LABELS[serviceKey] : "TAP Clients" } = options;
+  const includeFinancialMonths = serviceKey === "financials";
   const headers = [
     "Name", "CID", "Type", "Group", "City", "State", "Assigned Staff", "Service",
     "Cadence", "Filing Type", "Filing Month", "Email", "Phone",
+    ...(includeFinancialMonths ? financialsExportHeaders() : []),
   ];
   const rows = clients.map((client) => {
     const service = serviceFor(client, serviceKey);
-    return [
+    const row: unknown[] = [
       client.name,
       client.cid,
       client.type,
@@ -43,7 +51,15 @@ export function exportClientCsv(
       service?.filingMonth || "",
       client.emails?.[0] || "",
       client.phones?.[0] || "",
-    ].map(csvCell).join(",");
+    ];
+    if (includeFinancialMonths) {
+      row.push(...financialsExportValues(
+        service || {},
+        options.monthStatuses?.[client.id] || service?.months || [],
+        options.year ?? new Date().getFullYear(),
+      ));
+    }
+    return row.map(csvCell).join(",");
   });
   const csv = [headers.map(csvCell).join(","), ...rows].join("\n");
   const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
