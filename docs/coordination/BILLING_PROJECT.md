@@ -8,13 +8,13 @@ Status: **Initialized for planning** on 2026-10-19. This register authorizes no 
 2. Forward-only migrations and database invariants.
 3. Server routes/RPCs and access policy.
 4. Billing UI and read models.
-5. `practiceops_1.html` prototype behavior where it does not conflict with the above.
+5. Canonical prototype behavior in `dev-mock/design/practiceops.html` (SHA-256 `4b795a36c34fb4664e2d5567dbdf422ef612216b2fb45dbc9515e11fbd293595`) where it does not conflict with the above.
 
 ## Verified starting state
 
 | Item | Evidence | Classification |
 | --- | --- | --- |
-| Prototype | Local `practiceops_1.html` | Workflow reference only |
+| Prototype | `dev-mock/design/practiceops.html` (SHA-256 `4b795a36c34fb4664e2d5567dbdf422ef612216b2fb45dbc9515e11fbd293595`) | Canonical workflow reference only; not a versioned contract source |
 | Integration baseline | `codex/security-fixes` at `6859607` contains the Phase 4 backend history and integrated UI history; the Billing planning branch merges cleanly | Selected Phase 0 base; hosted/release state remains unverified |
 | A/R Intake | Phase 4 contract keeps approved PDF data separate from the native ledger | Collections source, not Billing writeback |
 

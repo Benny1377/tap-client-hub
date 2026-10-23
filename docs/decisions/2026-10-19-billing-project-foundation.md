@@ -4,7 +4,7 @@ Status: **Approved**. Named approver: Project owner (Tejas Wilavanya), 2026-10-1
 
 ## Context and evidence
 
-`practiceops_1.html` models the intended workflow—rate cards, client pricing and bundles, recurring and completion-triggered one-off work, draft/issued invoices, deposits/allocations, reconciliation, and derived receivables—but it is not durable or authorized implementation.
+The canonical prototype design reference is `dev-mock/design/practiceops.html`, SHA-256 `4b795a36c34fb4664e2d5567dbdf422ef612216b2fb45dbc9515e11fbd293595`. It models the intended workflow—rate cards, client pricing and bundles, recurring and completion-triggered one-off work, draft/issued invoices, deposits/allocations, reconciliation, and derived receivables—but it is not durable or authorized implementation. The owner confirmed that the locally named `practiceops_1.html` refers to this same design source; the canonical path and hash above govern Phase 0 references.
 
 The selected integration baseline is `codex/security-fixes` at `6859607`. It contains the Phase 4 backend history and the integrated PracticeOps/Phase 4 UI history. `codex/billing-project-planning` merges cleanly into it. Branch presence does not establish a hosted migration or production release.
 
@@ -12,7 +12,7 @@ The selected integration baseline is `codex/security-fixes` at `6859607`. It con
 
 1. Billing pricing supports a firm rate card, effective-dated client overrides, fixed bundles, and modular service rules.
 2. Recurring work becomes a billable candidate on its configured schedule. A one-off candidate appears only after its configured Operations completion event.
-3. Owners/Admins manage a configurable permission policy. Initial void/reversal authority remains Owner/Admin-only. Policy cannot bypass server authorization, ledger invariants, audit writes, or separation-of-duties rules.
+3. Owners/Admins manage a configurable permission policy. `policy.manage`, `invoices.void`, and `payments.reverse` always resolve to Owner/Admin, cannot be granted to staff through the policy record, and are enforced server-side. Any future delegation of invoice voids or payment reversals requires a new owner decision. Policy cannot bypass server authorization, ledger invariants, audit writes, or separation-of-duties rules.
 4. Firm remittance settings are client-facing invoice payment instructions, never banking credentials or bank-login data. Issued invoices snapshot their instructions; later changes affect future drafts only.
 5. A/R Intake is a separate, reviewable source. It retains source provenance, client linking, invoice identity, balance, and reconciliation status. It may feed Collections but never creates or mutates native Billing invoices, payments, allocations, credits, or client records.
 6. The Billing foundation uses the route error envelope `{ error: string, code: UPPER_SNAKE_CASE }`. HTTP status is authoritative for the category; `code` is the stable machine-readable reason.
@@ -29,7 +29,7 @@ The selected integration baseline is `codex/security-fixes` at `6859607`. It con
     - A candidate returns to `open` when its linked draft is deleted or its invoice is voided. An authorized user may dismiss it with a reason and later reopen it.
     - Billing uses active `client_services` joined to `services` for enrollment/cadence. Recurring candidates derive from Billing rules; one-off evidence is configured from `work_periods`, `period_counts`, or explicit manual confirmation. An unmapped one-off service produces no candidate.
     - Manual reconciliation remains UI over native payment/allocation APIs, with an optional read-only suggestion endpoint and no new deposit entity. Void reason is required; invoice list filters include status, client, and date.
-    - The two untracked prototype copies must be SHA-256 compared before one is recorded as the canonical design reference. Until then, neither is treated as a versioned contract source.
+    - The canonical prototype reference is `dev-mock/design/practiceops.html`, SHA-256 `4b795a36c34fb4664e2d5567dbdf422ef612216b2fb45dbc9515e11fbd293595`. It remains an untracked workflow reference, not a versioned contract source.
 
 ## Consequences
 

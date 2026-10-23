@@ -35,12 +35,12 @@ Every Billing API resolves authenticated identity and checks module access serve
 | Maintain pricing and billable rules | Owner/Admin or delegated Billing permission | Yes |
 | Create/update draft; issue invoice | Owner/Admin or assigned Billing user | Yes |
 | Record/allocate payment | Owner/Admin or assigned Billing user | Yes |
-| Void invoice; reverse payment/allocation | Owner/Admin | Not initially delegated |
-| Change permission policy | Owner/Admin | No |
+| Void invoice; reverse payment/allocation | Owner/Admin | No — reserved server-enforced action |
+| Change permission policy | Owner/Admin | No — reserved server-enforced action |
 
 Policy configuration cannot weaken database invariants, RLS, server authentication, immutable audit requirements, or collection approval separation of duties.
 
-The policy is persisted as a single Billing action-policy record following the existing Collections permission-policy pattern. It has only these fixed keys: `billing.view`, `pricing.view`, `pricing.manage`, `candidates.view`, `candidates.manage`, `invoices.draft.manage`, `invoices.issue`, `invoices.void`, `payments.record`, `payments.allocate`, `payments.reverse`, `settings.remittance.manage`, `settings.terms.manage`, and `policy.manage`.
+The policy is persisted as a single Billing action-policy record following the existing Collections permission-policy pattern. It has only these fixed keys: `billing.view`, `pricing.view`, `pricing.manage`, `candidates.view`, `candidates.manage`, `invoices.draft.manage`, `invoices.issue`, `invoices.void`, `payments.record`, `payments.allocate`, `payments.reverse`, `settings.remittance.manage`, `settings.terms.manage`, and `policy.manage`. The record must not grant `policy.manage`, `invoices.void`, or `payments.reverse`: those fixed keys always resolve to Owner/Admin and the server enforces that restriction. Delegating invoice voids or payment reversals in a later phase requires a new owner decision.
 
 Server-side permission resolution combines authenticated role, assigned modules, and enabled policy actions. `GET /api/billing/permissions` returns the resolved set solely for UI presentation. Billing staff receive price visibility but not `pricing.manage` by default; Owner/Admin may explicitly enable it. Collections-only access excludes every price-bearing field.
 
