@@ -55,8 +55,10 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   if (body?.action === "void") {
     const access = await requireBillingPowerUser();
     if (access.response) return access.response;
+    const reason = typeof body.reason === "string" ? body.reason.trim() : "";
+    if (!reason) return NextResponse.json({ error: "A non-empty void reason is required", code: "VOID_REASON_REQUIRED" }, { status: 422 });
     const db = createAdminClient();
-    const { data, error } = await db.from("invoices").update({ status: "void", voided_by: access.identity!.id, updated_by: access.identity!.id, voided_at: new Date().toISOString(), void_reason: body.reason || null }).eq("id", id).eq("status", "issued").select("*, invoice_lines(*)").single();
+    const { data, error } = await db.from("invoices").update({ status: "void", voided_by: access.identity!.id, updated_by: access.identity!.id, voided_at: new Date().toISOString(), void_reason: reason }).eq("id", id).eq("status", "issued").select("*, invoice_lines(*)").single();
     if (error) return NextResponse.json({ error: error.code === "PGRST116" ? "Only issued invoices can be voided" : error.message, code: error.code === "PGRST116" ? "INVOICE_NOT_ISSUED" : error.code === "P0001" ? "ACTIVE_PAYMENT_ALLOCATION" : "INVOICE_VOID_FAILED" }, { status: error.code === "PGRST116" || error.code === "P0001" ? 409 : 500 });
     return NextResponse.json({ invoice: data });
   }

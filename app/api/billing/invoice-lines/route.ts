@@ -53,6 +53,11 @@ function lineAmount(quantityUnits: string, unitCents: string) {
   return { value: `${roundedCents.slice(0, -2) || "0"}.${roundedCents.slice(-2).padStart(2, "0")}` };
 }
 
+function hasAtMostWholeDigits(value: string, maximum: number) {
+  const [whole] = value.split(".");
+  return whole.length <= maximum;
+}
+
 export async function POST(request: NextRequest) {
   const access = await requireBillingAccess();
   if (access.response) return access.response;
@@ -66,7 +71,9 @@ export async function POST(request: NextRequest) {
   const quantity = decimal(body.quantity ?? "1", 4);
   const unit = money(body.unit_amount);
   if (!quantity || quantity.units === "0" || !unit) return NextResponse.json({ error: "quantity and unit_amount must be positive monetary values", code: "INVALID_AMOUNT" }, { status: 422 });
+  if (!hasAtMostWholeDigits(quantity.value, 8) || !hasAtMostWholeDigits(unit.value, 10)) return NextResponse.json({ error: "quantity or unit_amount is outside the supported numeric range", code: "AMOUNT_OUT_OF_RANGE" }, { status: 422 });
   const amount = lineAmount(quantity.units, unit.cents);
+  if (!hasAtMostWholeDigits(amount.value, 10)) return NextResponse.json({ error: "amount is outside the supported monetary range", code: "AMOUNT_OUT_OF_RANGE" }, { status: 422 });
   const db = createAdminClient();
   const { data: invoice } = await db.from("invoices").select("status").eq("id", body.invoice_id).maybeSingle();
   if (!invoice) return NextResponse.json({ error: "Invoice not found", code: "NOT_FOUND" }, { status: 404 });
@@ -120,7 +127,9 @@ export async function PATCH(request: NextRequest) {
     const { data: current } = await db.from("invoice_lines").select("quantity, unit_amount").eq("id", body.id).single();
     const quantity = decimal(body.quantity ?? current?.quantity, 4); const unit = money(body.unit_amount ?? current?.unit_amount);
     if (!quantity || !unit || quantity.units === "0") return NextResponse.json({ error: "Invalid quantity or unit_amount", code: "INVALID_AMOUNT" }, { status: 422 });
+    if (!hasAtMostWholeDigits(quantity.value, 8) || !hasAtMostWholeDigits(unit.value, 10)) return NextResponse.json({ error: "quantity or unit_amount is outside the supported numeric range", code: "AMOUNT_OUT_OF_RANGE" }, { status: 422 });
     const amount = lineAmount(quantity.units, unit.cents);
+    if (!hasAtMostWholeDigits(amount.value, 10)) return NextResponse.json({ error: "amount is outside the supported monetary range", code: "AMOUNT_OUT_OF_RANGE" }, { status: 422 });
     updates.quantity = quantity.value; updates.unit_amount = unit.value; updates.amount = amount.value;
   }
   updates.updated_by = access.identity?.id || null;

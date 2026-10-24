@@ -17,6 +17,13 @@ begin
   where id = case when tg_op = 'DELETE' then old.invoice_id else new.invoice_id end
   for key share;
 
+  -- A draft deletion removes the parent invoice first, then PostgreSQL
+  -- cascades to its lines. In that DELETE-only cascade there is no parent
+  -- row left to inspect; delete_draft_invoice already authorized the draft.
+  if not found and tg_op = 'DELETE' then
+    return old;
+  end if;
+
   if not found then
     raise exception 'invariant_violation: invoice does not exist' using errcode = 'P0001';
   end if;
@@ -51,6 +58,12 @@ security definer
 set search_path = tap_hub_project, public
 as $$
 begin
+  if old.status = 'issued' and new.status = 'void'
+    and nullif(btrim(new.void_reason), '') is null then
+    raise exception 'invariant_violation: a non-empty void reason is required'
+      using errcode = 'P0001';
+  end if;
+
   if old.status = 'issued' and new.status = 'void' and exists (
     select 1
     from payment_allocations
