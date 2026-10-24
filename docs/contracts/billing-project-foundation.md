@@ -1,6 +1,6 @@
 # Contract: Billing Project Foundation
 
-State: **Draft — owner gap resolutions approved 2026-10-20; freeze after Engineer A records final acknowledgement.**
+State: **Frozen — project owner confirmed 2026-10-24 after Engineer A's acknowledgement at `efc8be2`.**
 
 - Producer: Billing backend owner (schema, routes/RPCs, access policy, tests).
 - Consumer: Billing UI owner; Collections and Client 360 consumers of Billing read models.

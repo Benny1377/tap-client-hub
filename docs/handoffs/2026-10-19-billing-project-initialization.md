@@ -5,7 +5,7 @@
 | Milestone | Billing planning and initialization |
 | Branch | `codex/billing-project-planning` |
 | Base | `codex/security-fixes` at `6859607` (selected by project owner; exact Phase 4 UI ancestry is recorded in the Phase 0 review) |
-| Contract | `docs/contracts/billing-project-foundation.md` — Draft, owner decisions approved |
+| Contract | `docs/contracts/billing-project-foundation.md` — Frozen 2026-10-24; Engineer A acknowledgement at `efc8be2` |
 | Decision | `docs/decisions/2026-10-19-billing-project-foundation.md` — Approved |
 | Implementation status | Documentation only |
 

@@ -1,6 +1,6 @@
 # TAB-HUB Billing Project Register
 
-Status: **Initialized for planning** on 2026-10-19. This register authorizes no implementation, migration, deployment, commit, or external change.
+Status: **Phase 0 frozen** on 2026-10-24. The frozen contract authorizes scoped implementation planning only; migration, deployment, production access, and external changes remain separately governed.
 
 ## Source-of-truth order
 
@@ -45,7 +45,7 @@ Status: **Initialized for planning** on 2026-10-19. This register authorizes no 
 | BILL-DEP-01 | Both engineers | Approved | Use `codex/security-fixes` at `6859607`; record exact UI ancestry in the Phase 0 review before implementation |
 | BILL-DEP-02 | Project owner + client | Open | Define service-to-completion-event configuration before the one-off portion of the single Phase 2 delivery |
 | BILL-DEP-03 | Engineer B | Open | Verify authorization, RLS, audit, and migrations locally before Phase 1 release claim |
-| BILL-DEP-04 | Engineer A + Engineer B | Pending acknowledgement | Owner approved every Phase 0 gap resolution on 2026-10-20; Engineer A records final freeze acknowledgement |
+| BILL-DEP-04 | Engineer A + Engineer B | Acknowledged / complete | Engineer A accepted the frozen contract at `7ecaee6` with no objections in `docs/handoffs/2026-10-24-billing-freeze-acknowledgement.md` on `codex/billing-workbench-ui` (`efc8be2`); owner confirmed freeze on 2026-10-24 |
 | BILL-DEP-05 | Project owner | Deferred | Any hosted migration, production write, provider, processor, or bank feed |
 | BILL-DEP-06 | Engineer B | Open | Add synthetic Operations service, schedule, and completion fixtures before Phase 2 validation |
 
@@ -55,3 +55,7 @@ Status: **Initialized for planning** on 2026-10-19. This register authorizes no 
 - Do not duplicate migrations, routes, or UI before Phase 0 proves them absent from the selected base.
 - Use synthetic local Supabase data only, recording command, commit, environment, result, and limitation.
 - A phase is complete only after contract, handoff, and relevant integrated validation—not when code is merely written.
+
+## Base divergence note
+
+`main` advanced to `a94bc00` on 2026-10-23 with two export-fix commits that are absent from both the frozen Billing base (`codex/security-fixes` at `6859607`) and `dev` (`e1d43b3`). They do not touch Billing, Collections, access, or migrations. The Billing base remains `6859607`. Whether to merge the export fixes into `dev` is a separate owner decision; its known single conflict in `tests/export-filter-contract.test.mjs` must be resolved as its own change before any affected integration work.

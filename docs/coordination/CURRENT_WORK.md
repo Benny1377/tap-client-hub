@@ -10,13 +10,13 @@
 
 ## Billing project planning (initialized 2026-10-19)
 
-- Billing planning is isolated on `codex/billing-project-planning`. It records owner-approved pricing, permission, remittance, and A/R Intake boundaries without authorizing implementation.
-- The first Billing activity is a read-only Phase 0 inventory and branch reconciliation. It prevents duplicate migrations, routes, or UI while Collections completes Phase 4 validation.
+- Billing planning is isolated on `codex/billing-project-planning`. Its Phase 0 foundation is frozen as of 2026-10-24 after Engineer A accepted `7ecaee6` without objection (`efc8be2`).
+- The next Billing dependencies are BILL-DEP-03 (Engineer B's local Phase 1 authorization/RLS/audit/migration validation) and BILL-DEP-06 (synthetic Operations fixtures before Phase 2 validation). BILL-DEP-02 remains open only for the one-off portion of Phase 2.
 - Artifacts: `docs/decisions/2026-10-19-billing-project-foundation.md`, `docs/contracts/billing-project-foundation.md`, `docs/coordination/BILLING_PROJECT.md`, and `docs/handoffs/2026-10-19-billing-project-initialization.md`.
 
-Last updated: 2026-10-19 Asia Kolkata
+Last updated: 2026-10-24 Asia Kolkata
 
-Updated by: Codex (Phase 4 backend review fixes; Billing planning initialization)
+Updated by: Codex (Phase 4 backend review fixes; Billing Phase 0 freeze)
 
 ## Shared baseline
 
