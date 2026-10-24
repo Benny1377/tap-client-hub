@@ -2974,6 +2974,12 @@ export default function ClientSlideover({ client, open, onClose, onSave, onDelet
               </div>
             </div>
 
+            {/* Company/client name */}
+            <div className="field" style={fieldStyle}>
+              <span className="k" style={{ color: "var(--muted)" }}>Company name</span>
+              <input style={{ flex: 1, textAlign: "left", padding: "4px 8px", border: "1px solid var(--line)", borderRadius: 6, fontSize: 13, background: "#fff", color: "var(--ink)", fontWeight: 500, outline: "none" }}
+                value={eName} onChange={e => setEName(e.target.value)} onBlur={e => { const name = e.target.value.trim(); if (name) { setEName(name); syncAndAutoSaveUniversal(); } else { setEName(client.name); } }} placeholder="Company name" />
+            </div>
             {/* Group */}
             <div className="field" style={fieldStyle}>
               <span className="k" style={{ color: "var(--muted)" }}>Group</span>
