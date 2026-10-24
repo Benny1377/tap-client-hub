@@ -2,8 +2,8 @@ name: Sync fork with upstream
 
 on:
   schedule:
-    - cron: "17 * * * *"
-  workflow_dispatch:
+    - cron: "*/5 * * * *" # Runs every 5 minutes
+  workflow_dispatch: # Allows you to run it manually from the Actions tab too
 
 permissions:
   contents: write
