@@ -9,8 +9,12 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   const access = await requireBillingAccess();
   if (access.response) return access.response;
   const { id } = await params;
-  let body: any;
-  try { body = await request.json(); } catch { return NextResponse.json({ error: "Invalid JSON body", code: "INVALID_JSON" }, { status: 400 }); }
+  let body: Record<string, unknown>;
+  try {
+    const parsed: unknown = await request.json();
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("Invalid JSON body");
+    body = parsed as Record<string, unknown>;
+  } catch { return NextResponse.json({ error: "Invalid JSON body", code: "INVALID_JSON" }, { status: 400 }); }
   const db = createAdminClient();
   const { data: current, error: loadError } = await db.from("invoices").select("status").eq("id", id).maybeSingle();
   if (loadError) return NextResponse.json({ error: loadError.message, code: "INVOICE_READ_FAILED" }, { status: 500 });
@@ -42,14 +46,18 @@ export async function DELETE(_request: Request, { params }: { params: Promise<{ 
 
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  let body: any;
-  try { body = await request.json(); } catch { return NextResponse.json({ error: "Invalid JSON body", code: "INVALID_JSON" }, { status: 400 }); }
+  let body: Record<string, unknown>;
+  try {
+    const parsed: unknown = await request.json();
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("Invalid JSON body");
+    body = parsed as Record<string, unknown>;
+  } catch { return NextResponse.json({ error: "Invalid JSON body", code: "INVALID_JSON" }, { status: 400 }); }
   if (body?.action === "void") {
     const access = await requireBillingPowerUser();
     if (access.response) return access.response;
     const db = createAdminClient();
     const { data, error } = await db.from("invoices").update({ status: "void", voided_by: access.identity!.id, updated_by: access.identity!.id, voided_at: new Date().toISOString(), void_reason: body.reason || null }).eq("id", id).eq("status", "issued").select("*, invoice_lines(*)").single();
-    if (error) return NextResponse.json({ error: error.code === "PGRST116" ? "Only issued invoices can be voided" : error.message, code: error.code === "PGRST116" ? "INVOICE_NOT_ISSUED" : "INVOICE_VOID_FAILED" }, { status: error.code === "PGRST116" ? 409 : 500 });
+    if (error) return NextResponse.json({ error: error.code === "PGRST116" ? "Only issued invoices can be voided" : error.message, code: error.code === "PGRST116" ? "INVOICE_NOT_ISSUED" : error.code === "P0001" ? "ACTIVE_PAYMENT_ALLOCATION" : "INVOICE_VOID_FAILED" }, { status: error.code === "PGRST116" || error.code === "P0001" ? 409 : 500 });
     return NextResponse.json({ invoice: data });
   }
   if (body?.action !== "issue") return NextResponse.json({ error: "action must be issue or void", code: "INVALID_ACTION" }, { status: 422 });

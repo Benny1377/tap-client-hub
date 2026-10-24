@@ -44,10 +44,10 @@ Status: **Phase 0 frozen** on 2026-10-24. The frozen contract authorizes scoped 
 | --- | --- | --- | --- |
 | BILL-DEP-01 | Both engineers | Approved | Use `codex/security-fixes` at `6859607`; record exact UI ancestry in the Phase 0 review before implementation |
 | BILL-DEP-02 | Project owner + client | Open | Define service-to-completion-event configuration before the one-off portion of the single Phase 2 delivery |
-| BILL-DEP-03 | Engineer B | Open | Verify authorization, RLS, audit, and migrations locally before Phase 1 release claim |
+| BILL-DEP-03 | Engineer B | Backend handoff pending review | Database invariants and local synthetic harness are implemented on `codex/billing-phase1-validation`; full local API/access/audit evidence remains required before a Phase 1 release claim |
 | BILL-DEP-04 | Engineer A + Engineer B | Acknowledged / complete | Engineer A accepted the frozen contract at `7ecaee6` with no objections in `docs/handoffs/2026-10-24-billing-freeze-acknowledgement.md` on `codex/billing-workbench-ui` (`efc8be2`); owner confirmed freeze on 2026-10-24 |
 | BILL-DEP-05 | Project owner | Deferred | Any hosted migration, production write, provider, processor, or bank feed |
-| BILL-DEP-06 | Engineer B | Open | Add synthetic Operations service, schedule, and completion fixtures before Phase 2 validation |
+| BILL-DEP-06 | Engineer B | Synthetic fixtures delivered; pending Phase 2 consumption | Local-only fixtures provide active enrollment, recurring cadence, work-period completion, and count evidence; Phase 2 must consume them in candidate validation |
 
 ## Operating rules
 
