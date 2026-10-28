@@ -5,6 +5,7 @@ import { requireClientDataEditAccess } from "@/lib/access-server";
 export const dynamic = "force-dynamic";
 
 type ContactInput = { id?: unknown; clientId?: unknown; category?: unknown; name?: unknown; email?: unknown; phone?: unknown; isPrimary?: unknown };
+type ContactRow = { category: string | null; client: { status?: string | null } | { status?: string | null }[] | null };
 const text = (value: unknown) => typeof value === "string" ? value.trim() : "";
 
 export async function GET() {
@@ -16,7 +17,10 @@ export async function GET() {
     ]);
     if (contactsError) throw contactsError;
     if (clientsError) throw clientsError;
-    const contacts = (contactRows || []).filter((contact: any) => contact.category === "internal" || contact.client?.status === "active");
+    const contacts = (contactRows || []).filter((contact: ContactRow) => {
+      const client = Array.isArray(contact.client) ? contact.client[0] : contact.client;
+      return contact.category === "internal" || contact.category === "unassigned" || client?.status === "active";
+    });
     return NextResponse.json({ contacts, clients: clients || [] }, { headers: { "Cache-Control": "no-store, max-age=0" } });
   } catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : "Unable to load contacts" }, { status: 500 }); }
 }
@@ -28,7 +32,7 @@ export async function POST(request: Request) {
     const body = await request.json() as ContactInput;
     const clientId = text(body.clientId), category = text(body.category) || "client", name = text(body.name), email = text(body.email), phone = text(body.phone), isPrimary = body.isPrimary === true;
     if (!name) return NextResponse.json({ error: "Contact name is required." }, { status: 400 });
-    if (category !== "client" && category !== "internal") return NextResponse.json({ error: "Category must be Client or TAP Internal." }, { status: 400 });
+    if (category !== "client" && category !== "internal" && category !== "unassigned") return NextResponse.json({ error: "Category must be Client, Unassigned, or TAP Internal." }, { status: 400 });
     const admin = createAdminClient();
     if (category === "client") {
       if (!clientId) return NextResponse.json({ error: "Select a current active TAP client." }, { status: 400 });
@@ -36,7 +40,7 @@ export async function POST(request: Request) {
       if (clientError) throw clientError;
       if (!client) return NextResponse.json({ error: "Select a current active TAP client." }, { status: 400 });
     }
-    const { data, error } = await admin.from("contacts").insert({ client_id: category === "client" ? clientId : null, category, name, email: email || null, phone: phone || null, is_primary: isPrimary }).select("id, client_id, category, name, email, phone, is_primary").single();
+    const { data, error } = await admin.from("contacts").insert({ client_id: category === "client" ? clientId : null, category, name, email: email || null, phone: phone || null, is_primary: category === "unassigned" ? false : isPrimary }).select("id, client_id, category, name, email, phone, is_primary").single();
     if (error) throw error;
     return NextResponse.json({ contact: data }, { status: 201 });
   } catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : "Unable to add contact" }, { status: 500 }); }
@@ -49,7 +53,7 @@ export async function PATCH(request: Request) {
     const body = await request.json() as ContactInput;
     const id = text(body.id), clientId = text(body.clientId), category = text(body.category) || "client", name = text(body.name), email = text(body.email), phone = text(body.phone);
     if (!id || !name) return NextResponse.json({ error: "Contact ID and name are required." }, { status: 400 });
-    if (category !== "client" && category !== "internal") return NextResponse.json({ error: "Category must be Client or TAP Internal." }, { status: 400 });
+    if (category !== "client" && category !== "internal" && category !== "unassigned") return NextResponse.json({ error: "Category must be Client, Unassigned, or TAP Internal." }, { status: 400 });
     const admin = createAdminClient();
     if (category === "client") {
       if (!clientId) return NextResponse.json({ error: "Select a current active TAP client." }, { status: 400 });
@@ -57,7 +61,7 @@ export async function PATCH(request: Request) {
       if (clientError) throw clientError;
       if (!client) return NextResponse.json({ error: "Select a current active TAP client." }, { status: 400 });
     }
-    const { data, error } = await admin.from("contacts").update({ client_id: category === "client" ? clientId : null, category, name, email: email || null, phone: phone || null, is_primary: body.isPrimary === true, updated_at: new Date().toISOString() }).eq("id", id).select("id, client_id, category, name, email, phone, is_primary").single();
+    const { data, error } = await admin.from("contacts").update({ client_id: category === "client" ? clientId : null, category, name, email: email || null, phone: phone || null, is_primary: category === "unassigned" ? false : body.isPrimary === true, updated_at: new Date().toISOString() }).eq("id", id).select("id, client_id, category, name, email, phone, is_primary").single();
     if (error) throw error;
     return NextResponse.json({ contact: data });
   } catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : "Unable to update contact" }, { status: 500 }); }
