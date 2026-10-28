@@ -681,3 +681,5 @@ textarea.bc-in { min-height: 150px; line-height: 1.6; resize: vertical; }
 .bc-stats5 { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin: 4px 0 14px; }
 .bc-stats5 > * { min-width: 0; }
 @media (max-width: 720px) { .bc-stats5 { grid-template-columns: repeat(2, 1fr); } }
+.panel tr.on td { background: var(--brand-soft); }
+.panel + .bc-hint, .panel + p { margin-top: 10px; }
