@@ -13,6 +13,9 @@ test("Contacts API is a dedicated database endpoint, not a client-directory proj
   assert.match(route, /export async function PATCH/, "Contacts endpoint must update dedicated contacts");
   assert.match(route, /requireClientDataEditAccess/, "Contact writes must require client-data edit access");
   assert.match(route, /contact\.category === "unassigned"/, "Unassigned contacts must be included in the GET response");
+  assert.match(route, /\.range\(start, start \+ 999\)/, "Contacts must be paginated beyond the PostgREST 1,000-row ceiling");
+  assert.match(route, /\.order\("id", \{ ascending: true \}\)/, "Contact pagination must use a deterministic tie-breaker");
+  assert.match(route, /if \(!batch \|\| batch\.length < 1000\) break/, "Pagination must continue until the final partial batch");
   assert.match(route, /category !== "client" && category !== "internal" && category !== "unassigned"/, "The API must accept only the three supported contact categories");
   assert.match(route, /client_id: category === "client" \? clientId : null/, "Non-client categories must never be associated with a client");
   assert.match(route, /category === "unassigned" \? false/, "Unassigned contacts cannot be marked primary for a client");

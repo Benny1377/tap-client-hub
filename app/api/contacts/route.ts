@@ -11,13 +11,16 @@ const text = (value: unknown) => typeof value === "string" ? value.trim() : "";
 export async function GET() {
   try {
     const admin = createAdminClient();
-    const [{ data: contactRows, error: contactsError }, { data: clients, error: clientsError }] = await Promise.all([
-      admin.from("contacts").select("id, client_id, category, name, email, phone, is_primary, client:clients(id, name, cid:client_code, type, group_name, address, city, state, zip, status)").order("name", { ascending: true }),
-      admin.from("clients").select("id, name, cid:client_code").eq("status", "active").order("name", { ascending: true }),
-    ]);
-    if (contactsError) throw contactsError;
+    const contactRows: ContactRow[] = [];
+    for (let start = 0; ; start += 1000) {
+      const { data: batch, error } = await admin.from("contacts").select("id, client_id, category, name, email, phone, is_primary, client:clients(id, name, cid:client_code, type, group_name, address, city, state, zip, status)").order("name", { ascending: true }).order("id", { ascending: true }).range(start, start + 999);
+      if (error) throw error;
+      contactRows.push(...(batch || []));
+      if (!batch || batch.length < 1000) break;
+    }
+    const { data: clients, error: clientsError } = await admin.from("clients").select("id, name, cid:client_code").eq("status", "active").order("name", { ascending: true });
     if (clientsError) throw clientsError;
-    const contacts = (contactRows || []).filter((contact: ContactRow) => {
+    const contacts = contactRows.filter((contact) => {
       const client = Array.isArray(contact.client) ? contact.client[0] : contact.client;
       return contact.category === "internal" || contact.category === "unassigned" || client?.status === "active";
     });
