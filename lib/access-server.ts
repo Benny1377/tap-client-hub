@@ -32,13 +32,15 @@ export type AccessIdentity = {
   authenticated: boolean;
 };
 
-export async function resolveAccessIdentity(): Promise<AccessIdentity | null> {
+export async function resolveAccessIdentity(options: { requireSupabaseAuth?: boolean } = {}): Promise<AccessIdentity | null> {
+  const requireSupabaseAuth = options.requireSupabaseAuth === true;
   const cookieStore = await cookies();
-  const demoSession = verifyDemoSession(cookieStore.get("tap_demo_session")?.value);
+  const demoSession = requireSupabaseAuth ? null : verifyDemoSession(cookieStore.get("tap_demo_session")?.value);
   const demoEmail = demoSession?.email || "";
   let demoName = demoSession?.name || "";
-  // Fallback: staff users who lack a tap_demo_session may only have tap_demo_user
-  const demoUserFromCookie = cookieStore.get("tap_demo_user")?.value || "";
+  // Legacy name cookies are never authentication. Keep their compatibility fallback
+  // only for legacy UI identity resolution, never for strict API authorization.
+  const demoUserFromCookie = requireSupabaseAuth ? "" : (cookieStore.get("tap_demo_user")?.value || "");
   if (!demoName && demoUserFromCookie) demoName = decodeURIComponent(demoUserFromCookie);
   let authUser: { id: string; email?: string } | null = null;
   const supabase = await createServerClient();
@@ -50,6 +52,7 @@ export async function resolveAccessIdentity(): Promise<AccessIdentity | null> {
     // Demo accounts are intentionally supported without a Supabase session.
   }
 
+  if (requireSupabaseAuth && !authUser) return null;
   if (!authUser && !demoEmail && !demoName) return null;
 
   const id = authUser?.id || "";
@@ -68,7 +71,7 @@ export async function resolveAccessIdentity(): Promise<AccessIdentity | null> {
       const match = (profiles || []).find((candidate: Profile) => String(candidate.email || "").trim().toLowerCase() === email);
       if (match) return match;
     }
-    if (demoName) {
+    if (demoName && !requireSupabaseAuth) {
       const { data: profiles } = await client.from("profiles").select(profileColumns);
       const match = (profiles || []).find((candidate: Profile) => nameMatches(candidate.full_name || "", demoName));
       if (match) return match;
@@ -91,7 +94,7 @@ export async function resolveAccessIdentity(): Promise<AccessIdentity | null> {
     "ben@aifusioniqlabs.com": { role: "admin", modules: ["All"] },
     "staff@tapallc.com": { role: "staff", modules: ["Clients"] },
   };
-  const demoFallback = !profile ? demoFallbacks[demoEmail] : undefined;
+  const demoFallback = !requireSupabaseAuth && !profile ? demoFallbacks[demoEmail] : undefined;
   if (!profile && !demoFallback) return null;
 
   // Auth/profile migrations can leave an otherwise valid legacy demo account
@@ -147,6 +150,13 @@ export async function requireUserProfileEditAccess() {
     identity.canManageUsers ||
     (identity.role === "manager" && identity.modules.includes("Users & Access"));
   if (!canEdit) return { identity, status: 403 as const };
+  return { identity, status: null };
+}
+
+export async function requireClientDataViewAccess() {
+  const identity = await resolveAccessIdentity({ requireSupabaseAuth: true });
+  if (!identity) return { identity: null, status: 401 as const };
+  if (!identity.modules.includes("Clients")) return { identity, status: 403 as const };
   return { identity, status: null };
 }
 
