@@ -12,7 +12,7 @@ test("Contacts API is a dedicated database endpoint, not a client-directory proj
   assert.match(route, /export async function POST/, "Contacts endpoint must create contacts");
   assert.match(route, /export async function PATCH/, "Contacts endpoint must update dedicated contacts");
   assert.match(route, /requireClientDataEditAccess/, "Contact writes must require client-data edit access");
-  assert.match(route, /requireClientDataViewAccess/, "Contact reads must require authenticated Clients-module access");
+  assert.match(route, /export async function GET\(\) \{\s*const access = await requireClientDataViewAccess\(\);[\s\S]*?createAdminClient\(\)/, "Contact reads must authorize before the service-role database query");
   assert.match(route, /contact\.category === "unassigned"/, "Unassigned contacts must be included in the GET response");
   assert.match(route, /\.range\(start, start \+ 999\)/, "Contacts must be paginated beyond the PostgREST 1,000-row ceiling");
   assert.match(route, /\.order\("id", \{ ascending: true \}\)/, "Contact pagination must use a deterministic tie-breaker");

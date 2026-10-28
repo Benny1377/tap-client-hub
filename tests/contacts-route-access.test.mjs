@@ -6,6 +6,12 @@ const layout = readFileSync(new URL("../app/layout.tsx", import.meta.url), "utf8
 const accessServer = readFileSync(new URL("../lib/access-server.ts", import.meta.url), "utf8");
 
 assert.match(accessServer, /export async function requireClientDataViewAccess\(\)/);
+assert.match(accessServer, /const identity = await resolveAccessIdentity\(\{ requireSupabaseAuth: true \}\)/);
+assert.match(accessServer, /if \(requireSupabaseAuth && !authUser\) return null/);
+assert.match(accessServer, /const demoSession = requireSupabaseAuth \? null : verifyDemoSession/);
+assert.match(accessServer, /const demoUserFromCookie = requireSupabaseAuth \? ""/);
+assert.match(accessServer, /if \(demoName && !requireSupabaseAuth\)/);
+assert.match(accessServer, /const demoFallback = !requireSupabaseAuth/);
 assert.match(accessServer, /if \(!identity\.modules\.includes\("Clients"\)\) return \{ identity, status: 403 as const \}/);
 assert.equal(moduleForPathname("/contacts"), "Clients");
 assert.equal(

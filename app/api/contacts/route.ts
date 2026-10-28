@@ -10,7 +10,12 @@ const text = (value: unknown) => typeof value === "string" ? value.trim() : "";
 
 export async function GET() {
   const access = await requireClientDataViewAccess();
-  if (access.status) return NextResponse.json({ error: access.status === 401 ? "Unauthorized" : "Forbidden" }, { status: access.status });
+  if (access.status) {
+    return NextResponse.json(
+      { error: access.status === 401 ? "Unauthorized" : "Forbidden" },
+      { status: access.status, headers: { "Cache-Control": "no-store" } },
+    );
+  }
   try {
     const admin = createAdminClient();
     const contactRows: ContactRow[] = [];
