@@ -15,17 +15,19 @@ export function InvoiceList({ invoices, receivables, clientNames, selectedId, on
   selectedId: string | null;
   onSelect: (id: string) => void;
 }) {
-  if (invoices.length === 0) return <p style={hintStyle}>No invoices yet.</p>;
+  if (invoices.length === 0) return <p style={hintStyle}>No invoices match this view.</p>;
   return (
-    <div style={{ overflowX: "auto" }}>
-      <table className="bc-table">
+    <div className="panel scroll">
+      <table>
         <thead>
           <tr>
             <th>Invoice</th>
+            <th>Issued</th>
             <th>Client</th>
-            <th>Status</th>
             <th>Due</th>
-            <th className="r">Balance</th>
+            <th className="r">Amount</th>
+            <th className="r">Still open</th>
+            <th>Status</th>
           </tr>
         </thead>
         <tbody>
@@ -34,14 +36,16 @@ export function InvoiceList({ invoices, receivables, clientNames, selectedId, on
             return (
               <tr key={invoice.id} data-invoice-row={invoice.id} className={invoice.id === selectedId ? "on" : undefined}>
                 <td>
-                  <button type="button" onClick={() => onSelect(invoice.id)} className="bc-name bc-nowrap">
+                  <button type="button" onClick={() => onSelect(invoice.id)} className="rowname mono" style={{ background: "none", border: 0, padding: 0, font: "inherit", color: "inherit", textAlign: "left" }} aria-pressed={invoice.id === selectedId}>
                     {invoice.invoice_number}
                   </button>
                 </td>
+                <td className="bc-nowrap">{invoice.issue_date}</td>
                 <td>{clientNames[invoice.client_id] || invoice.client_id}</td>
+                <td className="bc-nowrap">{invoice.status === "issued" ? invoice.due_date : <span className="sub">—</span>}</td>
+                <td className="r num">{receivable ? formatMoney(receivable.total) : "—"}</td>
+                <td className="r num">{receivable ? formatMoney(receivable.balance) : "—"}</td>
                 <td><StatusBadge status={invoice.status} /></td>
-                <td className="bc-nowrap">{invoice.due_date}</td>
-                <td className="r">{receivable ? formatMoney(receivable.balance) : "—"}</td>
               </tr>
             );
           })}
