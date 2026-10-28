@@ -8,9 +8,15 @@
 - Phase 4 includes private PDF storage, upload/review/approval/access-audit APIs, explicit client linking, stale-snapshot guards, source-aware holds/events/history, and PDF-selected worklist/preview data. Follow-up review status is in `docs/handoffs/2026-10-18-collections-phase4-backend.md`.
 - Use synthetic fixtures only. The owner's supplied real AR PDFs must remain out of Git, screenshots, test databases, and shared non-production environments. Hosted migrations remain deferred.
 
-Last updated: 2026-10-18 Asia Kolkata
+## Billing project planning (initialized 2026-10-19)
 
-Updated by: Codex (Phase 4 backend review fixes)
+- Billing planning is isolated on `codex/billing-project-planning`. Its Phase 0 foundation is frozen as of 2026-10-24 after Engineer A accepted `7ecaee6` without objection (`efc8be2`).
+- The next Billing dependencies are BILL-DEP-03 (Engineer B's local Phase 1 authorization/RLS/audit/migration validation) and BILL-DEP-06 (synthetic Operations fixtures before Phase 2 validation). BILL-DEP-02 remains open only for the one-off portion of Phase 2.
+- Artifacts: `docs/decisions/2026-10-19-billing-project-foundation.md`, `docs/contracts/billing-project-foundation.md`, `docs/coordination/BILLING_PROJECT.md`, and `docs/handoffs/2026-10-19-billing-project-initialization.md`.
+
+Last updated: 2026-10-24 Asia Kolkata
+
+Updated by: Codex (Phase 4 backend review fixes; Billing Phase 0 freeze)
 
 ## Shared baseline
 
