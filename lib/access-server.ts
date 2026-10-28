@@ -150,6 +150,13 @@ export async function requireUserProfileEditAccess() {
   return { identity, status: null };
 }
 
+export async function requireClientDataViewAccess() {
+  const identity = await resolveAccessIdentity();
+  if (!identity) return { identity: null, status: 401 as const };
+  if (!identity.modules.includes("Clients")) return { identity, status: 403 as const };
+  return { identity, status: null };
+}
+
 export async function requireClientDataEditAccess() {
   const identity = await resolveAccessIdentity();
   if (!identity) return { identity: null, status: 401 as const };

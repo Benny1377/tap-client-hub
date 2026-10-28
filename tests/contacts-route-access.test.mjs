@@ -3,7 +3,10 @@ import { readFileSync } from "node:fs";
 import { canAccessPathname, moduleForPathname } from "../lib/access-policy.ts";
 
 const layout = readFileSync(new URL("../app/layout.tsx", import.meta.url), "utf8");
+const accessServer = readFileSync(new URL("../lib/access-server.ts", import.meta.url), "utf8");
 
+assert.match(accessServer, /export async function requireClientDataViewAccess\(\)/);
+assert.match(accessServer, /if \(!identity\.modules\.includes\("Clients"\)\) return \{ identity, status: 403 as const \}/);
 assert.equal(moduleForPathname("/contacts"), "Clients");
 assert.equal(
   canAccessPathname("staff", ["Clients"], "/contacts"),

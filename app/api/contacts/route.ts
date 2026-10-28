@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { requireClientDataEditAccess } from "@/lib/access-server";
+import { requireClientDataEditAccess, requireClientDataViewAccess } from "@/lib/access-server";
 
 export const dynamic = "force-dynamic";
 
@@ -9,6 +9,8 @@ type ContactRow = { category: string | null; client: { status?: string | null } 
 const text = (value: unknown) => typeof value === "string" ? value.trim() : "";
 
 export async function GET() {
+  const access = await requireClientDataViewAccess();
+  if (access.status) return NextResponse.json({ error: access.status === 401 ? "Unauthorized" : "Forbidden" }, { status: access.status });
   try {
     const admin = createAdminClient();
     const contactRows: ContactRow[] = [];
