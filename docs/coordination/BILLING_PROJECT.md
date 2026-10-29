@@ -1,6 +1,6 @@
 # TAB-HUB Billing Project Register
 
-Status: **Phase 0 frozen** on 2026-10-24. The frozen contract authorizes scoped implementation planning only; migration, deployment, production access, and external changes remain separately governed.
+Status: **Phase 0 frozen; Phase 2 preparation drafted** on 2026-10-29. The draft Phase 2 contract is not implementation authorization; migration, deployment, production access, and external changes remain separately governed.
 
 ## Source-of-truth order
 
@@ -43,11 +43,12 @@ Status: **Phase 0 frozen** on 2026-10-24. The frozen contract authorizes scoped 
 | ID | Owner | Status | Requirement |
 | --- | --- | --- | --- |
 | BILL-DEP-01 | Both engineers | Approved | Use `codex/security-fixes` at `6859607`; record exact UI ancestry in the Phase 0 review before implementation |
-| BILL-DEP-02 | Project owner + client | Open | Define service-to-completion-event configuration before the one-off portion of the single Phase 2 delivery |
-| BILL-DEP-03 | Engineer B | Backend handoff pending review | Database invariants and local synthetic harness are implemented on `codex/billing-phase1-validation`; full local API/access/audit evidence remains required before a Phase 1 release claim |
+| BILL-DEP-02 | Project owner | Decision recorded | Completion-source maps are dynamic, modular, effective-dated, and auditable; implementation must use bounded Operations adapters rather than hard-coded client rules |
+| BILL-DEP-03 | Engineer B + Engineer A | Backend handoff pending review | Database invariants and local synthetic harness are implemented on `codex/billing-phase1-validation`; full local migration/API/access/RLS/audit/UI integration evidence remains required before a Phase 1 release claim |
 | BILL-DEP-04 | Engineer A + Engineer B | Acknowledged / complete | Engineer A accepted the frozen contract at `7ecaee6` with no objections in `docs/handoffs/2026-10-24-billing-freeze-acknowledgement.md` on `codex/billing-workbench-ui` (`efc8be2`); owner confirmed freeze on 2026-10-24 |
 | BILL-DEP-05 | Project owner | Deferred | Any hosted migration, production write, provider, processor, or bank feed |
 | BILL-DEP-06 | Engineer B | Synthetic fixtures delivered; pending Phase 2 consumption | Local-only fixtures provide active enrollment, recurring cadence, work-period completion, and count evidence; Phase 2 must consume them in candidate validation |
+| BILL-DEP-07 | Engineer B + Engineer A | Open | Freeze and implement the dynamic completion-source configuration model; the firm populates service-specific maps during onboarding/use, not in planning |
 
 ## Operating rules
 
