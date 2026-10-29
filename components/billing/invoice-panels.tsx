@@ -199,6 +199,9 @@ export function InvoiceDetail({ invoice, receivable, viewer, handlers }: {
         {actions.canVoid ? (
           <details data-void-control>
             <summary style={{ cursor: "pointer", fontSize: 13, color: "var(--red)", fontWeight: 600 }}>Void invoice</summary>
+            {receivable && Number(receivable.allocated) > 0 ? (
+              <p data-void-blocked style={hintStyle}>Payments are applied to this invoice ({formatMoney(receivable.allocated)}). Reverse those allocations on the Payments tab first, or the server will refuse the void.</p>
+            ) : null}
             <LedgerForm
               fields={[{ name: "reason", label: "Reason for voiding", type: "textarea" }]}
               initialValues={{ reason: "" }}

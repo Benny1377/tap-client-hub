@@ -311,7 +311,11 @@ const CODE_HEADLINES: Record<string, string> = {
   APPROVAL_REQUIRED: "A matching approval is required first.",
   EVENT_CONFLICT: "That Collections event has already been recorded.",
   HOLD_NOT_ACTIVE: "That hold is no longer active.",
-  INVALID_AMOUNT: "Check the amount: it must be positive with at most two decimals.",
+  INVALID_AMOUNT: "Check the amounts: quantity can have up to four decimals and money at most two, and both must be positive.",
+  AMOUNT_OUT_OF_RANGE: "That quantity or amount is too large for an invoice line.",
+  LINE_INVARIANT_VIOLATION: "That line can't be changed: only draft invoices have editable lines, and the amount is always worked out from quantity and unit amount.",
+  ACTIVE_PAYMENT_ALLOCATION: "This invoice still has payments applied. Reverse those allocations first, then void it.",
+  VOID_REASON_REQUIRED: "Give a reason for voiding this invoice.",
   INVALID_DATE_RANGE: "The due date must be on or after the issue date.",
 };
 
