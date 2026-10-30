@@ -1,6 +1,6 @@
 # TAB-HUB Billing Project Register
 
-Status: **Phase 0 frozen; Phase 2 preparation drafted** on 2026-10-29. The draft Phase 2 contract is not implementation authorization; migration, deployment, production access, and external changes remain separately governed.
+Status: **Phase 0 frozen; Phase 2 contract refinement under Engineer A review** on 2026-10-30. The Phase 2 document remains un-frozen; migration, deployment, production access, and external changes remain separately governed.
 
 ## Source-of-truth order
 
@@ -26,6 +26,7 @@ Status: **Phase 0 frozen; Phase 2 preparation drafted** on 2026-10-29. The draft
 - `TAP-YYYY-####` issue-RPC numbering, Net 15 default terms with client override, recurring billing on the final configured service-period day with client/service override.
 - Firm date/timezone is Houston, Texas (`America/Chicago`) through the existing `collection_settings.timezone` setting.
 - Firm remittance instructions snapshot at invoice issuance; no bank credentials, and no values in audit/error logs.
+- “What bills next” is a read-only, clearly projected schedule; it never silently generates candidates. Bundles render as one package invoice line while component candidates remain internal provenance.
 - Reviewed, source-provenanced A/R Intake distinct from native Billing.
 
 ## Work lanes
