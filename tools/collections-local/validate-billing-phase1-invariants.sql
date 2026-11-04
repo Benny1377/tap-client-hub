@@ -13,8 +13,8 @@ begin
   insert into tap_hub_project.invoices (
     id, client_id, invoice_number, status, issue_date, due_date, created_by
   ) values (
-    v_invoice_id, v_client_id, 'LOCAL-INVARIANT-' || replace(v_invoice_id::text, '-', ''),
-    'draft', current_date, current_date + 15, v_actor
+    v_invoice_id, v_client_id, null,
+    'draft', null, null, v_actor
   );
 
   -- PostgreSQL numeric rounding is the database source of truth for the line amount.
@@ -31,7 +31,7 @@ begin
     if sqlerrm not like 'invariant_violation:%' then raise; end if;
   end;
 
-  update tap_hub_project.invoices set status = 'issued' where id = v_invoice_id;
+  update tap_hub_project.invoices set status = 'issued', invoice_number = 'LOCAL-INVARIANT-' || replace(v_invoice_id::text, '-', ''), issue_date = current_date, due_date = current_date + 15 where id = v_invoice_id;
 
   begin
     update tap_hub_project.invoice_lines set description = 'Mutated issued line' where id = v_line_id;
@@ -65,8 +65,8 @@ begin
   insert into tap_hub_project.invoices (
     id, client_id, invoice_number, status, issue_date, due_date, created_by
   ) values (
-    v_draft_invoice_id, v_client_id, 'LOCAL-DRAFT-DELETE-' || replace(v_draft_invoice_id::text, '-', ''),
-    'draft', current_date, current_date + 15, v_actor
+    v_draft_invoice_id, v_client_id, null,
+    'draft', null, null, v_actor
   );
   insert into tap_hub_project.invoice_lines (
     invoice_id, description, quantity, unit_amount, amount, created_by

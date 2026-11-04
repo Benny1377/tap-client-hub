@@ -41,8 +41,8 @@ values
 
 insert into tap_hub_project.invoices (id, client_id, invoice_number, status, issue_date, due_date, created_by, is_synthetic)
 values
-  ('20000000-0000-4000-8000-000000000001', '10000000-0000-4000-8000-000000000001', 'LOCAL-001', 'draft', tap_hub_project.collections_firm_today() - 70, tap_hub_project.collections_firm_today() - 40, '00000000-0000-4000-8000-000000000001', true),
-  ('20000000-0000-4000-8000-000000000002', '10000000-0000-4000-8000-000000000002', 'LOCAL-002', 'draft', tap_hub_project.collections_firm_today() - 45, tap_hub_project.collections_firm_today() - 15, '00000000-0000-4000-8000-000000000001', true);
+  ('20000000-0000-4000-8000-000000000001', '10000000-0000-4000-8000-000000000001', null, 'draft', null, null, '00000000-0000-4000-8000-000000000001', true),
+  ('20000000-0000-4000-8000-000000000002', '10000000-0000-4000-8000-000000000002', null, 'draft', null, null, '00000000-0000-4000-8000-000000000001', true);
 
 insert into tap_hub_project.invoice_lines (invoice_id, description, quantity, unit_amount, amount, created_by)
 values
@@ -50,8 +50,9 @@ values
   ('20000000-0000-4000-8000-000000000002', 'Sample service', 1, 80, 80, '00000000-0000-4000-8000-000000000001');
 
 update tap_hub_project.invoices
-set status = 'issued'
-where id in (
-  '20000000-0000-4000-8000-000000000001',
-  '20000000-0000-4000-8000-000000000002'
-);
+set status = 'issued', invoice_number = 'LOCAL-001', issue_date = tap_hub_project.collections_firm_today() - 70, due_date = tap_hub_project.collections_firm_today() - 40
+where id = '20000000-0000-4000-8000-000000000001';
+
+update tap_hub_project.invoices
+set status = 'issued', invoice_number = 'LOCAL-002', issue_date = tap_hub_project.collections_firm_today() - 45, due_date = tap_hub_project.collections_firm_today() - 15
+where id = '20000000-0000-4000-8000-000000000002';

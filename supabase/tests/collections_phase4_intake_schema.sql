@@ -78,11 +78,11 @@ begin
     where id='default';
   insert into tap_hub_project.invoices
     (id,client_id,invoice_number,status,issue_date,due_date,created_by,is_synthetic)
-  values (v_invoice,'10000000-0000-4000-8000-000000000001','LOCAL-DISCREPANCY-'||v_invoice::text,'draft',v_as_of-40,v_as_of-10,
+  values (v_invoice,'10000000-0000-4000-8000-000000000001',null,'draft',null,null,
     '00000000-0000-4000-8000-000000000001',true);
   insert into tap_hub_project.invoice_lines(invoice_id,description,quantity,unit_amount,amount,created_by)
   values (v_invoice,'Synthetic discrepancy test',1,125,125,'00000000-0000-4000-8000-000000000001');
-  update tap_hub_project.invoices set status='issued', issue_date=v_as_of-40, due_date=v_as_of-10 where id=v_invoice;
+  update tap_hub_project.invoices set status='issued', invoice_number='LOCAL-DISCREPANCY-'||v_invoice::text, issue_date=v_as_of-40, due_date=v_as_of-10 where id=v_invoice;
   insert into tap_hub_project.collection_source_invoice_identities
     (source_invoice_id,client_id,linked_invoice_id,selected_source,canonical_collection_identity)
   values (v_source,'10000000-0000-4000-8000-000000000001',v_invoice,'billing','billing:'||v_invoice::text);
@@ -206,14 +206,15 @@ declare
   v_as_of date := tap_hub_project.collections_firm_today();
 begin
   insert into tap_hub_project.invoices(id,client_id,invoice_number,status,issue_date,due_date,created_by,is_synthetic)
-  values(v_invoice_one,'10000000-0000-4000-8000-000000000001','LOCAL-MULTI-001','draft',v_as_of-35,v_as_of-10,
+  values(v_invoice_one,'10000000-0000-4000-8000-000000000001',null,'draft',null,null,
       '00000000-0000-4000-8000-000000000001',true),
-        (v_invoice_two,'10000000-0000-4000-8000-000000000001','LOCAL-MULTI-002','draft',v_as_of-30,v_as_of-5,
+        (v_invoice_two,'10000000-0000-4000-8000-000000000001',null,'draft',null,null,
       '00000000-0000-4000-8000-000000000001',true);
   insert into tap_hub_project.invoice_lines(invoice_id,description,quantity,unit_amount,amount,created_by)
   values(v_invoice_one,'Synthetic first invoice',1,125,125,'00000000-0000-4000-8000-000000000001'),
         (v_invoice_two,'Synthetic second invoice',1,50,50,'00000000-0000-4000-8000-000000000001');
-  update tap_hub_project.invoices set status='issued' where id in (v_invoice_one,v_invoice_two);
+  update tap_hub_project.invoices set status='issued', invoice_number='LOCAL-MULTI-001', issue_date=v_as_of-35, due_date=v_as_of-10 where id=v_invoice_one;
+  update tap_hub_project.invoices set status='issued', invoice_number='LOCAL-MULTI-002', issue_date=v_as_of-30, due_date=v_as_of-5 where id=v_invoice_two;
   insert into tap_hub_project.payments(id,client_id,received_on,amount,method,status,created_by)
   values(v_payment,'10000000-0000-4000-8000-000000000001',v_as_of-2,30,'ach','recorded','00000000-0000-4000-8000-000000000001');
   insert into tap_hub_project.payment_allocations(payment_id,invoice_id,amount,created_by,created_at)

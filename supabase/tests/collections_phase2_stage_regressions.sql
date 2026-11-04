@@ -22,17 +22,22 @@ begin
   insert into tap_hub_project.clients(id,name,type,status) values(v_client,'Phase 2 stage regression fixture','Business','active');
   insert into tap_hub_project.invoices(id,client_id,invoice_number,status,issue_date,due_date,created_by)
   values
-    (v_old_invoice,v_client,'TST-'||substr(v_old_invoice::text,1,8),'draft',v_today-100,v_today-90,v_actor),
-    (v_later_invoice,v_client,'TST-'||substr(v_later_invoice::text,1,8),'draft',v_today-40,v_today-30,v_actor),
-    (v_pending_invoice,v_client,'TST-'||substr(v_pending_invoice::text,1,8),'draft',v_today-56,v_today-46,v_actor),
-    (v_catchup_invoice,v_client,'TST-'||substr(v_catchup_invoice::text,1,8),'draft',v_today-50,v_today-20,v_actor),
-    (v_early_invoice,v_client,'TST-'||substr(v_early_invoice::text,1,8),'draft',v_today-20,v_today-4,v_actor);
+    (v_old_invoice,v_client,null,'draft',null,null,v_actor),
+    (v_later_invoice,v_client,null,'draft',null,null,v_actor),
+    (v_pending_invoice,v_client,null,'draft',null,null,v_actor),
+    (v_catchup_invoice,v_client,null,'draft',null,null,v_actor),
+    (v_early_invoice,v_client,null,'draft',null,null,v_actor);
   insert into tap_hub_project.invoice_lines(invoice_id,description,quantity,unit_amount,amount)
   values (v_old_invoice,'Fixture',1,100,100),(v_later_invoice,'Fixture',1,100,100),
     (v_pending_invoice,'Fixture',1,100,100),(v_catchup_invoice,'Fixture',1,100,100),
     (v_early_invoice,'Fixture',1,100,100);
-  update tap_hub_project.invoices set status = 'issued'
-    where id in (v_old_invoice, v_later_invoice, v_pending_invoice, v_catchup_invoice, v_early_invoice);
+  update tap_hub_project.invoices i set status = 'issued', invoice_number = v.n, issue_date = v.d1, due_date = v.d2 from (values
+    (v_old_invoice,'TST-'||substr(v_old_invoice::text,1,8),v_today-100,v_today-90),
+    (v_later_invoice,'TST-'||substr(v_later_invoice::text,1,8),v_today-40,v_today-30),
+    (v_pending_invoice,'TST-'||substr(v_pending_invoice::text,1,8),v_today-56,v_today-46),
+    (v_catchup_invoice,'TST-'||substr(v_catchup_invoice::text,1,8),v_today-50,v_today-20),
+    (v_early_invoice,'TST-'||substr(v_early_invoice::text,1,8),v_today-20,v_today-4)
+  ) v(id,n,d1,d2) where i.id = v.id;
 
   v_ctx := tap_hub_project.collections_invoice_stage_context(v_client,v_catchup_invoice,v_today-20,v_today-14);
   if (v_ctx->>'next_stage')::integer is distinct from 2 then raise exception 'Missed day-1 reminder did not catch up to stage 2'; end if;

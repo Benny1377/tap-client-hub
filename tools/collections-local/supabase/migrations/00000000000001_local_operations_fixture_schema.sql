@@ -13,7 +13,8 @@ create table if not exists tap_hub_project.services (
 alter table tap_hub_project.client_services
   add column if not exists service_id uuid references tap_hub_project.services(id),
   add column if not exists active boolean not null default true,
-  add column if not exists frequency text;
+  add column if not exists frequency text,
+  add column if not exists financials_month integer;
 
 create table if not exists tap_hub_project.work_periods (
   id uuid primary key default gen_random_uuid(),
@@ -35,5 +36,8 @@ create table if not exists tap_hub_project.period_counts (
 
 create index if not exists local_client_services_active_service_idx
   on tap_hub_project.client_services(service_id) where active;
+
+-- The bootstrap grant ran before these fixture tables existed; server routes read them as service_role.
+grant select on tap_hub_project.services, tap_hub_project.work_periods, tap_hub_project.period_counts to service_role;
 
 commit;
