@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireBillingAction, resolveBillingActions } from "@/lib/billing-access";
-import { apiError, boundedLimit, cursorDecode, cursorEncode, firmDateISO, isDateOnly, moneyString, mutationResponse, permissionActionFor, toCamel, toPhase2Candidate } from "@/lib/billing-phase2";
+import { requireBillingAccess, requireBillingAction, resolveBillingActions } from "@/lib/billing-access";
+import { apiError, boundedLimit, cursorDecode, cursorEncode, firmDateISO, isDateOnly, moneyString, mutationResponse, permissionActionFor, toCamel, toPhase2Bundle, toPhase2Candidate } from "@/lib/billing-phase2";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 export const runtime = "nodejs";
@@ -39,10 +39,14 @@ function validSourceMap(body: Row) {
   return false;
 }
 function normalizeOperationsPeriod(value: unknown): string | null {
-  if (typeof value !== "string" || !/^\d{6}$/.test(value)) return null;
-  const year = Number(value.slice(0, 4)), month = Number(value.slice(4, 6));
+  const raw = typeof value === "number" && Number.isInteger(value) ? String(value) : value;
+  if (typeof raw !== "string") return null;
+  const match = /^(\d{4})-?(\d{2})$/.exec(raw);
+  if (!match) return null;
+  const [, yearText, monthText] = match;
+  const year = Number(yearText), month = Number(monthText);
   if (year < 1900 || month < 1 || month > 12) return null;
-  return `${value.slice(0, 4)}-${value.slice(4, 6)}`;
+  return `${yearText}-${monthText}`;
 }
 function firmMidnightISO(date: string) {
   const guess = new Date(`${date}T06:00:00.000Z`);
@@ -123,20 +127,21 @@ export async function generateFromOperations(db: ReturnType<typeof createAdminCl
           cursor.setUTCMonth(cursor.getUTCMonth() + 1);
         }
       } else if (map.adapter === "work_period_done") {
-        const yearMonthFrom = from.slice(0, 4) + from.slice(5, 7), yearMonthTo = to.slice(0, 4) + to.slice(5, 7);
         let workPeriodQuery = db.from("work_periods").select("client_service_id,period,stage,done_at").eq("client_service_id", clientServiceId);
         if (map.candidate_date_rule === "completion_date") {
           // Completion can happen after the service period. Filter by the actual
           // Houston-local completion window, not by the period's YYYYMM value.
           workPeriodQuery = workPeriodQuery.gte("done_at", firmMidnightISO(from)).lt("done_at", firmMidnightISO(nextDate(to)));
         } else {
-          workPeriodQuery = workPeriodQuery.gte("period", yearMonthFrom).lte("period", yearMonthTo);
+          // Operations deployments store periods as either YYYYMM or YYYY-MM.
+          // Normalize per service before applying the requested date window.
         }
         const { data: workRows, error } = await workPeriodQuery;
         if (error) return { error: apiError("Unable to read Operations work periods", "BILLING_READ_FAILED", 500) };
         for (const row of workRows || []) {
           const period = normalizeOperationsPeriod(row.period);
-          if (!period || row.stage !== "done") { skippedByReason.source_incomplete++; continue; }
+          if (!period) { skippedByReason.source_incomplete++; continue; }
+          if (row.stage !== "done") { skippedByReason.source_incomplete++; continue; }
           const candidateDate = map.candidate_date_rule === "completion_date" ? (row.done_at ? firmDateISO(new Date(row.done_at)) : null) : periodEnd(period);
           if (!candidateDate) { skippedByReason.source_incomplete++; continue; }
           if (!inWindow(candidateDate, from, to)) { skippedByReason.outside_window++; continue; }
@@ -144,10 +149,10 @@ export async function generateFromOperations(db: ReturnType<typeof createAdminCl
           candidates.push({ map, service, serviceInfo, period, candidateDate, identity: `${clientServiceId}:${period}`, candidateType: "completion", adapter: map.adapter, unit: "service", description: serviceInfo.name });
         }
       } else if (map.adapter === "period_count_threshold") {
-        const yearMonthFrom = from.slice(0, 4) + from.slice(5, 7), yearMonthTo = to.slice(0, 4) + to.slice(5, 7), threshold = Number(map.predicate?.threshold);
+        const threshold = Number(map.predicate?.threshold);
         if (!Number.isInteger(threshold) || threshold <= 0) { skippedByReason.source_incomplete++; continue; }
         const { data: countRows, error } = await db.from("period_counts").select("client_service_id,period,processed")
-          .eq("client_service_id", clientServiceId).gte("period", yearMonthFrom).lte("period", yearMonthTo);
+          .eq("client_service_id", clientServiceId);
         if (error) return { error: apiError("Unable to read Operations period counts", "BILLING_READ_FAILED", 500) };
         for (const row of countRows || []) {
           const period = normalizeOperationsPeriod(row.period);
@@ -222,7 +227,9 @@ async function authorized(path: string[], method: string) {
   return requireBillingAction(action);
 }
 async function permissionGet() {
-  const access = await requireBillingAction("billing.view");
+  // This endpoint reports effective actions, including an explicit revocation
+  // of billing.view, so it is gated by Billing module access instead.
+  const access = await requireBillingAccess();
   if (access.response || !access.identity) return access.response;
   const actions = await resolveBillingActions(access.identity);
   return NextResponse.json({role:access.identity.role,modules:access.identity.modules,actions},{headers:{"Cache-Control":"no-store"}});
@@ -233,14 +240,15 @@ async function listResource(request: NextRequest, path: string[]) {
   const table=TABLES[path[0]];
   let query: DynamicQuery;
   if (path[0]==="client-pricing") {
-    const clientId=q.get("clientId"); if(!clientId) return apiError("clientId is required","INVALID_INPUT",422);
+    const clientId=q.get("clientId"); if(!clientId||!UUID.test(clientId)) return apiError("clientId must be a UUID","INVALID_INPUT",422);
+    if(q.get("clientServiceId")&&!UUID.test(q.get("clientServiceId")!))return apiError("clientServiceId must be a UUID","INVALID_INPUT",422);
     const [overrides,bundles]=await Promise.all([
       db.from("billing_client_service_overrides").select("*,client_services!inner(client_id)").order("effective_from",{ascending:false}),
       db.from("billing_bundles").select("*,billing_bundle_components(client_service_id)").eq("client_id",clientId).order("name").order("id")
     ]);
     if(overrides.error||bundles.error) return apiError("Unable to load client pricing","PRICING_READ_FAILED",500);
     const selected=(overrides.data||[]).filter((row:Row)=>row.client_services?.client_id===clientId&&(q.get("clientServiceId") ? row.client_service_id===q.get("clientServiceId") : true)).map((row:Row)=>{const copy={...row};delete copy.client_services;return copy;});
-    return NextResponse.json({clientId,overrides:toCamel(selected),bundles:toCamel(bundles.data||[])},{headers:{"Cache-Control":"no-store"}});
+    return NextResponse.json({clientId,overrides:toCamel(selected),bundles:(bundles.data||[]).map(toPhase2Bundle)},{headers:{"Cache-Control":"no-store"}});
   }
   if(path[0]==="settings"&&path[1]==="terms") {
     const [settings,overrides]=await Promise.all([db.from("billing_terms_settings").select("default_net_days,billing_day,timezone,updated_at").eq("singleton",true).single(),db.from("billing_terms_overrides").select("*").order("effective_from",{ascending:false})]);
@@ -273,7 +281,7 @@ async function listResource(request: NextRequest, path: string[]) {
     const {data,error}=await db.from("billing_bundles").select("*,billing_bundle_components(client_service_id)").eq("id",path[1]).maybeSingle();
     if(error)return apiError("Unable to load bundle","BILLING_READ_FAILED",500);
     if(!data)return apiError("Bundle not found","NOT_FOUND",404);
-    return NextResponse.json({bundle:toCamel(data)},{headers:{"Cache-Control":"no-store"}});
+    return NextResponse.json({bundle:toPhase2Bundle(data)},{headers:{"Cache-Control":"no-store"}});
   }
   if(path[0]==="completion-source-maps") {
     let maps=db.from("billing_completion_source_maps").select("*").order("effective_from",{ascending:false}).order("id");
@@ -288,12 +296,16 @@ async function listResource(request: NextRequest, path: string[]) {
   query=db.from(table).select(path[0]==="bundles"?"*,billing_bundle_components(client_service_id)":"*");
   if(path[0]==="candidates") {
     if(q.get("state")&&!['unpriced','open','drafted','invoiced','dismissed'].includes(q.get("state")!))return apiError("Invalid candidate state","INVALID_INPUT",422);
+    if(q.get("clientId")&&!UUID.test(q.get("clientId")!))return apiError("clientId must be a UUID","INVALID_INPUT",422);
     for(const field of ["clientId","state"]) if(q.get(field)) query=query.eq(field==="clientId"?"client_id":"state",q.get(field));
     for(const [param,col] of [["from","candidate_date"],["to","candidate_date"]]) if(q.get(param)) { if(!isDateOnly(q.get(param))) return apiError("Invalid date filter","INVALID_INPUT",422); query=query[param==="from"?"gte":"lte"](col,q.get(param)); }
     query=query.order("candidate_date",{ascending:false}).order("id",{ascending:false});
   } else {
     if(q.get("active")) query=query.eq("active",q.get("active")==="true");
-    if(path[0]==="bundles"&&q.get("clientId")) query=query.eq("client_id",q.get("clientId"));
+    if(path[0]==="bundles"&&q.get("clientId")) {
+      if(!UUID.test(q.get("clientId")!)) return apiError("clientId must be a UUID","INVALID_INPUT",422);
+      query=query.eq("client_id",q.get("clientId"));
+    }
     query=query.order("name").order("id");
   }
   let cursor:Row|null=null; try { cursor=cursorDecode<Row>(q.get("cursor")); if(q.get("cursor")&&!cursor) throw new Error(); query=cursorFilter(query,table,cursor); } catch { return apiError("Cursor is invalid for this list","INVALID_CURSOR",422); }
@@ -301,7 +313,7 @@ async function listResource(request: NextRequest, path: string[]) {
   if(error) return apiError("Unable to load Billing records","BILLING_READ_FAILED",500);
   const rows=data||[], hasMore=rows.length>limit, page=rows.slice(0,limit), last=page.at(-1);
   const nextCursor=hasMore&&last?cursorEncode(path[0]==="candidates"?{candidateDate:last.candidate_date,id:last.id}:{name:last.name,id:last.id}):null;
-  return NextResponse.json({items:path[0]==="candidates"?page.map(toPhase2Candidate):toCamel(page),nextCursor},{headers:{"Cache-Control":"no-store"}});
+  return NextResponse.json({items:path[0]==="candidates"?page.map(toPhase2Candidate):path[0]==="bundles"?page.map(toPhase2Bundle):toCamel(page),nextCursor},{headers:{"Cache-Control":"no-store"}});
 }
 async function mutate(request: NextRequest,path:string[],method:string) {
   const db=createAdminClient(); let body:Row={};
@@ -320,16 +332,16 @@ async function mutate(request: NextRequest,path:string[],method:string) {
     else if(path[2]==="entries"&&method==="PATCH") {if((body.unitAmount!==undefined&&!MONEY.test(String(body.unitAmount)))||(body.effectiveTo!==undefined&&!isDateOnly(body.effectiveTo))||(body.unitAmount===undefined&&body.effectiveTo===undefined))return apiError("No valid rate update supplied","INVALID_INPUT",422);result=await db.from("billing_rate_card_entries").update({...(body.unitAmount!==undefined?{unit_amount:body.unitAmount}:{}),...(body.effectiveTo!==undefined?{effective_to:body.effectiveTo}:{}),updated_by:actor,updated_at:new Date().toISOString(),reason}).eq("id",path[3]).eq("rate_card_id",id).select("*").single();}
     else return apiError("Not found","NOT_FOUND",404);
   } else if(resource==="bundles") {
-    if(path.length===1&&method==="POST") {if(!body.name||!body.clientId||!MONEY.test(String(body.unitAmount))||!isDateOnly(body.effectiveFrom)||(body.effectiveTo!==undefined&&!isDateOnly(body.effectiveTo)))return apiError("Invalid bundle","INVALID_INPUT",422);result=await insert("billing_bundles",{name:body.name,client_id:body.clientId,unit_amount:body.unitAmount,active:true,effective_from:body.effectiveFrom,effective_to:body.effectiveTo??null});}
+    if(path.length===1&&method==="POST") {if(!body.name||typeof body.clientId!=="string"||!UUID.test(body.clientId)||!MONEY.test(String(body.unitAmount))||!isDateOnly(body.effectiveFrom)||(body.effectiveTo!==undefined&&!isDateOnly(body.effectiveTo)))return apiError("Invalid bundle","INVALID_INPUT",422);result=await insert("billing_bundles",{name:body.name,client_id:body.clientId,unit_amount:body.unitAmount,active:true,effective_from:body.effectiveFrom,effective_to:body.effectiveTo??null});}
     else if(path.length===2&&method==="PATCH") {if((body.name!==undefined&&typeof body.name!=="string")||(body.unitAmount!==undefined&&!MONEY.test(String(body.unitAmount)))||(body.effectiveTo!==undefined&&!isDateOnly(body.effectiveTo))||(body.active!==undefined&&typeof body.active!=="boolean"))return apiError("Invalid bundle update","INVALID_INPUT",422);const values:Row={};for(const [a,b] of [["name","name"],["unitAmount","unit_amount"],["effectiveTo","effective_to"],["active","active"]])if(body[a]!==undefined)values[b]=body[a];result=await update("billing_bundles",values);}
-    else if(path[2]==="components"&&method==="PUT") {if(!Array.isArray(body.components)||body.components.some((x:Row)=>typeof x?.clientServiceId!=="string")||new Set(body.components.map((x:Row)=>x.clientServiceId)).size!==body.components.length)return apiError("components must be unique clientServiceId objects","INVALID_INPUT",422);const {error}=await db.rpc("set_billing_bundle_components",{p_bundle_id:id,p_client_service_ids:body.components.map((x:Row)=>x.clientServiceId),p_actor:actor,p_reason:reason});if(error)return dbError(error);result={bundleId:id,components:body.components};}
+    else if(path[2]==="components"&&method==="PUT") {if(!Array.isArray(body.components)||body.components.some((x:Row)=>typeof x?.clientServiceId!=="string"||!UUID.test(x.clientServiceId))||new Set(body.components.map((x:Row)=>x.clientServiceId)).size!==body.components.length)return apiError("components must contain unique clientServiceId UUIDs","INVALID_INPUT",422);const {error}=await db.rpc("set_billing_bundle_components",{p_bundle_id:id,p_client_service_ids:body.components.map((x:Row)=>x.clientServiceId),p_actor:actor,p_reason:reason});if(error)return dbError(error);result={bundleId:id,components:body.components};}
     else return apiError("Not found","NOT_FOUND",404);
   } else if(resource==="client-pricing") {
-    if(path[1]==="overrides"&&method==="POST") {if(!body.clientServiceId||!MONEY.test(String(body.unitAmount))||!isDateOnly(body.effectiveFrom)||(body.effectiveTo!==undefined&&!isDateOnly(body.effectiveTo)))return apiError("Invalid client price override","INVALID_INPUT",422);result=await insert("billing_client_service_overrides",{client_service_id:body.clientServiceId,unit_amount:body.unitAmount,effective_from:body.effectiveFrom,effective_to:body.effectiveTo??null});}
+    if(path[1]==="overrides"&&method==="POST") {if(typeof body.clientServiceId!=="string"||!UUID.test(body.clientServiceId)||!MONEY.test(String(body.unitAmount))||!isDateOnly(body.effectiveFrom)||(body.effectiveTo!==undefined&&!isDateOnly(body.effectiveTo)))return apiError("Invalid client price override","INVALID_INPUT",422);result=await insert("billing_client_service_overrides",{client_service_id:body.clientServiceId,unit_amount:body.unitAmount,effective_from:body.effectiveFrom,effective_to:body.effectiveTo??null});}
     else if(path[1]==="overrides"&&path[2]&&method==="PATCH") {if((body.unitAmount!==undefined&&!MONEY.test(String(body.unitAmount)))||(body.effectiveTo!==undefined&&!isDateOnly(body.effectiveTo))||(body.unitAmount===undefined&&body.effectiveTo===undefined))return apiError("Invalid client price update","INVALID_INPUT",422);const v:Row={};if(body.unitAmount!==undefined)v.unit_amount=body.unitAmount;if(body.effectiveTo!==undefined)v.effective_to=body.effectiveTo;result=await db.from("billing_client_service_overrides").update({...v,updated_by:actor,updated_at:new Date().toISOString(),reason}).eq("id",path[2]).select("*").single();}
     else return apiError("Not found","NOT_FOUND",404);
   } else if(resource==="settings"&&path[1]==="terms"&&path[2]==="overrides") {
-    if(method==="POST") {if(!body.clientId||!Number.isInteger(body.netDays)||body.netDays<0||body.netDays>365||!isDateOnly(body.effectiveFrom)||(body.effectiveTo!==undefined&&!isDateOnly(body.effectiveTo)))return apiError("Invalid terms override","INVALID_INPUT",422);result=await insert("billing_terms_overrides",{client_id:body.clientId,client_service_id:body.clientServiceId??null,net_days:body.netDays,effective_from:body.effectiveFrom,effective_to:body.effectiveTo??null});}
+    if(method==="POST") {if(typeof body.clientId!=="string"||!UUID.test(body.clientId)||(body.clientServiceId!=null&&(typeof body.clientServiceId!=="string"||!UUID.test(body.clientServiceId)))||!Number.isInteger(body.netDays)||body.netDays<0||body.netDays>365||!isDateOnly(body.effectiveFrom)||(body.effectiveTo!==undefined&&!isDateOnly(body.effectiveTo)))return apiError("Invalid terms override","INVALID_INPUT",422);result=await insert("billing_terms_overrides",{client_id:body.clientId,client_service_id:body.clientServiceId??null,net_days:body.netDays,effective_from:body.effectiveFrom,effective_to:body.effectiveTo??null});}
     else if(method==="PATCH"&&path[3]) {if((body.netDays!==undefined&&(!Number.isInteger(body.netDays)||body.netDays<0||body.netDays>365))||(body.effectiveTo!==undefined&&!isDateOnly(body.effectiveTo))||(body.netDays===undefined&&body.effectiveTo===undefined))return apiError("Invalid terms override update","INVALID_INPUT",422);const v:Row={};if(body.netDays!==undefined)v.net_days=body.netDays;if(body.effectiveTo!==undefined)v.effective_to=body.effectiveTo;result=await db.from("billing_terms_overrides").update({...v,updated_by:actor,updated_at:new Date().toISOString(),reason}).eq("id",path[3]).select("*").single();}
     else return apiError("Not found","NOT_FOUND",404);
   } else if(resource==="settings"&&path[1]==="terms"&&method==="PATCH") {
@@ -340,27 +352,39 @@ async function mutate(request: NextRequest,path:string[],method:string) {
     result=await db.from("billing_remittance_settings").update({payee_name:body.payeeName??null,address:body.address??null,instructions:body.instructions??null,updated_by:actor,updated_at:new Date().toISOString(),reason}).eq("singleton",true).select("*").single();
   } else if(resource==="completion-source-maps") {
     const allowedAdapters=["schedule","work_period_done","period_count_threshold","manual_confirmation"];
-    if(method==="POST") {if(!body.clientServiceId||!allowedAdapters.includes(body.adapter)||!isDateOnly(body.effectiveFrom)||!validSourceMap(body)||!body.identityFields.length||!(["period_end","completion_date","confirmed_date"].includes(body.candidateDateRule)))return apiError("Invalid completion source map","INVALID_COMPLETION_SOURCE_MAP",422);result=await insert("billing_completion_source_maps",{client_service_id:body.clientServiceId,adapter:body.adapter,predicate:body.predicate||{},identity_fields:body.identityFields,candidate_date_rule:body.candidateDateRule,effective_from:body.effectiveFrom,effective_to:body.effectiveTo??null,enabled:true});}
+    if(method==="POST") {if(typeof body.clientServiceId!=="string"||!UUID.test(body.clientServiceId)||!allowedAdapters.includes(body.adapter)||!isDateOnly(body.effectiveFrom)||!validSourceMap(body)||!body.identityFields.length||!(["period_end","completion_date","confirmed_date"].includes(body.candidateDateRule)))return apiError("Invalid completion source map","INVALID_COMPLETION_SOURCE_MAP",422);result=await insert("billing_completion_source_maps",{client_service_id:body.clientServiceId,adapter:body.adapter,predicate:body.predicate||{},identity_fields:body.identityFields,candidate_date_rule:body.candidateDateRule,effective_from:body.effectiveFrom,effective_to:body.effectiveTo??null,enabled:true});}
     else if(method==="PATCH") {if((body.enabled!==undefined&&typeof body.enabled!=="boolean")||(body.effectiveTo!==undefined&&!isDateOnly(body.effectiveTo))||(body.enabled===undefined&&body.effectiveTo===undefined))return apiError("Invalid completion map update","INVALID_COMPLETION_SOURCE_MAP",422);const v:Row={};if(body.enabled!==undefined)v.enabled=body.enabled;if(body.effectiveTo!==undefined)v.effective_to=body.effectiveTo;result=await update("billing_completion_source_maps",v);}
     else return apiError("Not found","NOT_FOUND",404);
   } else return apiError("Not found","NOT_FOUND",404);
   if(result?.error)return dbError(result.error);
-  return NextResponse.json(mutationResponse(resource,path,result?.data??result),{status:method==="POST"?201:200});
+  const output=resource==="bundles"&&path.length===1&&method==="POST"
+    ? {bundle:toPhase2Bundle(result?.data)}
+    : mutationResponse(resource,path,result?.data??result);
+  return NextResponse.json(output,{status:method==="POST"?201:200});
 }
 async function handler(request:NextRequest,ctx:Ctx,method:string) {
   const path=await pathParts(ctx);
   if(path.length===1&&path[0]==="permissions"&&method==="GET")return permissionGet();
   const access=await authorized(path,method);
   if(access.response)return access.response;
+  let resourceId: string | undefined;
+  if(path[0]==="candidates"&&path[1]&&!['generate','schedule','manual-confirmations'].includes(path[1])) resourceId=path[1];
+  else if(["rate-cards","bundles","completion-source-maps"].includes(path[0])&&path[1]) resourceId=path[1];
+  else if(path[0]==="client-pricing"&&path[1]==="overrides"&&method==="PATCH") resourceId=path[2];
+  else if(path[0]==="settings"&&path[1]==="terms"&&path[2]==="overrides") resourceId=path[3];
+  if(resourceId&&!UUID.test(resourceId))return apiError("Resource ID must be a UUID","INVALID_INPUT",422);
+  if(path[0]==="rate-cards"&&path[2]==="entries"&&path[3]&&!UUID.test(path[3]))return apiError("Entry ID must be a UUID","INVALID_INPUT",422);
   if(path.length===2&&path[0]==="candidates"&&path[1]==="manual-confirmations"&&method==="POST") {
     const body=await readObjectBody(request);if(!body)return apiError("Invalid JSON body","INVALID_JSON",400);
     if(typeof body.idempotencyKey!=="string"||!UUID.test(body.idempotencyKey)||typeof body.clientServiceId!=="string"||!UUID.test(body.clientServiceId)||!isDateOnly(body.confirmedDate)||typeof body.sourceNote!=="string"||!body.sourceNote.trim()||body.sourceNote.length>2000||typeof body.reason!=="string"||!body.reason.trim()) return apiError("idempotencyKey, clientServiceId, confirmedDate, sourceNote, and reason are required","INVALID_INPUT",422);
+    if(body.confirmedDate>firmDateISO())return apiError("Manual confirmations must be dated today or earlier in Houston time","CONFIRMATION_DATE_FUTURE",422);
     const db=createAdminClient(),actor=access.identity?.id;
     const {data,error}=await db.rpc("create_billing_manual_confirmation",{p_id:body.idempotencyKey,p_client_service_id:body.clientServiceId,p_confirmed_date:body.confirmedDate,p_source_note:body.sourceNote.trim(),p_reason:body.reason.trim(),p_actor:actor});
     if(error) {
       if(error.code==="P0002")return apiError("Active client service not found","NOT_FOUND",404);
+      if(error.code==="22023"&&/confirmation_date_future/i.test(error.message||""))return apiError("Manual confirmations must be dated today or earlier in Houston time","CONFIRMATION_DATE_FUTURE",422);
       if(error.code==="22023")return apiError("Invalid manual confirmation","INVALID_INPUT",422);
-      if(error.code==="23505")return apiError("Idempotency key was already used for different confirmation data","DUPLICATE_RESOURCE",409);
+      if(error.code==="23505")return apiError(/billing_manual_confirmation_service_date_key/i.test(`${error.message||""} ${error.details||""}`)?"A manual confirmation already exists for this client service and date":"Idempotency key was already used for different confirmation data","DUPLICATE_RESOURCE",409);
       if(/source_map_missing/i.test(error.message||""))return apiError("No active manual-confirmation rule covers this date","COMPLETION_SOURCE_MAP_REQUIRED",409);
       return apiError("Manual confirmation could not be saved","BILLING_WRITE_FAILED",500);
     }
@@ -405,6 +429,7 @@ async function handler(request:NextRequest,ctx:Ctx,method:string) {
     if(path[2]==="dismiss") {if(!["open","unpriced"].includes(state))return apiError("Candidate cannot be dismissed in its current state","CANDIDATE_NOT_OPEN",409);state="dismissed";}
     if(path[2]==="reopen") {if(state!=="dismissed")return apiError("Only dismissed candidates can be reopened","CANDIDATE_NOT_OPEN",409);state=candidate.unit_amount===null?"unpriced":"open";}
     if(path[2]==="reprice") {
+      if(!["open","unpriced"].includes(state))return apiError("Only open or unpriced candidates can be repriced; reopen a dismissed candidate first","CANDIDATE_NOT_OPEN",409);
       if(!candidate.service_code||!candidate.unit)return apiError("Candidate source metadata is incomplete","CANDIDATE_UNPRICED",409);
       const {data:price,error:priceError}=await db.rpc("resolve_billing_price",{p_client_service_id:candidate.client_service_id,p_client_id:candidate.client_id,p_service_code:candidate.service_code,p_unit:candidate.unit,p_on:candidate.candidate_date});
       if(priceError)return apiError("Unable to resolve candidate price","PRICE_RESOLUTION_FAILED",500);

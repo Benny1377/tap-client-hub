@@ -89,6 +89,32 @@ test("work-period adapter normalizes verified text YYYYMM periods without Operat
   assert.ok(writes.every((write) => write.table === "billing_candidates"));
 });
 
+test("work-period adapter accepts text YYYY-MM periods and reports unreadable periods", async () => {
+  const { db, writes } = fixtureDb({
+    adapter: "work_period_done", sourceRows: [
+      { period: "2026-11", stage: "done", done_at: null },
+      { period: "202613", stage: "done", done_at: null },
+    ],
+  });
+  const response = await generateFromOperations(db, "actor-1", {
+    from: "2026-11-01", to: "2026-11-30", clientServiceIds: [clientServiceId],
+  });
+  assert.equal(response.result.created, 1);
+  assert.equal(response.result.skippedByReason.source_incomplete, 1);
+  assert.equal(writes[0].payload.period, "2026-11");
+});
+
+test("count adapter accepts numeric YYYYMM periods", async () => {
+  const { db, writes } = fixtureDb({
+    adapter: "period_count_threshold", sourceRows: [{ period: 202611, processed: 3 }],
+  });
+  const response = await generateFromOperations(db, "actor-1", {
+    from: "2026-11-01", to: "2026-11-30", clientServiceIds: [clientServiceId],
+  });
+  assert.equal(response.result.created, 1);
+  assert.equal(writes[0].payload.period, "2026-11");
+});
+
 test("completion-date adapter finds work completed in the window even when its service period is earlier", async () => {
   const { db, writes, filters } = fixtureDb({
     adapter: "work_period_done", candidateDateRule: "completion_date",

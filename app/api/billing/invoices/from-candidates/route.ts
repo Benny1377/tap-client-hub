@@ -5,6 +5,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 export async function POST(request: NextRequest) {
   const access = await requireBillingAction("invoices.draft.manage");
   if (access.response || !access.identity) return access.response;
@@ -14,7 +15,7 @@ export async function POST(request: NextRequest) {
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("Invalid JSON body");
     body = parsed as Record<string, unknown>;
   } catch { return apiError("Invalid JSON body", "INVALID_JSON", 400); }
-  if (!Array.isArray(body.candidateIds) || body.candidateIds.length < 1 || body.candidateIds.length > 500 || body.candidateIds.some((id: unknown) => typeof id !== "string")) return apiError("candidateIds must contain 1 to 500 identifiers", "INVALID_INPUT", 422);
+  if (!Array.isArray(body.candidateIds) || body.candidateIds.length < 1 || body.candidateIds.length > 500 || body.candidateIds.some((id: unknown) => typeof id !== "string" || !UUID.test(id))) return apiError("candidateIds must contain 1 to 500 UUIDs", "INVALID_INPUT", 422);
   const db = createAdminClient();
   const { data: id, error } = await db.rpc("create_draft_from_candidates", { p_candidate_ids: body.candidateIds, p_memo: typeof body.memo === "string" ? body.memo.trim() || null : null, p_actor: access.identity.id });
   if (error) {

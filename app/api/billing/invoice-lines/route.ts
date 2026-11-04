@@ -3,6 +3,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { requireBillingAction } from "@/lib/billing-access";
 
 export const runtime = "nodejs";
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 function decimal(value: unknown, scale: number) {
   const raw = String(value ?? "").trim();
@@ -68,6 +69,7 @@ export async function POST(request: NextRequest) {
     body = parsed as Record<string, unknown>;
   } catch { return NextResponse.json({ error: "Invalid JSON body", code: "INVALID_JSON" }, { status: 400 }); }
   if (!body?.invoice_id || !body?.description) return NextResponse.json({ error: "invoice_id and description are required", code: "INVALID_INPUT" }, { status: 422 });
+  if (typeof body.invoice_id !== "string" || !UUID.test(body.invoice_id) || (body.client_service_id != null && (typeof body.client_service_id !== "string" || !UUID.test(body.client_service_id)))) return NextResponse.json({ error: "invoice_id and client_service_id must be UUIDs", code: "INVALID_INPUT" }, { status: 422 });
   const quantity = decimal(body.quantity ?? "1", 4);
   const unit = money(body.unit_amount);
   if (!quantity || quantity.units === "0" || !unit) return NextResponse.json({ error: "quantity and unit_amount must be positive monetary values", code: "INVALID_AMOUNT" }, { status: 422 });
@@ -97,7 +99,7 @@ export async function DELETE(request: NextRequest) {
   let body: Record<string, unknown> = {};
   try { if (request.headers.get("content-type")?.includes("application/json")) body = await request.json(); } catch { return NextResponse.json({ error: "Invalid JSON body", code: "INVALID_JSON" }, { status: 400 }); }
   const id = typeof body.id === "string" ? body.id : request.nextUrl.searchParams.get("id");
-  if (!id) return NextResponse.json({ error: "id is required", code: "INVALID_INPUT" }, { status: 422 });
+  if (!id || !UUID.test(id)) return NextResponse.json({ error: "id must be a UUID", code: "INVALID_INPUT" }, { status: 422 });
   const db = createAdminClient();
   const { data: linked } = await db.from("billing_candidate_line_links").select("candidate_id").eq("invoice_line_id", id);
   const { error } = await db.rpc("delete_draft_invoice_line", { p_line_id: id, p_actor: access.identity!.id });
@@ -118,7 +120,8 @@ export async function PATCH(request: NextRequest) {
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("Invalid JSON body");
     body = parsed as Record<string, unknown>;
   } catch { return NextResponse.json({ error: "Invalid JSON body", code: "INVALID_JSON" }, { status: 400 }); }
-  if (!body?.id) return NextResponse.json({ error: "id is required", code: "INVALID_INPUT" }, { status: 422 });
+  if (typeof body?.id !== "string" || !UUID.test(body.id)) return NextResponse.json({ error: "id must be a UUID", code: "INVALID_INPUT" }, { status: 422 });
+  if (body.client_service_id != null && (typeof body.client_service_id !== "string" || !UUID.test(body.client_service_id))) return NextResponse.json({ error: "client_service_id must be a UUID", code: "INVALID_INPUT" }, { status: 422 });
   const db = createAdminClient();
   const { data: line } = await db.from("invoice_lines").select("invoice_id, billing_candidate_line_links(candidate_id)").eq("id", body.id).maybeSingle();
   if (!line) return NextResponse.json({ error: "Invoice line not found", code: "NOT_FOUND" }, { status: 404 });

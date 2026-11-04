@@ -11,6 +11,19 @@ test("Phase 2 money fields serialize as fixed two-decimal strings", () => {
   });
 });
 
+test("public Billing serializers omit internal audit actor and reason fields", () => {
+  assert.deepEqual(api.toCamel({ id: "rate-1", created_by: "user-1", updated_by: "user-2", reason: "internal" }), { id: "rate-1" });
+});
+
+test("bundle serializers expose components under the contracted key", () => {
+  assert.deepEqual(api.toPhase2Bundle({
+    id: "bundle-1", unit_amount: "300", billing_bundle_components: [{ client_service_id: "service-1" }],
+  }), { id: "bundle-1", unitAmount: "300.00", components: [{ clientServiceId: "service-1" }] });
+  assert.deepEqual(api.toPhase2Bundle({ id: "bundle-2", unit_amount: "25" }), {
+    id: "bundle-2", unitAmount: "25.00", components: [],
+  });
+});
+
 test("candidate source is a canonical nested object", () => {
   assert.deepEqual(api.toPhase2Candidate({
     id: "candidate-1", source_adapter: "schedule", source_identity: "service-1:2026-11", unit_amount: "125",

@@ -5,6 +5,7 @@ import { apiError, toPhase2Invoice } from "@/lib/billing-phase2";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 export async function GET(request: NextRequest) {
   const access = await requireLedgerReadAccess();
@@ -27,7 +28,7 @@ export async function POST(request: NextRequest) {
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("Invalid JSON body");
     body = parsed as Record<string, unknown>;
   } catch { return apiError("Invalid JSON body", "INVALID_JSON", 400); }
-  if (!body?.clientId || Object.keys(body).some((key) => !["clientId", "memo"].includes(key))) return apiError("Only clientId and optional memo may be supplied; number, dates and totals are server-assigned", "INVALID_INPUT", 422);
+  if (typeof body?.clientId !== "string" || !UUID.test(body.clientId) || Object.keys(body).some((key) => !["clientId", "memo"].includes(key))) return apiError("A valid clientId UUID and optional memo are required; number, dates and totals are server-assigned", "INVALID_INPUT", 422);
   if (body.memo !== undefined && typeof body.memo !== "string") return apiError("memo must be text", "INVALID_INPUT", 422);
   const db = createAdminClient();
   const { data, error } = await db.from("invoices").insert({
