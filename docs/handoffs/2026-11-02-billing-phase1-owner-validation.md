@@ -1,6 +1,6 @@
 # Billing Phase 1 owner-side validation
 
-Date: 2026-11-02
+Updated: 2026-11-04 (owner authenticated matrix run)
 Branch: `codex/billing-phase1-validation`
 Scope: disposable local synthetic Supabase harness only; no hosted environment or real client data.
 
@@ -16,7 +16,7 @@ Scope: disposable local synthetic Supabase harness only; no hosted environment o
 | Typecheck / production build | PASS | `npx tsc --noEmit` and `npm run build` passed on the integrated `78161ad` worktree. |
 | Support regression suite | PASS | `npm run test:support` passed: 88 + 18 + 13 assertions. |
 | Lint | PASS on changed files; repository-wide baseline FAIL | ESLint on every changed code file in `origin/codex/billing-phase1-ui` relative to `6859607` passed. `npm run lint` still reports 568 problems (470 errors, 98 warnings) across the full repository. Six errors are in Billing API files unchanged from the base; the remaining findings are outside this branch's diff. No lint fixes were applied. |
-| Dynamic authenticated Phase 1 API/auth matrix | NOT RUN by owner | No credential-bearing setup or `.env*` files were accessed. Engineer A separately reports 37/37 route checks at `196298b`; that is their evidence, not this owner run. |
+| Dynamic authenticated Phase 1 API/auth matrix | PASS — 37/37 | Owner ran `node tools/collections-local/verify-billing-phase1-routes.mjs` against the local app on port `3000`, local Supabase API `55321`, and local database `55322`, from `codex/collections-ar-auto-matching` at `f9c729f`. Owner output: 37 passed, 0 failed. Covers signed-out/role access, invoice line math and invariants, draft deletion, void/payment allocation rules, anon RLS, and audit rows. The runner leaves synthetic `LOCAL-V*` test records in the disposable local database; no hosted data was used. |
 | Hosted migration / hosted behavior | NOT RUN | No hosted schema, credentials, or services were accessed. |
 | Phase 3 delivery validators | NOT RUN | Explicitly outside this Phase 1 local validation; Engineer A also notes they are not covered. |
 
@@ -28,4 +28,4 @@ The latest Phase 1 invariant correctly rejects adding or changing invoice lines 
 
 ## Merge / release position
 
-This is positive owner-side local evidence for BILL-DEP-03. Changed-file lint, typecheck, build, local SQL, concurrent allocation, and static contract/UI tests pass. The repository-wide lint baseline is not clean, but the branch introduces no lint findings in changed code. The remaining owner evidence gap is an authenticated HTTP matrix: Engineer A separately reports 37/37 route checks, but the owner did not rerun them because the local route harness depends on credential-bearing setup, which was not accessed. No hosted behavior is claimed. This record does not approve merging `codex/billing-phase1-ui` into `dev`; branch ancestry and the complete integrated diff still need review, and the merge decision remains separate from this validation record. Engineer A's acceptance is documented in `docs/handoffs/2026-10-29-billing-phase1-engineer-a-acceptance.md` on their branch.
+This completes the owner-side local evidence for BILL-DEP-03. Changed-file lint, typecheck, build, local SQL, concurrent allocation, static contract/UI tests, and the authenticated HTTP matrix pass in the recorded local evidence. The repository-wide lint baseline remains failing outside the changed Billing files. Engineer A's 2026-11-04 closeout reports `codex/billing-phase1-ui` merged into `dev` at `10fe781`; the authenticated matrix reported here was run separately against the local integrated code tree at `f9c729f`. No hosted or Vercel Preview behavior is claimed by this local matrix. Preview/sandbox verification is a separate environment check, not an outstanding authenticated-matrix gap.
