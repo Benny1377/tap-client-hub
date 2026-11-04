@@ -1,6 +1,6 @@
 # Billing Phase 2: pricing and billable candidates
 
-State: **Draft preparation — not approved for implementation.**
+State: **Owner-approved contract revision — awaiting Engineer A's freeze acknowledgement; not yet frozen for implementation.**
 
 This document turns the frozen Phase 0 foundation into an implementation-ready Phase 2 boundary. It does not authorize a migration, route, hosted change, or UI implementation. The frozen foundation contract remains controlling where the two documents overlap.
 
@@ -30,6 +30,7 @@ It excludes the Phase 3 workbench and configuration screens, manual payment/reco
 - Deleting a linked draft or voiding a linked invoice restores candidates to `open` in the same audited transaction.
 - Candidate-linked draft lines cannot change their quantity, unit amount, amount, or provenance. Removing a candidate-linked draft line atomically returns its linked candidates to `open`; ordinary manual draft lines remain editable under the Phase 1 invariants.
 - Server authorization, RLS, audit, and database uniqueness/invariants are enforceable boundaries; UI hiding is not authorization.
+- A draft invoice has `invoice_number`, `issue_date`, and `due_date` all `null`. The corresponding database columns must become nullable. Draft creation does not accept or require client-supplied values for these fields. The issue RPC assigns the number and firm issue date and calculates the due date from the effective terms in one transaction.
 
 ## Proposed data boundary for review
 
@@ -53,7 +54,7 @@ Names below are planning placeholders until the contract is frozen.
 | `unpriced` | Source exists but no active price resolved. | Reprice to `open`; dismiss. |
 | `open` | Price resolved and available for an atomic draft claim. | Draft, dismiss, reprice. |
 | `drafted` | Claimed by one draft through provenance links. | Return to `open` only when that draft is deleted. |
-| `dismissed` | Authorized user excluded it with an auditable reason. | Authorized reopen to `open` or `unpriced`. |
+| `dismissed` | Authorized user excluded it with an auditable reason. | Authorized reopen to `open` or `unpriced`, with a non-empty audited reason. |
 | `invoiced` | Linked invoice issued. | Correction uses void/reissue, which returns it to `open`. |
 
 Generators return an existing candidate or a stable duplicate result; they never silently overwrite an identity.
@@ -69,8 +70,84 @@ Generators return an existing candidate or a stable duplicate result; they never
 | Candidate reads/lifecycle | `GET /api/billing/candidates?clientId=&state=&from=&to=&cursor=`, `POST /api/billing/candidates/[id]/dismiss`, `POST /api/billing/candidates/[id]/reopen`, `POST /api/billing/candidates/[id]/reprice` | `candidates.view` / `candidates.manage`. |
 | What bills next | `GET /api/billing/candidates/schedule?from=&to=&clientId=` | `candidates.view`; read-only projection, clearly marked `projected`, never creates or changes candidates. |
 | Candidate generation | Audited RPC behind `POST /api/billing/candidates/generate` | `candidates.manage`; client-service/date scoped and idempotent. |
-| Draft creation | Audited `create_draft_from_candidates` RPC behind `POST /api/billing/invoices/from-candidates` | `invoices.draft.manage`; one transaction claims rows, creates lines/links, and audits. |
+| Draft creation | Audited `create_draft_from_candidates` RPC behind `POST /api/billing/invoices/from-candidates`; empty/manual drafts use `POST /api/billing/invoices` | `invoices.draft.manage`; one transaction claims rows, creates lines/links, and audits. |
 | Issue, delete, and void | `POST /api/billing/invoices/[id]/issue`, `DELETE /api/billing/invoices/[id]`, `POST /api/billing/invoices/[id]/void` | `invoices.issue`, `invoices.draft.manage`, and Owner/Admin-only `invoices.void`; all candidate-aware audited RPCs. |
+
+### Transition compatibility
+
+The existing `POST /api/billing/invoices/[id]` action form remains temporarily as a deprecated compatibility adapter while the Billing UI moves to `/issue` and `/void`. It must call the same authorization checks and candidate-aware audited RPCs; it must not retain a separate mutation implementation. The adapter is removed after the UI has moved to the explicit endpoints and a repository search confirms no remaining caller. The explicit endpoints are canonical from Phase 2 onward.
+
+### Permission response and initial defaults
+
+`GET /api/billing/permissions` returns exactly the normalized role, assigned modules, and the resolved fixed action keys, with no price data:
+
+```json
+{
+  "role": "staff",
+  "modules": ["Billing"],
+  "actions": ["billing.view", "pricing.view", "candidates.view", "candidates.manage", "invoices.draft.manage", "invoices.issue", "payments.record", "payments.allocate"]
+}
+```
+
+Owner and Admin resolve all fixed actions, including `policy.manage`, `invoices.void`, and `payments.reverse`. Assigned Billing staff default to `billing.view`, `pricing.view`, `candidates.view`, `candidates.manage`, `invoices.draft.manage`, `invoices.issue`, `payments.record`, and `payments.allocate`; `pricing.manage` is not enabled by default. Owner/Admin may grant other delegable actions through the policy record, except the three fixed Owner/Admin-only actions. Collections-only and unassigned users receive `403` from this endpoint and all Phase 2 price/candidate/settings endpoints. A user assigned both Billing and Collections follows the Billing policy for Billing endpoints. The server recomputes every action; this response is not an authorization token.
+
+### Request and response shapes (synthetic examples)
+
+All paths below are relative to `/api/billing`. UUIDs, client labels, prices, and dates are synthetic. All monetary values are decimal strings. Omitted optional fields are server defaults; unknown or client-derived monetary fields are rejected. `GET` requests have no body. Success response bodies are shown; all failures use `{ "error": "...", "code": "..." }` with the status table below.
+
+Shared resource examples:
+
+```json
+{
+  "rateCard": {"id":"rc_01","name":"Standard","currency":"USD","active":true,"effectiveFrom":"2026-11-01","effectiveTo":null},
+  "rateEntry": {"id":"re_01","serviceCode":"TAX","unit":"return","unitAmount":"125.00","effectiveFrom":"2026-11-01","effectiveTo":null},
+  "override": {"id":"ov_01","clientServiceId":"cs_01","unitAmount":"115.00","effectiveFrom":"2026-11-01","effectiveTo":null,"reason":"Approved client rate"},
+  "bundle": {"id":"bu_01","name":"Monthly package","clientId":"client_01","unitAmount":"300.00","effectiveFrom":"2026-11-01","effectiveTo":null,"components":[{"clientServiceId":"cs_01"},{"clientServiceId":"cs_02"}]},
+  "candidate": {"id":"ca_01","clientId":"client_01","clientServiceId":"cs_01","state":"open","candidateType":"recurring","candidateDate":"2026-11-30","description":"Monthly bookkeeping","unitAmount":"125.00","source":{"adapter":"schedule","identity":"cs_01:2026-11"}},
+  "draft": {"id":"inv_01","clientId":"client_01","status":"draft","invoiceNumber":null,"issueDate":null,"dueDate":null,"lines":[{"id":"line_01","description":"Monthly bookkeeping","quantity":"1.0000","unitAmount":"125.00","amount":"125.00","candidateIds":["ca_01"]}]}
+}
+```
+
+| Endpoint | Request (query/body) | Synthetic success response |
+| --- | --- | --- |
+| `GET /permissions` | none | `{"role":"staff","modules":["Billing"],"actions":["billing.view","pricing.view","candidates.view","candidates.manage","invoices.draft.manage","invoices.issue","payments.record","payments.allocate"]}` (default Billing-staff actions; `pricing.manage` is excluded unless Owner/Admin grants it) |
+| `GET /rate-cards` | query: `active`, `cursor`, `limit` (limit default 50, max 100) | `{"items":[{"id":"rc_01","name":"Standard","currency":"USD","active":true}],"nextCursor":null}` |
+| `POST /rate-cards` | `{"name":"Standard","currency":"USD","effectiveFrom":"2026-11-01"}` | `201 {"rateCard":{"id":"rc_01","name":"Standard","currency":"USD","active":true,"effectiveFrom":"2026-11-01","effectiveTo":null}}` |
+| `GET /rate-cards/rc_01` | none | `{"rateCard":{"id":"rc_01","name":"Standard","currency":"USD","active":true},"entries":[]}` |
+| `PATCH /rate-cards/rc_01` | `{"name":"Standard 2027","active":true,"reason":"Annual refresh"}` | `{"rateCard":{"id":"rc_01","name":"Standard 2027","currency":"USD","active":true}}` |
+| `POST /rate-cards/rc_01/entries` | `{"serviceCode":"TAX","unit":"return","unitAmount":"125.00","effectiveFrom":"2026-11-01"}` | `201 {"entry":{"id":"re_01","serviceCode":"TAX","unit":"return","unitAmount":"125.00","effectiveFrom":"2026-11-01","effectiveTo":null}}` |
+| `PATCH /rate-cards/rc_01/entries/re_01` | `{"unitAmount":"130.00","effectiveTo":"2027-10-31","reason":"Annual update"}` | `{"entry":{"id":"re_01","unitAmount":"130.00","effectiveTo":"2027-10-31"}}` |
+| `GET /client-pricing?clientId=client_01` | none | `{"clientId":"client_01","overrides":[{"id":"ov_01","clientServiceId":"cs_01","unitAmount":"115.00","effectiveFrom":"2026-11-01","effectiveTo":null}],"bundles":[]}` |
+| `POST /client-pricing/overrides` | `{"clientServiceId":"cs_01","unitAmount":"115.00","effectiveFrom":"2026-11-01","reason":"Approved client rate"}` | `201 {"override":{"id":"ov_01","clientServiceId":"cs_01","unitAmount":"115.00","effectiveFrom":"2026-11-01","effectiveTo":null}}` |
+| `PATCH /client-pricing/overrides/ov_01` | `{"unitAmount":"120.00","effectiveTo":"2027-10-31","reason":"Renewal"}` | `{"override":{"id":"ov_01","unitAmount":"120.00","effectiveTo":"2027-10-31"}}` |
+| `GET /bundles` | query: `clientId`, `active`, `cursor`, `limit` | `{"items":[{"id":"bu_01","name":"Monthly package","clientId":"client_01","unitAmount":"300.00","components":[{"clientServiceId":"cs_01"}]}],"nextCursor":null}` |
+| `POST /bundles` | `{"name":"Monthly package","clientId":"client_01","unitAmount":"300.00","effectiveFrom":"2026-11-01","reason":"Package setup"}` | `201 {"bundle":{"id":"bu_01","name":"Monthly package","clientId":"client_01","unitAmount":"300.00","effectiveFrom":"2026-11-01","effectiveTo":null,"components":[]}}` |
+| `GET /bundles/bu_01` | none | `{"bundle":{"id":"bu_01","name":"Monthly package","clientId":"client_01","unitAmount":"300.00","components":[{"clientServiceId":"cs_01"}]}}` |
+| `PATCH /bundles/bu_01` | `{"name":"Monthly package 2027","unitAmount":"315.00","effectiveTo":"2027-10-31","reason":"Annual update"}` | `{"bundle":{"id":"bu_01","name":"Monthly package 2027","unitAmount":"315.00","effectiveTo":"2027-10-31"}}` |
+| `PUT /bundles/bu_01/components` | `{"components":[{"clientServiceId":"cs_01"},{"clientServiceId":"cs_02"}],"reason":"Scope update"}` | `{"bundleId":"bu_01","components":[{"clientServiceId":"cs_01"},{"clientServiceId":"cs_02"}]}` |
+| `GET /settings/terms` | none | `{"defaultNetDays":15,"billingDay":"service_period_end","timezone":"America/Chicago","overrides":[]}` |
+| `PATCH /settings/terms` | `{"defaultNetDays":15,"billingDay":"service_period_end","reason":"Approved settings"}` | `{"defaultNetDays":15,"billingDay":"service_period_end","timezone":"America/Chicago","updatedAt":"2026-11-02T12:00:00Z"}` |
+| `GET /settings/remittance` | none | `{"remittance":{"payeeName":"TAP Associates, LLC","address":"100 Example St, Houston, TX","instructions":"Include invoice number"}}` |
+| `PATCH /settings/remittance` | `{"payeeName":"TAP Associates, LLC","address":"100 Example St, Houston, TX","instructions":"Include invoice number","reason":"Corrected address"}` | `{"remittance":{"payeeName":"TAP Associates, LLC","address":"100 Example St, Houston, TX","instructions":"Include invoice number"},"updatedAt":"2026-11-02T12:00:00Z"}` |
+| `GET /candidates?clientId=client_01&state=open&from=2026-11-01&to=2026-11-30&limit=50&cursor=...` | none | `{"items":[{"id":"ca_01","clientId":"client_01","clientServiceId":"cs_01","state":"open","candidateType":"recurring","candidateDate":"2026-11-30","description":"Monthly bookkeeping","unitAmount":"125.00"}],"nextCursor":null}` |
+| `POST /candidates/ca_01/dismiss` | `{"reason":"Client requested hold"}` | `{"candidate":{"id":"ca_01","state":"dismissed"},"auditId":"audit_01"}` |
+| `POST /candidates/ca_01/reopen` | `{"reason":"Hold resolved; service completed"}` | `{"candidate":{"id":"ca_01","state":"open"},"auditId":"audit_02"}` |
+| `POST /candidates/ca_01/reprice` | `{"reason":"Rate correction"}` | `{"candidate":{"id":"ca_01","state":"open","unitAmount":"130.00"}}` |
+| `GET /candidates/schedule?from=2026-11-01&to=2026-11-30&clientId=client_01` | none | `{"projection":"projected","items":[{"clientServiceId":"cs_01","candidateDate":"2026-11-30","description":"Monthly bookkeeping","unitAmount":"125.00"}]}` |
+| `POST /candidates/generate` | `{"clientServiceIds":["cs_01"],"from":"2026-11-01","to":"2026-11-30"}` | `{"created":1,"existing":0,"skipped":0,"candidateIds":["ca_01"]}` |
+| `GET /completion-source-maps` | query: `clientServiceId`, `includeEnded` | `{"items":[{"id":"map_01","clientServiceId":"cs_01","adapter":"work_period_done","predicate":{"stage":"done"},"effectiveFrom":"2026-11-01","effectiveTo":null,"enabled":true}]}` |
+| `POST /completion-source-maps` | `{"clientServiceId":"cs_01","adapter":"work_period_done","predicate":{"stage":"done"},"identityFields":["client_service_id","period"],"candidateDateRule":"period_end","effectiveFrom":"2026-11-01","reason":"Configured by firm"}` | `201 {"map":{"id":"map_01","clientServiceId":"cs_01","adapter":"work_period_done","predicate":{"stage":"done"},"identityFields":["client_service_id","period"],"candidateDateRule":"period_end","effectiveFrom":"2026-11-01","effectiveTo":null,"enabled":true}}` |
+| `PATCH /completion-source-maps/map_01` | `{"enabled":false,"effectiveTo":"2026-11-30","reason":"Service rule retired"}` | `{"map":{"id":"map_01","enabled":false,"effectiveTo":"2026-11-30"}}` |
+| `POST /invoices/from-candidates` | `{"candidateIds":["ca_01"],"memo":"November services"}` | `201 {"invoice":{"id":"inv_01","status":"draft","invoiceNumber":null,"issueDate":null,"dueDate":null,"lines":[{"id":"line_01","description":"Monthly bookkeeping","quantity":"1.0000","unitAmount":"125.00","amount":"125.00","candidateIds":["ca_01"]}]},"refresh":["candidates","invoice","receivables"]}` |
+| `POST /invoices` | `{"clientId":"client_01","memo":"Manual adjustment"}` | `201 {"invoice":{"id":"inv_02","clientId":"client_01","status":"draft","invoiceNumber":null,"issueDate":null,"dueDate":null,"memo":"Manual adjustment","lines":[]},"refresh":["invoice","receivables"]}` |
+| `POST /invoices/inv_01/issue` | `{}` | `{"invoice":{"id":"inv_01","status":"issued","invoiceNumber":"TAP-2026-0001","issueDate":"2026-11-02","dueDate":"2026-11-17","remittanceSnapshot":{"payeeName":"TAP Associates, LLC","address":"100 Example St, Houston, TX","instructions":"Include invoice number"}},"refresh":["invoice","candidates","receivables"]}` |
+| `POST /invoices/inv_01/void` | `{"reason":"Duplicate service entry"}` | `{"invoice":{"id":"inv_01","status":"void","voidReason":"Duplicate service entry"},"returnedCandidateIds":["ca_01"],"refresh":["invoice","candidates","receivables"]}` |
+| `DELETE /invoices/inv_01` | no body | `{"deleted":true,"returnedCandidateIds":["ca_01"],"refresh":["candidates","receivables"]}` |
+| Deprecated `POST /invoices/inv_01` | `{"action":"issue"}` or `{"action":"void","reason":"Duplicate service entry"}` | Same response as the corresponding canonical `/issue` or `/void` endpoint; adapter removed after UI cutover and caller search. |
+
+List endpoints use stable ordering and return `nextCursor` as an opaque base64url-encoded JSON tuple containing the final row's `(candidateDate, id)`. Candidate pages sort by `candidateDate DESC, id DESC`; the next request passes the exact cursor returned by the prior response. Clients must not parse or construct cursors. For example, an opaque cursor may decode to `{"candidateDate":"2026-11-30","id":"ca_01"}`; encoding is not an authorization mechanism and the server validates its shape.
+
+Draft creation through the candidate endpoint creates the same nullable draft shape as a manual draft. `POST /api/billing/invoices` creates an empty/manual draft from a valid `clientId` and optional `memo`; it creates no lines and returns `invoiceNumber`, `issueDate`, and `dueDate` as `null` until issue. The request does not accept client-supplied totals or those server-assigned fields.
 
 Collections-only sessions receive `403` from every pricing, candidate, schedule, completion-map, and Billing-settings endpoint; they do not receive redacted price-shaped payloads. Every money value in a new Phase 2 response is a decimal string (for example, `"125.00"`), never a JSON number. Existing Phase 1 response formatting is out of scope for this release.
 
@@ -82,6 +159,8 @@ Every error remains `{ error, code }`. Draft creation returns a complete server-
 | `CANDIDATE_UNPRICED` | 409 | Candidate has no current valid price and cannot be drafted. |
 | `CANDIDATE_LINKED_LINE_IMMUTABLE` | 409 | A request attempts to edit an amount/quantity/provenance snapshot on a candidate-linked line. |
 | `CANDIDATE_DISMISS_REASON_REQUIRED` | 422 | Dismissal reason is empty. |
+| `CANDIDATE_REOPEN_REASON_REQUIRED` | 422 | Reopen reason is empty. |
+| `INVALID_CURSOR` | 422 | Candidate cursor is malformed or does not match the supported ordering. |
 | `EFFECTIVE_DATE_OVERLAP` | 409 | A pricing, terms, bundle, or completion-map range overlaps the same identity. |
 | `INVALID_COMPLETION_SOURCE_MAP` | 422 | Adapter, predicate, date rule, or stable identity is not in the bounded schema. |
 | `GENERATION_WINDOW_INVALID` | 422 | Generation or schedule window is malformed or exceeds the permitted maximum. |
@@ -92,9 +171,15 @@ Generation and projection accept a maximum 365-calendar-day window, calculated i
 
 The issue date is the firm date at the time of the issue RPC. Due date is server-calculated from the resolved client terms (Net 15 default). Recurring candidate date is the final calendar day of its configured service period unless a client/service override applies. The firm date/timezone is Houston, Texas, represented by `America/Chicago` in `collection_settings.timezone`.
 
+Firm-date validation covers: month-end for 30-day and 31-day months; February in leap and non-leap years; the last service-period day across the spring-forward and fall-back daylight-saving transitions in `America/Chicago`; and due-date addition across a DST boundary. All business dates are date-only values derived in the firm timezone, never the browser timezone.
+
 The issue RPC validates the draft, assigns its annual number, transitions linked candidates to `invoiced`, snapshots current approved remittance instructions, and writes audit history in one transaction. The void and draft-delete RPCs restore linked candidates to `open` in that same transaction. Database rules make issued provenance immutable; routes alone are insufficient.
 
 ## Dynamic one-off completion-source configuration
+
+### Operations schema boundary
+
+The source adapter contract targets the Operations records `client_services`, `services`, `work_periods`, and `period_counts`. The checked-in schema reference `docs/datamodel/tap_client_hub_schema_v7_lean.sql` (SHA-256 `6b2c49b84281a17282ba347c39ccdcc8a5d3a4f58428ed3a18e43f0807b29aa8`, last changed by `9c394d2` on 2026-07-08) describes their fields and constraints, but is stale on period storage: it declares `work_periods.period` and `period_counts.period` as text `YYYY-MM`. Later repository fixes `6fc91c9` and `d104262` explicitly convert these API values to integer `YYYYMM` for database compatibility, and the current API handlers and static regression test use that representation. **Phase 2 adapter choice:** treat the existing Operations period columns as integer `YYYYMM`; normalize to `YYYY-MM` inside Billing candidate/read-model contracts. Do not alter Operations columns. The date format choice is based on repository runtime compatibility evidence, not a live hosted schema inspection. Before implementation, Engineer B records this assumption and hash in the handoff and confirms no newer schema artifact supersedes it; any observed mismatch blocks adapters rather than prompting an Operations schema change. The checked-in DDL documents `services.tracking` as `stage|count`, `work_periods.stage` values including `done` (with `done_by`/`done_at`), `period_counts.processed` and optional `expected`, and `client_services.frequency`/`active`. Count-trigger rules must compare `processed` against the firm's configured threshold; `expected` is descriptive source data, not an implicit billing rule. Frequency occurrences must be derived deterministically from the persisted `client_services.frequency` enum, never from UI display labels. The local synthetic fixture is for values and behavior tests only. Phase 2 may read these Operations tables: it creates or alters no Operations table, column, trigger, policy, or row. Billing configuration, candidates, and provenance live only in Billing-owned records.
 
 The owner approves a **dynamic, modular configuration model**. The firm can add or change a completion rule as services are onboarded; Phase 2 must not hard-code a source map from this demo or any initial client list.
 
