@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireBillingAction, resolveBillingActions } from "@/lib/billing-access";
-import { apiError, boundedLimit, cursorDecode, cursorEncode, firmDateISO, isDateOnly, moneyString, permissionActionFor, toCamel, toPhase2Candidate } from "@/lib/billing-phase2";
+import { apiError, boundedLimit, cursorDecode, cursorEncode, firmDateISO, isDateOnly, moneyString, mutationResponse, permissionActionFor, toCamel, toPhase2Candidate } from "@/lib/billing-phase2";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 export const runtime = "nodejs";
@@ -44,6 +44,22 @@ function normalizeOperationsPeriod(value: unknown): string | null {
   if (year < 1900 || month < 1 || month > 12) return null;
   return `${value.slice(0, 4)}-${value.slice(4, 6)}`;
 }
+function firmMidnightISO(date: string) {
+  const guess = new Date(`${date}T06:00:00.000Z`);
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/Chicago", year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23",
+  }).formatToParts(guess);
+  const part = (type: string) => Number(parts.find((entry) => entry.type === type)?.value);
+  const representedAsUtc = Date.UTC(part("year"), part("month") - 1, part("day"), part("hour"), part("minute"), part("second"));
+  const firmOffset = representedAsUtc - guess.getTime();
+  return new Date(Date.parse(`${date}T00:00:00.000Z`) - firmOffset).toISOString();
+}
+function nextDate(date: string) {
+  const value = new Date(`${date}T00:00:00.000Z`);
+  value.setUTCDate(value.getUTCDate() + 1);
+  return value.toISOString().slice(0, 10);
+}
 function periodEnd(period: string) {
   const [year, month] = period.split("-").map(Number);
   return new Date(Date.UTC(year, month, 0)).toISOString().slice(0, 10);
@@ -59,7 +75,7 @@ function scheduledMonths(frequency: unknown, financialsMonth: unknown): number[]
   }
   return null;
 }
-async function generateFromOperations(db: ReturnType<typeof createAdminClient>, actor: string, input: Row) {
+export async function generateFromOperations(db: ReturnType<typeof createAdminClient>, actor: string, input: Row) {
   const from = input.from as string, to = input.to as string;
   const selectedIds = Array.isArray(input.clientServiceIds) ? input.clientServiceIds.filter((id: unknown) => typeof id === "string") : [];
   // Use the stable services.name field rather than optional client_services
@@ -108,8 +124,15 @@ async function generateFromOperations(db: ReturnType<typeof createAdminClient>, 
         }
       } else if (map.adapter === "work_period_done") {
         const yearMonthFrom = from.slice(0, 4) + from.slice(5, 7), yearMonthTo = to.slice(0, 4) + to.slice(5, 7);
-        const { data: workRows, error } = await db.from("work_periods").select("client_service_id,period,stage,done_at")
-          .eq("client_service_id", clientServiceId).gte("period", yearMonthFrom).lte("period", yearMonthTo);
+        let workPeriodQuery = db.from("work_periods").select("client_service_id,period,stage,done_at").eq("client_service_id", clientServiceId);
+        if (map.candidate_date_rule === "completion_date") {
+          // Completion can happen after the service period. Filter by the actual
+          // Houston-local completion window, not by the period's YYYYMM value.
+          workPeriodQuery = workPeriodQuery.gte("done_at", firmMidnightISO(from)).lt("done_at", firmMidnightISO(nextDate(to)));
+        } else {
+          workPeriodQuery = workPeriodQuery.gte("period", yearMonthFrom).lte("period", yearMonthTo);
+        }
+        const { data: workRows, error } = await workPeriodQuery;
         if (error) return { error: apiError("Unable to read Operations work periods", "BILLING_READ_FAILED", 500) };
         for (const row of workRows || []) {
           const period = normalizeOperationsPeriod(row.period);
@@ -322,7 +345,7 @@ async function mutate(request: NextRequest,path:string[],method:string) {
     else return apiError("Not found","NOT_FOUND",404);
   } else return apiError("Not found","NOT_FOUND",404);
   if(result?.error)return dbError(result.error);
-  return NextResponse.json(toCamel(result?.data??result),{status:method==="POST"?201:200});
+  return NextResponse.json(mutationResponse(resource,path,result?.data??result),{status:method==="POST"?201:200});
 }
 async function handler(request:NextRequest,ctx:Ctx,method:string) {
   const path=await pathParts(ctx);

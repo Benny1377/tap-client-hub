@@ -36,6 +36,22 @@ export function toPhase2Candidate(value: unknown): JsonRecord {
   }
   return candidate;
 }
+export function mutationResponse(resource: string, path: string[], value: unknown): unknown {
+  const converted = toCamel(value);
+  if (resource === "rate-cards") return path[2] === "entries" ? { entry: converted } : { rateCard: converted };
+  if (resource === "bundles") return path[2] === "components" ? converted : { bundle: converted };
+  if (resource === "client-pricing") return { override: converted };
+  if (resource === "completion-source-maps") return { map: converted };
+  if (resource === "settings" && path[1] === "terms" && path[2] === "overrides") return { override: converted };
+  if (resource === "settings" && path[1] === "remittance") {
+    const remittance = asRecord(converted);
+    return {
+      remittance: { payeeName: remittance.payeeName, address: remittance.address, instructions: remittance.instructions },
+      updatedAt: remittance.updatedAt,
+    };
+  }
+  return converted;
+}
 export function toPhase2Invoice(value: unknown): JsonRecord {
   const rawInvoice = asRecord(value);
   const invoice = asRecord(toCamel(rawInvoice));

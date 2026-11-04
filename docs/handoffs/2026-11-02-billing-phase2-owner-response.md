@@ -54,7 +54,7 @@ The schema-evidence dependency is cleared for the sandbox-exported shape summari
 
 Implementation is prepared on the isolated branch `codex/billing-phase2-prep` in the Billing Phase 2 worktree. No merge or hosted migration was performed.
 
-The current uncommitted implementation adds Billing-owned pricing, bundle, terms/remittance, policy, candidate, and provenance records; private RLS/service-role grants; effective-date overlap guards; numeric price resolution; and transactional draft-from-candidates, issue, void, candidate-release, and draft-delete RPCs. Issue assigns `TAP-YYYY-####`, uses the Houston firm date, resolves client-service terms before client terms before Net 15, and snapshots only configured remittance text. New explicit issue/void endpoints and the candidate creation endpoint call the RPCs. The legacy invoice action route now delegates to those RPCs. Candidate-linked line edits are rejected in both route and database trigger. The local reset script includes the new migration.
+The implementation started at commit `038ed4e` on the isolated `codex/billing-phase2-prep` branch, with the follow-up review fixes recorded below. It adds Billing-owned pricing, bundle, terms/remittance, policy, candidate, and provenance records; private RLS/service-role grants; effective-date overlap guards; numeric price resolution; and transactional draft-from-candidates, issue, void, candidate-release, and draft-delete RPCs. Issue assigns `TAP-YYYY-####`, uses the Houston firm date, resolves client-service terms before client terms before Net 15, and snapshots only configured remittance text. New explicit issue/void endpoints and the candidate creation endpoint call the RPCs. The legacy invoice action route delegates to those RPCs. Candidate-linked line edits are rejected in both route and database trigger. The local reset script includes the new migration.
 
 `supabase/tests/billing_phase2_core.sql` is a synthetic transaction/rollback test for rate resolution and overlap rejection; nullable draft fields; client-service-over-client terms precedence; remittance snapshot; atomic issue/void; non-reused numbers; candidate re-draft and release; package line quantity/amount/provenance; line removal; and deletion of a draft containing a line. It also checks 30/31-day month ends, leap February, and spring/fall Houston DST transitions. It passed when streamed with the migration inside one outer transaction that was rolled back. `tsc --noEmit` reports no errors in the changed Billing files; the repository-wide check remains blocked by the pre-existing missing `pdfjs-dist/legacy/build/pdf.mjs` declaration in `lib/collections-pdf-parser.ts`. `git diff --check` passes.
 
@@ -62,7 +62,7 @@ Manual confirmation and permission editing are implemented as two documented con
 
 The manual-confirmation route returns 201 when created, 200 for an identical retry, 409 for an idempotency-key mismatch or missing active source map, and 422 for invalid input. The policy route is Owner/Admin-only and records actor/reason; attempts to delegate fixed Owner/Admin actions fail at the database boundary as well as at HTTP validation.
 
-Final local validation on 2026-11-05:
+Initial local validation on 2026-11-05 (historical checkpoint):
 
 - The Phase 2 migration plus `supabase/tests/billing_phase2_core.sql` passed against local port `55322`, streamed as one outer transaction and rolled back. A follow-up catalog check confirmed `billing_rate_cards` was absent, verifying the migration did not persist.
 - `tsc --noEmit` passed.
@@ -71,6 +71,25 @@ Final local validation on 2026-11-05:
 - `git diff --check` passed.
 - Payment-record and payment-allocation writes now enforce `payments.record` and `payments.allocate`; the read-only permissions endpoint remains available to any authenticated Billing-module user even if their effective action list is empty.
 
-Not yet complete: no authenticated Phase 2 HTTP route matrix was run, no synthetic Operations-adapter route test against local fixtures was run, and no Engineer A implementation review/acceptance has been recorded. Phase 1's 37/37 matrix does not cover these new endpoints. The new manual-confirmation and policy-edit contract amendments also remain outside Engineer A's acknowledgement of frozen revision `86f65ef`. The migration has not been applied persistently to local, shared sandbox, Preview, or production.
+## 2026-11-05 follow-up implementation review
+
+The code review found and corrected three contract-level defects in the local follow-up patch:
+
+- Mutation responses for rate cards, entries, bundles, pricing/terms overrides, source maps, and remittance settings now use the resource envelopes specified by the frozen examples. The legacy Phase 1 invoice action remains unchanged.
+- Bundle component replacement keeps the contract's direct `{bundleId, components}` response rather than incorrectly wrapping it as a bundle resource.
+- `work_period_done` maps using `completion_date` now filter Operations rows by the requested Houston-local completion-date window instead of the service-period month. This prevents late-completed work from being missed when its `YYYYMM` period predates the selected date window (for example, November work completed on December 1).
+
+Validation after the fixes:
+
+- `tsc --noEmit`: passed.
+- Targeted ESLint for Phase 2 routes/helpers/access and Phase 2 tests: passed.
+- Phase 2 adapter/serialization/policy tests: 11/11 passed, including completion dates that cross month boundaries and the Houston spring DST offset change.
+- Combined Phase 2, Billing UI, and selected Collections route/contract/regression suite: 66 top-level Node tests passed; nested Billing UI scripts also reported 46 data checks and 65 render checks passed.
+- The migration and `supabase/tests/billing_phase2_core.sql` ran against local Supabase port `55322` inside an outer transaction and rolled back. A catalog query confirmed `billing_rate_cards` was absent afterward. No persistent local, shared-sandbox, Preview, or production migration was applied.
+- `git diff --check`: passed.
+
+Still open before claiming the Phase 2 backend complete: an authenticated Phase 2 HTTP matrix has not been run; this agent did not read or use `.env.local` credentials, so that run must be performed by the owner or Engineer A using the committed harness. The synthetic Operations adapter tests use injected fixtures, not the live local Operations dataset. Engineer A's implementation review/acceptance remains pending. The manual-confirmation and policy-edit endpoint additions also need explicit Engineer A review because they extend frozen revision `86f65ef`. No hosted or Preview behavior is established by the local checks.
+
+The implementation migration remains unapplied to the shared sandbox. The operator should promote only `20261105100000_billing_phase2_core.sql` into the sandbox worktree after the implementation review is accepted, run the linked migration-list and dry-run checks there, and confirm the dry run contains only that migration before applying it.
 
 This is a validated implementation handoff, not yet an accepted or hosted Phase 2 release. The remaining gates above must close before claiming Phase 2 backend completion.

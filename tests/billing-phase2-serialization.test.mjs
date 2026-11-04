@@ -3,6 +3,7 @@ import test from "node:test";
 import { loadTs } from "./helpers/load-ts.mjs";
 
 const api = loadTs("lib/billing-phase2.ts");
+const access = loadTs("lib/billing-access.ts");
 
 test("Phase 2 money fields serialize as fixed two-decimal strings", () => {
   assert.deepEqual(api.toCamel({ unit_amount: "12.5", amount: 2, other_count: 2 }), {
@@ -28,4 +29,42 @@ test("invoice serializer emits camelCase lines, decimal quantities, and active p
     id: "invoice-1", invoiceNumber: null,
     lines: [{ id: "line-1", quantity: "1.2000", unitAmount: "10.00", amount: "12.00", candidateIds: ["candidate-1"] }],
   });
+});
+
+test("mutations use the contract's resource envelopes", () => {
+  assert.deepEqual(api.mutationResponse("rate-cards", ["rate-cards"], { id: "card-1", unit_amount: "10" }), {
+    rateCard: { id: "card-1", unitAmount: "10.00" },
+  });
+  assert.deepEqual(api.mutationResponse("client-pricing", ["client-pricing", "overrides"], { id: "override-1" }), {
+    override: { id: "override-1" },
+  });
+  assert.deepEqual(api.mutationResponse("bundles", ["bundles", "bundle-1", "components"], {
+    bundleId: "bundle-1", components: [{ clientServiceId: "service-1" }],
+  }), { bundleId: "bundle-1", components: [{ clientServiceId: "service-1" }] });
+  assert.deepEqual(api.mutationResponse("settings", ["settings", "remittance"], {
+    payee_name: "TAP", address: "Houston", instructions: "Invoice number", updated_at: "2026-11-05T12:00:00Z", updated_by: "user-1",
+  }), {
+    remittance: { payeeName: "TAP", address: "Houston", instructions: "Invoice number" }, updatedAt: "2026-11-05T12:00:00Z",
+  });
+});
+
+test("Billing permission defaults, explicit revocations, and Owner/Admin-only keys resolve server-side", () => {
+  const staff = { role: "staff", modules: ["Billing"] };
+  const defaults = access.billingActionsForIdentity(staff, []);
+  assert.ok(defaults.includes("payments.record"));
+  assert.ok(!defaults.includes("pricing.manage"));
+  assert.ok(!defaults.includes("invoices.void"));
+  assert.ok(!defaults.includes("payments.reverse"));
+  assert.ok(!access.billingActionsForIdentity(staff, [
+    { action_key: "payments.record", allowed_roles: [], enabled: false },
+  ]).includes("payments.record"));
+  assert.ok(access.billingActionsForIdentity(staff, [
+    { action_key: "pricing.manage", allowed_roles: ["staff"], enabled: true },
+    { action_key: "invoices.void", allowed_roles: ["staff"], enabled: true },
+  ]).includes("pricing.manage"));
+  assert.ok(!access.billingActionsForIdentity(staff, [
+    { action_key: "invoices.void", allowed_roles: ["staff"], enabled: true },
+  ]).includes("invoices.void"));
+  assert.deepEqual(access.billingActionsForIdentity({ role: "staff", modules: ["Collections"] }, []), []);
+  assert.ok(access.billingActionsForIdentity({ role: "owner", modules: [] }, []).includes("payments.reverse"));
 });
