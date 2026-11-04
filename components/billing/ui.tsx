@@ -35,18 +35,48 @@ export function SectionView<T>({ state, label, children }: { state: SectionState
   return <>{children(state.data)}</>;
 }
 
+// Status chips use the PracticeOps chip classes (app/practiceops.css), so they follow light and dark mode.
+const STATUS_CHIP: Record<string, string> = {
+  draft: "c-blue",
+  issued: "c-green",
+  recorded: "c-green",
+  void: "c-red",
+  reversed: "c-red",
+};
+
 export function StatusBadge({ status }: { status: string }) {
-  const tones: Record<string, CSSProperties> = {
-    draft: { background: "var(--blue-soft)", color: "var(--blue)" },
-    issued: { background: "var(--green-soft)", color: "var(--green)" },
-    recorded: { background: "var(--green-soft)", color: "var(--green)" },
-    void: { background: "var(--red-soft)", color: "var(--red)" },
-    reversed: { background: "var(--red-soft)", color: "var(--red)" },
-  };
   return (
-    <span data-status={status} style={{ ...(tones[status] || { background: "var(--navy-soft)", color: "var(--navy)" }), borderRadius: 20, padding: "2px 9px", fontSize: 10.5, fontWeight: 700, letterSpacing: ".02em", whiteSpace: "nowrap" }}>
+    <span data-status={status} className={`chip ${STATUS_CHIP[status] || "c-brand"}`}>
       {STATUS_LABELS[status] || status}
     </span>
+  );
+}
+
+/** One PracticeOps stat card. The value is already formatted; this component does no arithmetic. */
+export function StatCard({ label, value, note, tone, testId }: { label: string; value: ReactNode; note?: ReactNode; tone?: "red" | "amber" | "green"; testId?: string }) {
+  return (
+    <div className="stat" data-stat={testId}>
+      <div className="k">{label}</div>
+      <div className="v num" style={tone ? { color: `var(--${tone})` } : undefined}>{value}</div>
+      {note ? <div className="d">{note}</div> : null}
+    </div>
+  );
+}
+
+export function StatRow({ children, label }: { children: ReactNode; label: string }) {
+  return <div className="g4" role="group" aria-label={label} style={{ marginBottom: 14 }}>{children}</div>;
+}
+
+/** The design's segmented filter. Buttons are plain toggles, so the active one is marked with aria-pressed. */
+export function SegFilter<T extends string>({ options, value, onChange, label }: { options: Array<{ id: T; label: string }>; value: T; onChange: (id: T) => void; label: string }) {
+  return (
+    <div className="seg" role="group" aria-label={label}>
+      {options.map((option) => (
+        <button key={option.id} type="button" className={option.id === value ? "on" : undefined} aria-pressed={option.id === value} onClick={() => onChange(option.id)}>
+          {option.label}
+        </button>
+      ))}
+    </div>
   );
 }
 

@@ -34,6 +34,11 @@ yarn-error.log*
 # env files (can opt-in for committing if needed)
 .env*
 
+# Supabase CLI linkage and cached remote metadata are machine-local.
+supabase/.temp/
+tools/sandbox/supabase/migrations/20261030000000_hardened_tab_hub_baseline.sql
+tools/sandbox/supabase/.temp/
+
 # vercel
 .vercel
 

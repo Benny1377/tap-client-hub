@@ -1,5 +1,6 @@
 # TAP Client Hub Contracts
 
+- [Billing Project Foundation](billing-project-foundation.md) — Draft; owner decisions approved, awaiting engineer review.
 - [Phase 4: QuickBooks A/R PDF intake](collections-phase-4-ar-pdf-intake.md)
 - [Phase 3 source-identity addendum](collections-phase-3-source-identity-addendum.md)
 

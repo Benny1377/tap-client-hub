@@ -4,6 +4,9 @@
 export type FieldErrors = Record<string, string>;
 
 const MONEY = /^\d+(\.\d{1,2})?$/;
+// Match the ledger columns: quantity is numeric(12,4), unit amount is numeric(12,2).
+const QUANTITY = /^\d{1,8}(\.\d{1,4})?$/;
+const UNIT_AMOUNT = /^\d{1,10}(\.\d{1,2})?$/;
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const PERIOD = /^\d{4}-(0[1-9]|1[0-2])$/;
 
@@ -45,8 +48,9 @@ export function validateInvoiceDraft(input: { client_id?: string; invoice_number
 export function validateLine(input: { description?: string; quantity?: string; unit_amount?: string; period?: string }): FieldErrors {
   const errors: FieldErrors = {};
   if (blank(input.description)) errors.description = "Description is required.";
-  if (!isPositiveMoney(input.quantity ?? "1")) errors.quantity = "Quantity must be a positive number with at most two decimals.";
-  if (!MONEY.test(String(input.unit_amount ?? "").trim())) errors.unit_amount = "Unit amount must be a number with at most two decimals.";
+  const quantity = String(input.quantity ?? "1").trim();
+  if (!QUANTITY.test(quantity) || !/[1-9]/.test(quantity)) errors.quantity = "Quantity must be a positive number with at most four decimals.";
+  if (!UNIT_AMOUNT.test(String(input.unit_amount ?? "").trim())) errors.unit_amount = "Unit amount must be a number with at most two decimals.";
   if (!blank(input.period) && !PERIOD.test(String(input.period))) errors.period = "Period must look like 2026-10.";
   return errors;
 }

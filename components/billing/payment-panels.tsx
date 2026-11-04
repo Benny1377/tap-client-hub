@@ -32,14 +32,14 @@ export function PaymentsPanel({ payments, invoices, receivables, clientId, clien
   return (
     <div>
       {payments.length === 0 ? <p style={hintStyle}>No payments recorded.</p> : (
-        <div style={{ overflowX: "auto" }}>
-          <table className="bc-table">
+        <div className="panel scroll">
+          <table>
             <thead>
               <tr>
                 <th>Received</th>
                 <th>Client</th>
-                <th>Amount</th>
-                <th>Unallocated</th>
+                <th className="r">Amount</th>
+                <th className="r">Unallocated</th>
                 <th>Method</th>
                 <th>Status</th>
                 <th>Allocations</th>
@@ -50,8 +50,8 @@ export function PaymentsPanel({ payments, invoices, receivables, clientId, clien
                 <tr key={payment.id} data-payment-row={payment.id}>
                   <td>{payment.received_on}</td>
                   <td>{clientNames[payment.client_id] || payment.client_id}</td>
-                  <td>{formatMoney(payment.amount)}</td>
-                  <td data-unallocated={payment.unallocated_amount ?? ""}>{payment.unallocated_amount !== undefined ? formatMoney(payment.unallocated_amount) : "—"}</td>
+                  <td className="r num">{formatMoney(payment.amount)}</td>
+                  <td className="r num" data-unallocated={payment.unallocated_amount ?? ""}>{payment.unallocated_amount !== undefined ? formatMoney(payment.unallocated_amount) : "—"}</td>
                   <td>{payment.method}{payment.reference ? ` · ${payment.reference}` : ""}</td>
                   <td>
                     <StatusBadge status={payment.status} />
@@ -153,32 +153,32 @@ export function PaymentsPanel({ payments, invoices, receivables, clientId, clien
 export function ReceivablesTable({ receivables, clientNames }: { receivables: Receivable[]; clientNames: Record<string, string> }) {
   if (receivables.length === 0) return <p style={hintStyle}>No open receivables.</p>;
   return (
-    <div style={{ overflowX: "auto" }}>
-      <table className="bc-table">
+    <div className="panel scroll">
+      <table>
         <thead>
           <tr>
             <th>Invoice</th>
             <th>Client</th>
             <th>Status</th>
             <th>Due</th>
-            <th>Total</th>
-            <th>Paid</th>
-            <th>Balance</th>
-            <th>Days past due</th>
+            <th className="r">Total</th>
+            <th className="r">Paid</th>
+            <th className="r">Balance</th>
+            <th className="r">Days past due</th>
             <th>Aging</th>
           </tr>
         </thead>
         <tbody>
           {receivables.map((row) => (
             <tr key={row.id} data-receivable-row={row.id}>
-              <td>{row.invoice_number}</td>
+              <td className="mono"><b>{row.invoice_number}</b></td>
               <td>{clientNames[row.client_id] || row.client_id}</td>
               <td><StatusBadge status={row.status} /></td>
-              <td>{row.due_date}</td>
-              <td>{formatMoney(row.total)}</td>
-              <td>{formatMoney(row.allocated)}</td>
-              <td><strong>{formatMoney(row.balance)}</strong></td>
-              <td style={{ color: row.days_past_due > 0 ? "var(--red)" : undefined }}>{row.days_past_due}</td>
+              <td className="bc-nowrap">{row.due_date}</td>
+              <td className="r num">{formatMoney(row.total)}</td>
+              <td className="r num">{formatMoney(row.allocated)}</td>
+              <td className="r num"><strong>{formatMoney(row.balance)}</strong></td>
+              <td className="r num" style={{ color: row.days_past_due > 0 ? "var(--red)" : undefined }}>{row.days_past_due}</td>
               <td data-aging={row.aging_bucket || ""}>{row.aging_bucket ? AGING_LABELS[row.aging_bucket] || row.aging_bucket : "—"}</td>
             </tr>
           ))}
@@ -193,9 +193,12 @@ export function ClientAgingSummary({ aging }: { aging: ClientAging | null }) {
   if (!aging) return null;
   const buckets: Array<[keyof ClientAging, string]> = [["current", "Current"], ["1_30", "1–30"], ["31_60", "31–60"], ["61_90", "61–90"], ["90_plus", "90+"]];
   return (
-    <div data-client-aging={aging.client_id} style={{ display: "flex", gap: 14, flexWrap: "wrap", fontSize: 13, margin: "4px 0 10px" }}>
+    <div data-client-aging={aging.client_id} className="bc-stats5" role="group" aria-label="Client aging">
       {buckets.map(([key, label]) => (
-        <span key={key} data-aging-total={key}><span style={{ color: "var(--muted)" }}>{label}:</span> <strong>{formatMoney(aging[key])}</strong></span>
+        <div key={key} className="stat" data-aging-total={key}>
+          <div className="k">{label}{key === "current" ? "" : " days"}</div>
+          <div className="v num" style={{ color: key === "90_plus" || key === "61_90" ? "var(--red)" : key === "31_60" ? "var(--amber)" : undefined }}>{formatMoney(aging[key])}</div>
+        </div>
       ))}
     </div>
   );
