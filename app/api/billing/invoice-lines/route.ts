@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { requireBillingAccess } from "@/lib/billing-access";
+import { requireBillingAction } from "@/lib/billing-access";
 
 export const runtime = "nodejs";
 
@@ -59,7 +59,7 @@ function hasAtMostWholeDigits(value: string, maximum: number) {
 }
 
 export async function POST(request: NextRequest) {
-  const access = await requireBillingAccess();
+  const access = await requireBillingAction("invoices.draft.manage");
   if (access.response) return access.response;
   let body: Record<string, unknown>;
   try {
@@ -92,22 +92,25 @@ export async function POST(request: NextRequest) {
 }
 
 export async function DELETE(request: NextRequest) {
-  const access = await requireBillingAccess();
+  const access = await requireBillingAction("invoices.draft.manage");
   if (access.response) return access.response;
-  const id = request.nextUrl.searchParams.get("id");
+  let body: Record<string, unknown> = {};
+  try { if (request.headers.get("content-type")?.includes("application/json")) body = await request.json(); } catch { return NextResponse.json({ error: "Invalid JSON body", code: "INVALID_JSON" }, { status: 400 }); }
+  const id = typeof body.id === "string" ? body.id : request.nextUrl.searchParams.get("id");
   if (!id) return NextResponse.json({ error: "id is required", code: "INVALID_INPUT" }, { status: 422 });
   const db = createAdminClient();
+  const { data: linked } = await db.from("billing_candidate_line_links").select("candidate_id").eq("invoice_line_id", id);
   const { error } = await db.rpc("delete_draft_invoice_line", { p_line_id: id, p_actor: access.identity!.id });
   if (error) {
     const missing = /not_found/i.test(error.message);
     const conflict = /conflict/i.test(error.message);
     return NextResponse.json({ error: error.message, code: missing ? "NOT_FOUND" : conflict ? "INVOICE_NOT_DRAFT" : "DELETE_FAILED" }, { status: missing ? 404 : conflict ? 409 : 500 });
   }
-  return NextResponse.json({ deleted: true });
+  return NextResponse.json({ deleted: true, returnedCandidateIds: (linked || []).map((row) => row.candidate_id), refresh: ["invoice", "candidates", "receivables"] });
 }
 
 export async function PATCH(request: NextRequest) {
-  const access = await requireBillingAccess();
+  const access = await requireBillingAction("invoices.draft.manage");
   if (access.response) return access.response;
   let body: Record<string, unknown>;
   try {
@@ -117,8 +120,10 @@ export async function PATCH(request: NextRequest) {
   } catch { return NextResponse.json({ error: "Invalid JSON body", code: "INVALID_JSON" }, { status: 400 }); }
   if (!body?.id) return NextResponse.json({ error: "id is required", code: "INVALID_INPUT" }, { status: 422 });
   const db = createAdminClient();
-  const { data: line } = await db.from("invoice_lines").select("invoice_id").eq("id", body.id).maybeSingle();
+  const { data: line } = await db.from("invoice_lines").select("invoice_id, billing_candidate_line_links(candidate_id)").eq("id", body.id).maybeSingle();
   if (!line) return NextResponse.json({ error: "Invoice line not found", code: "NOT_FOUND" }, { status: 404 });
+  const linkedCandidates = (line as { billing_candidate_line_links?: unknown[] }).billing_candidate_line_links;
+  if (linkedCandidates?.length) return NextResponse.json({ error: "Candidate-linked invoice lines cannot be edited", code: "CANDIDATE_LINKED_LINE_IMMUTABLE" }, { status: 409 });
   const { data: invoice } = await db.from("invoices").select("status").eq("id", line.invoice_id).maybeSingle();
   if (!invoice || invoice.status !== "draft") return NextResponse.json({ error: "Invoice lines can only be changed while the invoice is draft", code: "INVOICE_NOT_DRAFT" }, { status: 409 });
   const updates: Record<string, unknown> = {};

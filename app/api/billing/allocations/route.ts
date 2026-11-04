@@ -1,14 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { requireBillingAccess } from "@/lib/billing-access";
+import { requireBillingAction } from "@/lib/billing-access";
 
 export const runtime = "nodejs";
 
 export async function POST(request: NextRequest) {
-  const access = await requireBillingAccess();
+  const access = await requireBillingAction("payments.allocate");
   if (access.response) return access.response;
-  let body: any;
-  try { body = await request.json(); } catch { return NextResponse.json({ error: "Invalid JSON body", code: "INVALID_JSON" }, { status: 400 }); }
+  let body: Record<string, unknown>;
+  try {
+    const parsed: unknown = await request.json();
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("Invalid JSON body");
+    body = parsed as Record<string, unknown>;
+  } catch { return NextResponse.json({ error: "Invalid JSON body", code: "INVALID_JSON" }, { status: 400 }); }
   if (!body?.payment_id || !body?.invoice_id || body.amount == null) {
     return NextResponse.json({ error: "payment_id, invoice_id, and amount are required", code: "INVALID_INPUT" }, { status: 422 });
   }

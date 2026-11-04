@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { requireBillingAccess, requireBillingPowerUser } from "@/lib/billing-access";
+import { requireBillingAction, requireBillingPowerUser } from "@/lib/billing-access";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const access = await requireBillingAccess();
+  const access = await requireBillingAction("invoices.draft.manage");
   if (access.response) return access.response;
   const { id } = await params;
   let body: Record<string, unknown>;
@@ -30,10 +30,11 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
 }
 
 export async function DELETE(_request: Request, { params }: { params: Promise<{ id: string }> }) {
-  const access = await requireBillingAccess();
+  const access = await requireBillingAction("invoices.draft.manage");
   if (access.response) return access.response;
   const { id } = await params;
   const db = createAdminClient();
+  const { data: linked } = await db.from("billing_candidate_line_links").select("candidate_id,invoice_lines!inner(invoice_id)").eq("invoice_lines.invoice_id", id);
   const { error } = await db.rpc("delete_draft_invoice", { p_invoice_id: id, p_actor: access.identity!.id });
   if (error?.code === "23503") return NextResponse.json({ error: "Invoice is referenced by Collections history and cannot be deleted", code: "INVOICE_REFERENCED" }, { status: 409 });
   if (error) {
@@ -41,7 +42,7 @@ export async function DELETE(_request: Request, { params }: { params: Promise<{ 
     const conflict = /conflict/i.test(error.message);
     return NextResponse.json({ error: error.message, code: missing ? "NOT_FOUND" : conflict ? "INVOICE_NOT_DRAFT" : "DELETE_FAILED" }, { status: missing ? 404 : conflict ? 409 : 500 });
   }
-  return NextResponse.json({ deleted: true });
+  return NextResponse.json({ deleted: true, returnedCandidateIds: (linked || []).map((row) => row.candidate_id), refresh: ["candidates", "receivables"] });
 }
 
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -57,19 +58,20 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     if (access.response) return access.response;
     const reason = typeof body.reason === "string" ? body.reason.trim() : "";
     if (!reason) return NextResponse.json({ error: "A non-empty void reason is required", code: "VOID_REASON_REQUIRED" }, { status: 422 });
+    const { phase2InvoiceRpc } = await import("@/lib/billing-phase2-rpc");
+    const result = await phase2InvoiceRpc("void", id, access.identity!.id, reason);
+    if (result.response) return result.response;
     const db = createAdminClient();
-    const { data, error } = await db.from("invoices").update({ status: "void", voided_by: access.identity!.id, updated_by: access.identity!.id, voided_at: new Date().toISOString(), void_reason: reason }).eq("id", id).eq("status", "issued").select("*, invoice_lines(*)").single();
-    if (error) return NextResponse.json({ error: error.code === "PGRST116" ? "Only issued invoices can be voided" : error.message, code: error.code === "PGRST116" ? "INVOICE_NOT_ISSUED" : error.code === "P0001" ? "ACTIVE_PAYMENT_ALLOCATION" : "INVOICE_VOID_FAILED" }, { status: error.code === "PGRST116" || error.code === "P0001" ? 409 : 500 });
-    return NextResponse.json({ invoice: data });
+    const { data: legacy } = await db.from("invoices").select("*, invoice_lines(*)").eq("id", id).single();
+    return NextResponse.json({ invoice: legacy });
   }
   if (body?.action !== "issue") return NextResponse.json({ error: "action must be issue or void", code: "INVALID_ACTION" }, { status: 422 });
-  const access = await requireBillingAccess();
+  const access = await requireBillingAction("invoices.issue");
   if (access.response) return access.response;
   const db = createAdminClient();
-  const { data: lines, error: lineError } = await db.from("invoice_lines").select("id").eq("invoice_id", id);
-  if (lineError) return NextResponse.json({ error: lineError.message, code: "INVOICE_LINES_READ_FAILED" }, { status: 500 });
-  if (!lines?.length) return NextResponse.json({ error: "An invoice must have at least one line before issue", code: "INVOICE_HAS_NO_LINES" }, { status: 409 });
-  const { data, error } = await db.from("invoices").update({ status: "issued", updated_by: access.identity?.id || null }).eq("id", id).eq("status", "draft").select("*, invoice_lines(*)").single();
-  if (error) return NextResponse.json({ error: error.code === "PGRST116" ? "Only draft invoices can be issued" : error.message, code: error.code === "PGRST116" ? "INVOICE_NOT_DRAFT" : "INVOICE_ISSUE_FAILED" }, { status: error.code === "PGRST116" ? 409 : 500 });
-  return NextResponse.json({ invoice: data });
+  const { phase2InvoiceRpc } = await import("@/lib/billing-phase2-rpc");
+  const result = await phase2InvoiceRpc("issue", id, access.identity!.id);
+  if (result.response) return result.response;
+  const { data: legacy } = await db.from("invoices").select("*, invoice_lines(*)").eq("id", id).single();
+  return NextResponse.json({ invoice: legacy });
 }

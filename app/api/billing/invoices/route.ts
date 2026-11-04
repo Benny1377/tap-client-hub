@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { requireBillingAccess, requireLedgerReadAccess } from "@/lib/billing-access";
+import { requireBillingAction, requireLedgerReadAccess } from "@/lib/billing-access";
+import { apiError, toPhase2Invoice } from "@/lib/billing-phase2";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -18,27 +19,26 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const access = await requireBillingAccess();
-  if (access.response) return access.response;
-  let body: any;
-  try { body = await request.json(); } catch { return NextResponse.json({ error: "Invalid JSON body", code: "INVALID_JSON" }, { status: 400 }); }
-  if (!body?.client_id || !body?.invoice_number || !body?.issue_date || !body?.due_date) {
-    return NextResponse.json({ error: "client_id, invoice_number, issue_date, and due_date are required", code: "INVALID_INPUT" }, { status: 422 });
-  }
-  if (body.status && body.status !== "draft") return NextResponse.json({ error: "New invoices must start as drafts", code: "INVALID_STATUS" }, { status: 422 });
+  const access = await requireBillingAction("invoices.draft.manage");
+  if (access.response || !access.identity) return access.response;
+  let body: Record<string, unknown>;
+  try {
+    const parsed: unknown = await request.json();
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("Invalid JSON body");
+    body = parsed as Record<string, unknown>;
+  } catch { return apiError("Invalid JSON body", "INVALID_JSON", 400); }
+  if (!body?.clientId || Object.keys(body).some((key) => !["clientId", "memo"].includes(key))) return apiError("Only clientId and optional memo may be supplied; number, dates and totals are server-assigned", "INVALID_INPUT", 422);
+  if (body.memo !== undefined && typeof body.memo !== "string") return apiError("memo must be text", "INVALID_INPUT", 422);
   const db = createAdminClient();
   const { data, error } = await db.from("invoices").insert({
-    client_id: body.client_id,
-    invoice_number: String(body.invoice_number).trim(),
+    client_id: body.clientId,
+    invoice_number: null,
     status: "draft",
-    issue_date: body.issue_date,
-    due_date: body.due_date,
+    issue_date: null,
+    due_date: null,
     memo: body.memo ?? null,
     created_by: access.identity?.id || null,
-  }).select("*, invoice_lines(*)").single();
-  if (error) {
-    const status = error.code === "23505" ? 409 : error.code === "23514" ? 422 : 500;
-    return NextResponse.json({ error: status === 409 ? "Invoice number already exists" : error.message, code: status === 409 ? "INVOICE_NUMBER_EXISTS" : status === 422 ? "INVALID_INVOICE" : "INVOICE_CREATE_FAILED" }, { status });
-  }
-  return NextResponse.json({ invoice: data }, { status: 201 });
+  }).select("*, invoice_lines(*, billing_candidate_line_links(candidate_id,active))").single();
+  if (error) return apiError(error.code === "23503" ? "Client not found" : "Unable to create draft invoice", error.code === "23503" ? "NOT_FOUND" : "INVOICE_CREATE_FAILED", error.code === "23503" ? 404 : 500);
+  return NextResponse.json({ invoice: toPhase2Invoice(data), refresh: ["invoice", "receivables"] }, { status: 201 });
 }

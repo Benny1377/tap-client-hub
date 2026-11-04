@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { requireBillingAccess, requireLedgerReadAccess } from "@/lib/billing-access";
+import { requireBillingAction, requireLedgerReadAccess } from "@/lib/billing-access";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -16,8 +16,9 @@ export async function GET(request: NextRequest) {
   if (error) return NextResponse.json({ error: "Unable to load payments", code: "PAYMENT_READ_FAILED" }, { status: 500 });
   const { data: readModel, error: readModelError } = await db.rpc("get_billing_receivables", { p_client_id: clientId || null });
   if (readModelError) return NextResponse.json({ error: "Unable to load unallocated payment balances", code: "READ_MODEL_FAILED" }, { status: 500 });
-  const available = new Map((readModel?.unallocated_payment_balances || []).map((item: any) => [item.payment_id, item.unallocated]));
-  const payments = (data || []).map((payment: any) => ({
+  const balances = (readModel as { unallocated_payment_balances?: { payment_id: string; unallocated: string }[] } | null)?.unallocated_payment_balances || [];
+  const available = new Map(balances.map((item) => [item.payment_id, item.unallocated]));
+  const payments = (data || []).map((payment) => ({
     ...payment,
     unallocated_amount: payment.status === "recorded" ? available.get(payment.id) ?? "0.00" : "0.00",
   }));
@@ -25,10 +26,14 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const access = await requireBillingAccess();
+  const access = await requireBillingAction("payments.record");
   if (access.response) return access.response;
-  let body: any;
-  try { body = await request.json(); } catch { return NextResponse.json({ error: "Invalid JSON body", code: "INVALID_JSON" }, { status: 400 }); }
+  let body: Record<string, unknown>;
+  try {
+    const parsed: unknown = await request.json();
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("Invalid JSON body");
+    body = parsed as Record<string, unknown>;
+  } catch { return NextResponse.json({ error: "Invalid JSON body", code: "INVALID_JSON" }, { status: 400 }); }
   if (!body?.client_id || !body?.received_on || !body?.amount || !body?.method) {
     return NextResponse.json({ error: "client_id, received_on, amount, and method are required", code: "INVALID_INPUT" }, { status: 422 });
   }
