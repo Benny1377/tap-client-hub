@@ -1,6 +1,6 @@
 import { getDocument } from "pdfjs-dist/legacy/build/pdf.mjs";
 
-export type PdfTextLine = { page: number; text: string; cells: string[] };
+export type PdfTextLine = { page: number; text: string; cells: string[]; cell_positions?: number[] };
 export type ParsedCollectionsPdf = {
   report_type: "aging_summary" | "aging_detail" | "unknown";
   source_as_of: string | null;
@@ -60,7 +60,8 @@ export async function parseCollectionsPdf(bytes: Uint8Array): Promise<ParsedColl
         const text = cells.join(" | ");
         if (text.trim()) {
           if (text.length > 12000 || lines.length >= 20000) throw new Error("PDF_TEXT_LIMIT_EXCEEDED");
-          lines.push({ page: pageNumber, text, cells }); flattened.push(text);
+          const cell_positions = group.items.map((item) => item.x);
+          lines.push({ page: pageNumber, text, cells, cell_positions }); flattened.push(text);
         }
       }
       page.cleanup();

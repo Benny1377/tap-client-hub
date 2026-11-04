@@ -33,6 +33,7 @@ import {
 } from "@/lib/billing-ui/imports";
 import type { ClientOption, Receivable, Viewer } from "@/lib/billing-ui/types";
 import { formatMoney } from "@/lib/billing-ui/view-model";
+import { COLLECTIONS_PDF_SUGGESTION_PARSER_VERSION, normalizeImportedCustomerName } from "@/lib/collections-pdf-suggestions";
 
 type Failure = { kind: string; message: string; code?: string };
 type Load<T> = { status: "loading" } | { status: "ready"; data: T } | { status: "error"; error: Failure };
@@ -53,6 +54,13 @@ function statusTone(status: string) {
   if (status === "failed" || status === "rejected") return "red";
   if (status === "needs_review") return "amber";
   return "grey";
+}
+
+function exactClientMatch(customer: string, clients: ClientOption[]): ClientOption | null {
+  const key = normalizeImportedCustomerName(customer);
+  if (!key) return null;
+  const matches = clients.filter((client) => normalizeImportedCustomerName(client.name) === key);
+  return matches.length === 1 ? matches[0] : null;
 }
 
 const dateLabel = (iso: string | null) => (iso ? iso.slice(0, 10) : "—");
@@ -100,7 +108,7 @@ export function ImportsPanel({ api, viewer, clients, billingInvoices, onCollecti
         <h3 className="bc-sect">A/R reports from QuickBooks</h3>
         <p className="bc-hint">
           Upload an <b>A/R Aging detail</b> report (QuickZoom) to bring its invoices into Collections, or an <b>A/R Aging summary</b>{" "}to cross-check a detail report&rsquo;s total.
-          Nothing reaches the call list until a reviewer confirms each invoice against the PDF and a different Owner/Admin approves the report.
+          The reader fills clear invoice rows and matches exact client names in bulk. Uncertain rows stay for review; nothing reaches the call list until the report is reviewed and a different Owner/Admin approves it.
         </p>
         <div className="bc-source" role="note">
           Reports are stored privately and every view or download is logged. Imported invoices never change Billing. Use synthetic test reports only in test environments.
@@ -217,6 +225,8 @@ function BatchReview({ api, batchId, viewer, clients, billingInvoices, batches, 
   const [detail, setDetail] = useState<Load<ImportBatchDetail>>({ status: "loading" });
   const [mapping, setMapping] = useState<string | null>(null);
   const [actionError, setActionError] = useState<Failure | null>(null);
+  const [actionNotice, setActionNotice] = useState<string | null>(null);
+  const [autoMatching, setAutoMatching] = useState(false);
 
   const load = useCallback(async () => {
     const result = await api.importBatch(batchId);
@@ -232,12 +242,12 @@ function BatchReview({ api, batchId, viewer, clients, billingInvoices, batches, 
   }, [api, batchId]);
 
   /** Run a write, then reload the report (and the list, whose status may change). */
-  const act = useCallback(async (mutation: () => Promise<ApiResult<unknown>>, after?: () => void, inlineErrors = false) => {
+  const act = useCallback(async <T,>(mutation: () => Promise<ApiResult<T>>, after?: () => void, inlineErrors = false) => {
     setActionError(null);
     const result = await mutation();
     // Forms show their own errors next to the fields; one-click actions report here.
     if (result.ok === false && !inlineErrors) setActionError(failureOf(result));
-    if (result.ok === true || result.kind === "conflict") {
+    if (result.ok === true || result.kind === "conflict" || result.code === "IMPORT_AUTO_MATCH_PARTIAL" || result.code?.startsWith("IMPORT_REFRESH_")) {
       await Promise.all([load(), onBatchChanged()]);
       if (result.ok) after?.();
     }
@@ -250,6 +260,11 @@ function BatchReview({ api, batchId, viewer, clients, billingInvoices, batches, 
   const { batch, rows, invoices } = data;
   const editable = batch.status === "needs_review";
   const progress = reviewProgress(rows);
+  const exactMatchCount = rows.filter((row) => {
+    const suggestion = row.parsed_fields.auto_suggestion;
+    return row.review_disposition === "unreviewed" && suggestion?.disposition === "invoice" && suggestion.confidence === "high"
+      && typeof suggestion.fields?.customer_name === "string" && Boolean(exactClientMatch(suggestion.fields.customer_name, clients));
+  }).length;
   const clientNames = Object.fromEntries(clients.map((client) => [client.id, client.name]));
   const billingById = new Map(billingInvoices.map((invoice) => [invoice.id, invoice]));
   const invoiceBySource = new Map(invoices.map((invoice) => [invoice.source_invoice_id, invoice]));
@@ -277,6 +292,16 @@ function BatchReview({ api, batchId, viewer, clients, billingInvoices, batches, 
           <button type="button" className="bc-btn" onClick={() => act(() => api.parseImport(batch.id))}>Read the text</button>
         </div>
       ) : null}
+      {editable && rows.length > 0 && batch.metadata?.suggestion_parser !== COLLECTIONS_PDF_SUGGESTION_PARSER_VERSION ? (
+        <div className="bc-gatebox" data-refresh-suggestions style={{ marginBottom: 12 }}>
+          <p className="bc-hint" style={{ margin: "0 0 8px" }}>This report was read with an older parser. Refreshing only updates extracted suggestions and automatic header/total labels; existing review choices and confirmed invoices are preserved.</p>
+          <button type="button" className="bc-btn" onClick={async () => {
+            setActionNotice(null);
+            const result = await act(() => api.parseImport(batch.id, true));
+            if (result.ok) setActionNotice(`Suggestions refreshed on ${result.data.updated_suggestions ?? 0} lines. ${result.data.high_confidence_invoice_suggestions} high-confidence invoice suggestions are ready for exact client matching.`);
+          }}>Refresh automatic suggestions</button>
+        </div>
+      ) : null}
       {batch.status === "needs_review" && metadataNeedsReview(batch) && !canCorrectMetadata(data) ? (
         <ImportError error={{ kind: "invalid", message: "This report's type or as-of date wasn't read, and invoices are already confirmed, so it can't be corrected here. Upload a fresh export of the report." }} />
       ) : null}
@@ -287,6 +312,23 @@ function BatchReview({ api, batchId, viewer, clients, billingInvoices, batches, 
         />
       ) : null}
       {actionError ? <ImportError error={actionError} /> : null}
+      {actionNotice ? <p role="status" className="bc-hint" data-auto-match-result style={{ color: "var(--green)" }}>{actionNotice}</p> : null}
+
+      {editable && exactMatchCount > 0 ? (
+        <div className="bc-gatebox" data-auto-match style={{ marginBottom: 12 }}>
+          <h4 className="bc-sect">Automatic invoice mapping</h4>
+          <p className="bc-hint" style={{ margin: "0 0 8px" }}>
+            The reader found {exactMatchCount} invoice row{exactMatchCount === 1 ? "" : "s"} with all required fields and one exact match to an existing client. Applying these prepares review entries only; uncertain or unmatched rows stay for review, and nothing reaches Collections until a different Owner/Admin approves the report.
+          </p>
+          <button type="button" className="bc-btn" disabled={autoMatching} onClick={async () => {
+            setActionNotice(null);
+            setAutoMatching(true);
+            const result = await act(() => api.autoMatchImports(batch.id));
+            if (result.ok) setActionNotice(`${result.data.matched} exact client match${result.data.matched === 1 ? "" : "es"} prepared. ${result.data.uncertain + result.data.unmatched_client} uncertain or unmatched line${result.data.uncertain + result.data.unmatched_client === 1 ? " remains" : "s remain"} for review${result.data.unprocessed ? `; ${result.data.unprocessed} more high-confidence rows remain to process` : ""}. A separate Owner/Admin still has to approve the report.`);
+            setAutoMatching(false);
+          }}>{autoMatching ? "Applying matches…" : `Apply ${exactMatchCount} exact match${exactMatchCount === 1 ? "" : "es"}`}</button>
+        </div>
+      ) : null}
 
       {rows.length > 0 ? (
         <>
@@ -298,8 +340,7 @@ function BatchReview({ api, batchId, viewer, clients, billingInvoices, batches, 
             <span style={{ color: progress.unreviewed ? "var(--gate-ink)" : "var(--green)" }}><b>{progress.unreviewed}</b> left to review</span>
           </div>
           <p className="bc-hint">
-            Go line by line. Confirm each invoice line against the PDF and say which TAP Hub client it belongs to; mark every other line as a heading, a total, or ignored.
-            Values are never filled in for you: click a cell to copy it into the field you&rsquo;re editing.
+            Clear report headings and totals are labeled automatically. Apply exact client matches in one step; only uncertain rows need hands-on mapping. Extracted fields are suggestions to verify against the PDF, not approval.
           </p>
           <div className="bc-scroll">
             <table className="bc-table sm" data-import-lines>
@@ -500,6 +541,7 @@ export function LineRow({ row, invoice, clientNames, editable, mappingOpen, onMa
   mappingForm: ReactNode;
 }) {
   const cells = rowCells(row);
+  const suggestion = row.parsed_fields.auto_suggestion;
   const canChange = editable && row.review_disposition !== "duplicate";
   return (
     <>
@@ -515,13 +557,20 @@ export function LineRow({ row, invoice, clientNames, editable, mappingOpen, onMa
               {invoice.identity?.client_id ? ` · ${clientNames[invoice.identity.client_id] || "TAP Hub client"}` : ""}
             </div>
           ) : null}
+          {suggestion?.disposition === "invoice" && suggestion.confidence === "high" ? (
+            <div className="bc-small" data-auto-suggestion="invoice" style={{ marginTop: 4 }}>
+              Suggested: {String(suggestion.fields?.customer_name || "customer unclear")} · invoice {String(suggestion.fields?.invoice_number || "—")} · {String(suggestion.fields?.open_balance || "balance unclear")}
+            </div>
+          ) : suggestion?.disposition === "unreviewed" ? (
+            <div className="bc-small" data-auto-suggestion="uncertain" style={{ marginTop: 4 }}>Needs review: {suggestion.reason}</div>
+          ) : null}
         </td>
         <td>
           <span className={`bc-pill ${row.review_disposition === "unreviewed" ? "amber" : row.review_disposition === "invoice" ? "green" : "grey"}`}>{DISPOSITION_LABELS[row.review_disposition]}</span>
           {canChange ? (
             <div className="bc-inline" style={{ marginTop: 6, gap: 4 }}>
               <button type="button" className="bc-btn" style={{ padding: "4px 9px", fontSize: 12 }} aria-expanded={mappingOpen} onClick={onMap}>
-                {row.review_disposition === "invoice" ? "Correct invoice" : "Invoice…"}
+                {row.review_disposition === "invoice" ? "Correct invoice" : suggestion?.disposition === "invoice" ? "Review suggestion" : "Invoice…"}
               </button>
               {row.review_disposition !== "invoice" ? CLASSIFY_ACTIONS.filter((action) => action.disposition !== row.review_disposition).map((action) => (
                 <button key={action.disposition} type="button" className="bc-btn quiet" style={{ padding: "4px 9px", fontSize: 12 }} onClick={() => onClassify(action.disposition)}>{action.label}</button>
@@ -569,14 +618,31 @@ export function validateMapping(values: Record<string, string>) {
 }
 
 /** A correction starts from what the reviewer confirmed before (never from a guess); it must be re-confirmed. */
-function confirmedValues(existing: ImportInvoice | undefined): Record<string, string> {
-  if (!existing) return {};
+function confirmedValues(existing: ImportInvoice | undefined, row: ImportRow, clients: ClientOption[]): Record<string, string> {
   const text = (value: string | number | null | undefined) => (value === null || value === undefined ? "" : String(value));
-  return {
+  if (existing) return {
     client_id: text(existing.identity?.client_id), customer_name: existing.customer_name, invoice_number: text(existing.invoice_number),
     transaction_type: text(existing.transaction_type), transaction_date: text(existing.transaction_date), due_date: text(existing.due_date),
     terms: text(existing.terms), po_number: text(existing.po_number), reported_aging: text(existing.reported_aging),
     open_balance: text(existing.open_balance), linked_invoice_id: text(linkedBillingInvoiceId(existing)),
+  };
+  const suggestion = row.parsed_fields.auto_suggestion;
+  if (suggestion?.disposition !== "invoice" || !suggestion.fields) return {};
+  const fields = suggestion.fields;
+  const customer = typeof fields.customer_name === "string" ? fields.customer_name : "";
+  const client = exactClientMatch(customer, clients);
+  return {
+    ...(client ? { client_id: client.id } : {}),
+    customer_name: customer,
+    invoice_number: text(fields.invoice_number as string | null),
+    transaction_type: text(fields.transaction_type as string | null),
+    transaction_date: text(fields.transaction_date as string | null),
+    due_date: text(fields.due_date as string | null),
+    terms: text(fields.terms as string | null),
+    po_number: text(fields.po_number as string | null),
+    reported_aging: text(fields.reported_aging as number | null),
+    open_balance: text(fields.open_balance as string | null),
+    linked_invoice_id: "",
   };
 }
 
@@ -593,7 +659,7 @@ export function InvoiceMappingForm({ row, existing, clients, billingInvoices, pr
 }) {
   const formId = useId();
   const cells = rowCells(row);
-  const [values, setValues] = useState<Record<string, string>>(() => confirmedValues(existing));
+  const [values, setValues] = useState<Record<string, string>>(() => confirmedValues(existing, row, clients));
   const [mappedFrom, setMappedFrom] = useState<Record<string, number>>({});
   const [active, setActive] = useState<MappingField>("customer_name");
   const [errors, setErrors] = useState<Record<string, string>>({});
