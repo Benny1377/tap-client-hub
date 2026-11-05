@@ -165,10 +165,10 @@ await check("sections start loading and fail independently", async () => {
 });
 
 // --- Validation ------------------------------------------------------------
-await check("invoice draft validation", () => {
-  assert.deepEqual(Object.keys(validation.validateInvoiceDraft({})).sort(), ["client_id", "due_date", "invoice_number", "issue_date"]);
-  assert.match(validation.validateInvoiceDraft({ client_id: "c", invoice_number: "1", issue_date: "2026-10-10", due_date: "2026-10-01" }).due_date, /on or after/);
-  assert.deepEqual(validation.validateInvoiceDraft({ client_id: "c", invoice_number: "1", issue_date: "2026-10-01", due_date: "2026-10-01" }), {});
+await check("invoice draft validation (Phase 2: a draft needs only a client)", () => {
+  assert.deepEqual(Object.keys(validation.validateInvoiceDraft({})), ["client_id"]);
+  assert.deepEqual(validation.validateInvoiceDraft({ client_id: "c" }), {});
+  assert.deepEqual(validation.validateInvoiceDraft({ client_id: "c", memo: "note" }), {});
 });
 
 await check("money validation matches the server's two-decimal rule", () => {

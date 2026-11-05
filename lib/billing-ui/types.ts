@@ -27,10 +27,11 @@ export interface InvoiceLine {
 export interface Invoice {
   id: string;
   client_id: string;
-  invoice_number: string;
+  /** Null on a draft: the number and both dates are assigned by the server when the invoice is issued. */
+  invoice_number: string | null;
   status: InvoiceStatus;
-  issue_date: string;
-  due_date: string;
+  issue_date: string | null;
+  due_date: string | null;
   memo: string | null;
   created_by: string | null;
   created_at: string;

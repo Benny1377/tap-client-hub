@@ -68,7 +68,7 @@ export default function BillingPage() {
                 <NewInvoiceForm
                   clientId={clientId}
                   onCreate={async (values) => {
-                    const result = await mutate(() => api.createInvoice({ client_id: clientId, invoice_number: values.invoice_number.trim(), issue_date: values.issue_date, due_date: values.due_date, memo: values.memo.trim() || null }));
+                    const result = await mutate(() => api.createInvoice({ clientId, ...(values.memo.trim() ? { memo: values.memo.trim() } : {}) }));
                     if (result.ok) setSelectedInvoiceId(result.data.invoice.id);
                     return result;
                   }}
@@ -87,7 +87,7 @@ export default function BillingPage() {
               receivable={receivableFor(selectedInvoice.id, receivables)}
               viewer={viewer}
               handlers={{
-                onUpdate: (values) => mutate(() => api.updateInvoice(selectedInvoice.id, { invoice_number: values.invoice_number.trim(), issue_date: values.issue_date, due_date: values.due_date, memo: values.memo.trim() || null })),
+                onUpdate: (values) => mutate(() => api.updateInvoice(selectedInvoice.id, { memo: values.memo.trim() || null })),
                 onAddLine: (values) => mutate(() => api.addLine({ invoice_id: selectedInvoice.id, description: values.description.trim(), quantity: values.quantity.trim() || "1", unit_amount: values.unit_amount.trim(), period: values.period || null })),
                 onUpdateLine: (lineId, values) => mutate(() => api.updateLine(lineId, { description: values.description.trim(), quantity: values.quantity.trim(), unit_amount: values.unit_amount.trim(), period: values.period || null })),
                 onDeleteLine: (lineId) => mutate(() => api.deleteLine(lineId)),

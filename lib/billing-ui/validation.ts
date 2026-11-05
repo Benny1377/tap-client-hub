@@ -28,17 +28,10 @@ export function isPositiveMoney(value: unknown) {
   return MONEY.test(raw) && /[1-9]/.test(raw);
 }
 
-export function validateInvoiceDraft(input: { client_id?: string; invoice_number?: string; issue_date?: string; due_date?: string }): FieldErrors {
+/** A draft needs only a client; the number and dates are assigned by the server at issue. */
+export function validateInvoiceDraft(input: { client_id?: string; memo?: string }): FieldErrors {
   const errors: FieldErrors = {};
   if (blank(input.client_id)) errors.client_id = "Choose a client.";
-  if (blank(input.invoice_number)) errors.invoice_number = "Invoice number is required.";
-  if (blank(input.issue_date)) errors.issue_date = "Issue date is required.";
-  else if (!DATE.test(String(input.issue_date))) errors.issue_date = "Use the YYYY-MM-DD format.";
-  if (blank(input.due_date)) errors.due_date = "Due date is required.";
-  else if (!DATE.test(String(input.due_date))) errors.due_date = "Use the YYYY-MM-DD format.";
-  if (!errors.issue_date && !errors.due_date && String(input.due_date) < String(input.issue_date)) {
-    errors.due_date = "Due date must be on or after the issue date.";
-  }
   return errors;
 }
 

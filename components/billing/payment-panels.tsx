@@ -133,7 +133,7 @@ export function PaymentsPanel({ payments, invoices, receivables, clientId, clien
                   })) },
                   { name: "invoice_id", label: "Invoice", type: "select", options: issuedForClient.map((invoice) => {
                     const receivable = receivableFor(invoice.id, receivables);
-                    return { value: invoice.id, label: `${invoice.invoice_number}${receivable ? ` · balance ${formatMoney(receivable.balance)}` : ""}` };
+                    return { value: invoice.id, label: `${invoice.invoice_number ?? "Draft"}${receivable ? ` · balance ${formatMoney(receivable.balance)}` : ""}` };
                   }) },
                   { name: "amount", label: "Amount (USD)", placeholder: "0.00" },
                 ]}

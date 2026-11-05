@@ -171,9 +171,11 @@ export function createBillingApi(fetchImpl: FetchLike) {
     /** Off-only pause; the route accepts no body and re-enabling is a server configuration change. */
     pauseAutomation: () => request<DeliverySetup>(fetchImpl, "/api/collections/automation/pause", { method: "POST" }),
 
-    createInvoice: (input: { client_id: string; invoice_number: string; issue_date: string; due_date: string; memo?: string | null }) =>
-      post<{ invoice: Invoice }>(fetchImpl, "/api/billing/invoices", input),
-    updateInvoice: (id: string, input: Partial<Pick<Invoice, "invoice_number" | "issue_date" | "due_date" | "memo">>) =>
+    /** Phase 2: a draft is created from a client and an optional memo. The server assigns the number and dates at issue. */
+    createInvoice: (input: { clientId: string; memo?: string }) =>
+      post<{ invoice: { id: string } }>(fetchImpl, "/api/billing/invoices", input),
+    /** Only the memo of a draft is editable. */
+    updateInvoice: (id: string, input: Partial<Pick<Invoice, "memo">>) =>
       patch<{ invoice: Invoice }>(fetchImpl, `/api/billing/invoices/${encodeURIComponent(id)}`, input),
     deleteDraftInvoice: (id: string) =>
       request<{ deleted: boolean }>(fetchImpl, `/api/billing/invoices/${encodeURIComponent(id)}`, { method: "DELETE" }),

@@ -8,6 +8,8 @@ import { ActionButton, hintStyle, LedgerForm, OwnerAdminOnly, StatusBadge, type 
 
 type Mutation = Promise<ApiResult<unknown>>;
 
+const DRAFT_LABEL = "Draft";
+
 export function InvoiceList({ invoices, receivables, clientNames, selectedId, onSelect }: {
   invoices: Invoice[];
   receivables: Receivable[];
@@ -35,12 +37,12 @@ export function InvoiceList({ invoices, receivables, clientNames, selectedId, on
               <tr key={invoice.id} data-invoice-row={invoice.id} className={invoice.id === selectedId ? "on" : undefined}>
                 <td>
                   <button type="button" onClick={() => onSelect(invoice.id)} className="bc-name bc-nowrap">
-                    {invoice.invoice_number}
+                    {invoice.invoice_number ?? DRAFT_LABEL}
                   </button>
                 </td>
                 <td>{clientNames[invoice.client_id] || invoice.client_id}</td>
                 <td><StatusBadge status={invoice.status} /></td>
-                <td className="bc-nowrap">{invoice.due_date}</td>
+                <td className="bc-nowrap">{invoice.due_date ?? "—"}</td>
                 <td className="r">{receivable ? formatMoney(receivable.balance) : "—"}</td>
               </tr>
             );
@@ -56,12 +58,9 @@ export function NewInvoiceForm({ clientId, onCreate }: { clientId: string; onCre
     <LedgerForm
       key={clientId}
       fields={[
-        { name: "invoice_number", label: "Invoice number", placeholder: "e.g. TAP-2026-0142" },
-        { name: "issue_date", label: "Issue date", type: "date" },
-        { name: "due_date", label: "Due date", type: "date" },
         { name: "memo", label: "Memo", type: "textarea", optional: true },
       ]}
-      initialValues={{ client_id: clientId, invoice_number: "", issue_date: "", due_date: "", memo: "" }}
+      initialValues={{ client_id: clientId, memo: "" }}
       validate={validateInvoiceDraft}
       onSubmit={onCreate}
       submitLabel="Create draft invoice"
@@ -90,11 +89,13 @@ export function InvoiceDetail({ invoice, receivable, viewer, handlers }: {
   return (
     <div data-invoice-detail={invoice.id} data-lifecycle={invoice.status}>
       <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-        <strong style={{ fontSize: 16 }}>{invoice.invoice_number}</strong>
+        <strong style={{ fontSize: 16 }}>{invoice.invoice_number ?? DRAFT_LABEL}</strong>
         <StatusBadge status={invoice.status} />
       </div>
       <p style={hintStyle}>
-        {invoice.status === "draft" ? "Issue date" : "Issued"} {invoice.issue_date} · Due {invoice.due_date}
+        {invoice.issue_date && invoice.due_date
+          ? <>{invoice.status === "draft" ? "Issue date" : "Issued"} {invoice.issue_date} · Due {invoice.due_date}</>
+          : "Invoice number and dates are assigned when the invoice is issued."}
         {receivable ? <> · Total {formatMoney(receivable.total)} · Paid {formatMoney(receivable.allocated)} · Balance <strong>{formatMoney(receivable.balance)}</strong>{receivable.days_past_due > 0 ? ` · ${receivable.days_past_due} days past due` : ""}</> : null}
       </p>
       {invoice.memo ? <p style={hintStyle}>{invoice.memo}</p> : null}
@@ -162,15 +163,12 @@ export function InvoiceDetail({ invoice, receivable, viewer, handlers }: {
           <section style={{ flex: "1 1 240px" }} aria-label="Edit draft">
             <h3 style={{ fontSize: 14, margin: "6px 0" }}>Edit draft</h3>
             <LedgerForm
-              key={`${invoice.id}-header-${invoice.invoice_number}-${invoice.issue_date}-${invoice.due_date}-${invoice.memo ?? ""}`}
+              key={`${invoice.id}-header-${invoice.invoice_number}-${invoice.memo ?? ""}`}
               resetOnSuccess={false}
               fields={[
-                { name: "invoice_number", label: "Invoice number" },
-                { name: "issue_date", label: "Issue date", type: "date" },
-                { name: "due_date", label: "Due date", type: "date" },
                 { name: "memo", label: "Memo", type: "textarea", optional: true },
               ]}
-              initialValues={{ client_id: invoice.client_id, invoice_number: invoice.invoice_number, issue_date: invoice.issue_date, due_date: invoice.due_date, memo: invoice.memo || "" }}
+              initialValues={{ client_id: invoice.client_id, memo: invoice.memo || "" }}
               validate={validateInvoiceDraft}
               onSubmit={handlers.onUpdate}
               submitLabel="Save draft"
