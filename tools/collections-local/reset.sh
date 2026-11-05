@@ -32,7 +32,8 @@ for migration in \
   20261019130000_collections_import_batch_metadata_correction.sql \
   20261019140000_collections_test_delivery_source_discrepancy.sql \
   20261020100000_billing_ledger_database_invariants.sql \
-  20261105100000_billing_phase2_core.sql; do
+  20261105100000_billing_phase2_core.sql \
+  20261105110000_billing_manual_confirmation_guard.sql; do
   psql "$db_url" -X -v ON_ERROR_STOP=1 -f "$project_root/supabase/migrations/$migration" >/dev/null
 done
 psql "$db_url" -X -v ON_ERROR_STOP=1 -f "$local_root/seed.sql" >/dev/null

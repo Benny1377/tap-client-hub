@@ -95,16 +95,16 @@ const bdr = await billing.call("GET", "/api/billing/rate-cards?limit=5");
 rec("A8", "Billing staff can read pricing (pricing.view)", bdr.status === 200 && Array.isArray(bdr.json?.items), `status ${bdr.status}`);
 
 // ---- B. Pricing, terms and remittance mutations --------------------------------------------------------
-let rc = await owner.call("POST", "/api/billing/rate-cards", { name: `P2 ${tag} Standard`, currency: "USD", effectiveFrom: "2026-01-01" });
+let rc = await owner.call("POST", "/api/billing/rate-cards", { name: `P2 ${tag} Standard`, currency: "USD", effectiveFrom: "2026-01-01", reason: "Initial rate card setup" });
 const rcLiteral = rc.status;
-rec("B1", "POST /rate-cards with the contract's literal example body (no reason) returns 201", rc.status === 201, `status ${rc.status} ${rc.code || ""}`);
-if (rc.status !== 201) rc = await owner.call("POST", "/api/billing/rate-cards", { name: `P2 ${tag} Standard`, currency: "USD", effectiveFrom: "2026-01-01", reason: "Synthetic setup" });
+rec("B1", "POST /rate-cards with the contract's literal example body (includes reason, b630f2a) returns 201", rc.status === 201, `status ${rc.status} ${rc.code || ""}`);
+const rcNoReason = await owner.call("POST", "/api/billing/rate-cards", { name: `P2 ${tag} NoReason`, currency: "USD", effectiveFrom: "2030-01-01" });
+rec("B1b", "POST /rate-cards without a reason is 422 INVALID_INPUT", rcNoReason.status === 422 && rcNoReason.code === "INVALID_INPUT", `status ${rcNoReason.status} ${rcNoReason.code || ""}`);
 const rateCardId = rc.json?.rateCard?.id;
 rec("B2", "rate card created with camelCase shape", rc.status === 201 && !!rateCardId && rc.json.rateCard.effectiveFrom === "2026-01-01" && rc.json.rateCard.active === true, `status ${rc.status} (first attempt ${rcLiteral})`);
-let ent = await owner.call("POST", `/api/billing/rate-cards/${rateCardId}/entries`, { serviceCode: serviceCode("REC"), unit: "service", unitAmount: "125.00", effectiveFrom: "2026-01-01" });
+let ent = await owner.call("POST", `/api/billing/rate-cards/${rateCardId}/entries`, { serviceCode: serviceCode("REC"), unit: "service", unitAmount: "125.00", effectiveFrom: "2026-01-01", reason: "Initial rate entry" });
 const entLiteral = ent.status;
-rec("B3", "POST entries with the contract's literal example body (no reason) returns 201", ent.status === 201, `status ${ent.status} ${ent.code || ""}`);
-if (ent.status !== 201) ent = await owner.call("POST", `/api/billing/rate-cards/${rateCardId}/entries`, { serviceCode: serviceCode("REC"), unit: "service", unitAmount: "125.00", effectiveFrom: "2026-01-01", reason: "Synthetic setup" });
+rec("B3", "POST entries with the contract's literal example body (includes reason, b630f2a) returns 201", ent.status === 201, `status ${ent.status} ${ent.code || ""}`);
 const entryId = ent.json?.entry?.id;
 rec("B4", "entry unitAmount is a decimal string", ent.status === 201 && ent.json.entry.unitAmount === "125.00", `status ${ent.status} amount ${ent.json?.entry?.unitAmount} (first attempt ${entLiteral})`);
 const ov = await owner.call("POST", `/api/billing/rate-cards/${rateCardId}/entries`, { serviceCode: serviceCode("REC"), unit: "service", unitAmount: "99.00", effectiveFrom: "2026-06-01", reason: "overlap" });
@@ -216,7 +216,7 @@ rec("D5", "same key with different data is 409 DUPLICATE_RESOURCE", m5.status ==
 const m6 = await billing.call("POST", "/api/billing/candidates/manual-confirmations", mc());
 rec("D6", "a second confirmation for the same service and date with a new key must not create a duplicate candidate (contract: 'cannot create a duplicate candidate')", m6.status === 409, `status ${m6.status} created=${m6.json?.created} candidates=${sql(`select count(*) from tap_hub_project.billing_candidates where client_service_id='${cs.man}' and candidate_date='2026-11-03'`)}`);
 const m7 = await billing.call("POST", "/api/billing/candidates/manual-confirmations", mc({ idempotencyKey: randomUUID(), confirmedDate: "2031-01-15" }));
-info("D7", "confirmation dated years in the future is", `status ${m7.status} (contract is silent)`);
+rec("D7", "a confirmation dated in the future is 422 CONFIRMATION_DATE_FUTURE", m7.status === 422 && m7.code === "CONFIRMATION_DATE_FUTURE", `status ${m7.status} ${m7.code || ""}`);
 const m8 = await colls.call("POST", "/api/billing/candidates/manual-confirmations", mc());
 rec("D8", "Collections-only staff cannot create a confirmation (403)", m8.status === 403, `${m8.status}`);
 rec("D9", "confirmation is audited with the Billing actor", Number(sql(`select count(*) from tap_hub_project.audit_log where entity='billing_manual_confirmations' and actor='${BILLING_ID}'`)) >= 1, sql(`select count(*) from tap_hub_project.audit_log where entity='billing_manual_confirmations'`));
