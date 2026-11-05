@@ -97,7 +97,7 @@ Owner and Admin resolve all fixed actions, including `policy.manage`, `invoices.
 
 Owner/Admin can update delegable action policy using `PATCH /api/billing/permissions/policy` with `{ "reason": "...", "policies": [{ "actionKey": "pricing.manage", "allowedRoles": ["staff"], "enabled": true }] }`. Each listed action is replaced atomically; an empty `allowedRoles` array explicitly denies the action to non-owner roles. Policy updates accept only normalized application roles `manager`, `staff`, and `offshore`. The fixed Owner/Admin actions are not writable policy keys, including through direct RPC invocation. Disabled rows explicitly deny an action and do not fall back to staff defaults. Success returns `{ "policies": [...], "refresh": ["permissions"] }`; malformed payloads are `422 INVALID_INPUT`, and non-Owner/Admin callers receive `403 FORBIDDEN`.
 
-Manual confirmation uses `POST /api/billing/candidates/manual-confirmations` with `{ "idempotencyKey": "<uuid>", "clientServiceId": "<uuid>", "confirmedDate": "2026-11-05", "sourceNote": "Service completion confirmed by the firm", "reason": "Owner verified source" }`. A new confirmation returns `201 { "created": true, "confirmationId": "<uuid>", "candidate": { ... }, "refresh": ["candidates", "receivables"] }`; an identical retry returns `200` with the same candidate and no duplicate. Reusing the key with different data returns `409 DUPLICATE_RESOURCE`. An enabled manual-confirmation source map must cover the confirmation date. No active map returns `409 COMPLETION_SOURCE_MAP_REQUIRED`; invalid input returns `422 INVALID_INPUT`. Source notes and reasons are Billing-owned audited provenance; they are not written to Operations.
+Manual confirmation uses `POST /api/billing/candidates/manual-confirmations` with `{ "idempotencyKey": "<uuid>", "clientServiceId": "<uuid>", "confirmedDate": "2026-11-05", "sourceNote": "Service completion confirmed by the firm", "reason": "Owner verified source" }`. A new confirmation returns `201 { "created": true, "confirmationId": "<uuid>", "candidate": { ... }, "refresh": ["candidates", "receivables"] }`; an identical retry returns `200` with the same candidate and no duplicate. Reusing the key with different data returns `409 DUPLICATE_RESOURCE`. Independently of the idempotency key, only one manual confirmation is allowed for a given `clientServiceId` and `confirmedDate`; another key for that same pair returns `409 DUPLICATE_RESOURCE`. The confirmed date must be today or earlier in Houston time (`America/Chicago`); a later date returns `422 CONFIRMATION_DATE_FUTURE`. An enabled manual-confirmation source map must cover the confirmation date. No active map returns `409 COMPLETION_SOURCE_MAP_REQUIRED`; other malformed input returns `422 INVALID_INPUT`. Source notes and reasons are Billing-owned audited provenance; they are not written to Operations.
 
 ### Request and response shapes (synthetic examples)
 
@@ -121,10 +121,10 @@ Shared resource examples:
 | `GET /permissions` | none | `{"role":"staff","modules":["Billing"],"actions":["billing.view","pricing.view","candidates.view","candidates.manage","invoices.draft.manage","invoices.issue","payments.record","payments.allocate"]}` (default Billing-staff actions; `pricing.manage` is excluded unless Owner/Admin grants it) |
 | `PATCH /permissions/policy` | `{"reason":"Approved delegation","policies":[{"actionKey":"pricing.manage","allowedRoles":["staff"],"enabled":true}]}` | `{"policies":[{"actionKey":"pricing.manage","allowedRoles":["staff"],"enabled":true}],"refresh":["permissions"]}` (Owner/Admin only; protected keys are invalid) |
 | `GET /rate-cards` | query: `active`, `cursor`, `limit` (limit default 50, max 100) | `{"items":[{"id":"rc_01","name":"Standard","currency":"USD","active":true}],"nextCursor":null}` |
-| `POST /rate-cards` | `{"name":"Standard","currency":"USD","effectiveFrom":"2026-11-01"}` | `201 {"rateCard":{"id":"rc_01","name":"Standard","currency":"USD","active":true,"effectiveFrom":"2026-11-01","effectiveTo":null}}` |
+| `POST /rate-cards` | `{"name":"Standard","currency":"USD","effectiveFrom":"2026-11-01","reason":"Initial rate card setup"}` | `201 {"rateCard":{"id":"rc_01","name":"Standard","currency":"USD","active":true,"effectiveFrom":"2026-11-01","effectiveTo":null}}` |
 | `GET /rate-cards/rc_01` | none | `{"rateCard":{"id":"rc_01","name":"Standard","currency":"USD","active":true},"entries":[]}` |
 | `PATCH /rate-cards/rc_01` | `{"name":"Standard 2027","active":true,"reason":"Annual refresh"}` | `{"rateCard":{"id":"rc_01","name":"Standard 2027","currency":"USD","active":true}}` |
-| `POST /rate-cards/rc_01/entries` | `{"serviceCode":"TAX","unit":"return","unitAmount":"125.00","effectiveFrom":"2026-11-01"}` | `201 {"entry":{"id":"re_01","serviceCode":"TAX","unit":"return","unitAmount":"125.00","effectiveFrom":"2026-11-01","effectiveTo":null}}` |
+| `POST /rate-cards/rc_01/entries` | `{"serviceCode":"TAX","unit":"return","unitAmount":"125.00","effectiveFrom":"2026-11-01","reason":"Initial rate entry"}` | `201 {"entry":{"id":"re_01","serviceCode":"TAX","unit":"return","unitAmount":"125.00","effectiveFrom":"2026-11-01","effectiveTo":null}}` |
 | `PATCH /rate-cards/rc_01/entries/re_01` | `{"unitAmount":"130.00","effectiveTo":"2027-10-31","reason":"Annual update"}` | `{"entry":{"id":"re_01","unitAmount":"130.00","effectiveTo":"2027-10-31"}}` |
 | `GET /client-pricing?clientId=client_01` | none | `{"clientId":"client_01","overrides":[{"id":"ov_01","clientServiceId":"cs_01","unitAmount":"115.00","effectiveFrom":"2026-11-01","effectiveTo":null}],"bundles":[]}` |
 | `POST /client-pricing/overrides` | `{"clientServiceId":"cs_01","unitAmount":"115.00","effectiveFrom":"2026-11-01","reason":"Approved client rate"}` | `201 {"override":{"id":"ov_01","clientServiceId":"cs_01","unitAmount":"115.00","effectiveFrom":"2026-11-01","effectiveTo":null}}` |
@@ -163,7 +163,7 @@ All paginated list endpoints use the same opaque base64url-encoded JSON-tuple cu
 
 Draft creation through the candidate endpoint creates the same nullable draft shape as a manual draft. `POST /api/billing/invoices` creates an empty/manual draft from a valid `clientId` and optional `memo`; it creates no lines and returns `invoiceNumber`, `issueDate`, and `dueDate` as `null` until issue. The request does not accept client-supplied totals or those server-assigned fields.
 
-Collections-only and unassigned sessions receive `403` from `GET /api/billing/permissions` and every pricing, candidate, schedule, completion-map, and Billing-settings endpoint; they do not receive redacted price-shaped payloads. Every money value in a new Phase 2 response is a decimal string (for example, `"125.00"`), never a JSON number. Existing Phase 1 response formatting remains unchanged during the compatibility period; all new Phase 2 response shapes are camelCase.
+Collections-only and unassigned sessions receive `403` from `GET /api/billing/permissions` and every pricing, candidate, schedule, completion-map, and Billing-settings endpoint; they do not receive redacted price-shaped payloads. Any authenticated Billing-assigned user can read `/permissions` so a revoked `billing.view` action can still be displayed as revoked; that does not grant access to other endpoints. Every money value in a new Phase 2 response is a decimal string (for example, `"125.00"`), never a JSON number. Existing Phase 1 response formatting remains unchanged during the compatibility period; all new Phase 2 response shapes are camelCase.
 
 Every error remains `{ error, code }`. Draft creation returns a complete server-calculated draft, lines, linked candidate identifiers, and refresh targets. It accepts no client-calculated amount.
 
@@ -178,7 +178,20 @@ Every error remains `{ error, code }`. Draft creation returns a complete server-
 | `EFFECTIVE_DATE_OVERLAP` | 409 | A pricing, terms, bundle, or completion-map range overlaps the same identity. |
 | `INVALID_COMPLETION_SOURCE_MAP` | 422 | Adapter, predicate, date rule, or stable identity is not in the bounded schema. |
 | `COMPLETION_SOURCE_MAP_REQUIRED` | 409 | No enabled manual-confirmation map covers the supplied effective date. |
-| `DUPLICATE_RESOURCE` | 409 | A manual-confirmation idempotency key was reused with different values. |
+| `DUPLICATE_RESOURCE` | 409 | A manual-confirmation key was reused with different values, or the client service/date already has a manual confirmation. |
+| `CONFIRMATION_DATE_FUTURE` | 422 | Manual confirmation date is after today's date in Houston time. |
+| `INVALID_INPUT` | 422 | A request field, identifier, or value is malformed or outside its accepted range. |
+| `INVALID_JSON` | 400 | Request body is missing, malformed, or not a JSON object. |
+| `NOT_FOUND` | 404 | The referenced Billing or Operations resource does not exist or is inactive. |
+| `FORBIDDEN` | 403 | The authenticated user lacks the required module or action. |
+| `BILLING_READ_FAILED` | 500 | A required Billing or Operations read failed. |
+| `BILLING_WRITE_FAILED` | 500 | A Billing write failed unexpectedly. |
+| `PRICING_READ_FAILED` | 500 | Pricing data could not be loaded. |
+| `SETTINGS_READ_FAILED` | 500 | Billing settings could not be loaded. |
+| `INVOICE_READ_FAILED` | 500 | Invoice or draft readback failed. |
+| `PRICE_RESOLUTION_FAILED` | 500 | The server could not resolve a candidate price. |
+| `DRAFT_CREATE_FAILED` | 500 | Draft creation failed unexpectedly. |
+| `INVOICE_CREATE_FAILED` | 500 | Empty draft creation failed unexpectedly. |
 | `GENERATION_WINDOW_INVALID` | 422 | Generation or schedule window is malformed or exceeds the permitted maximum. |
 | `DRAFT_CANDIDATE_LINK_REQUIRED` | 409 | A candidate-linked line/delete transition would break provenance. |
 | `ISSUE_PRECONDITION_FAILED` | 409 | Draft has no valid lines, unresolved candidate state, or another issue-time invariant failure. |

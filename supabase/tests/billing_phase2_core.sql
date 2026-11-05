@@ -106,6 +106,16 @@ begin
       v_manual_candidate:=(v_manual->>'candidateId')::uuid;
       if not exists(select 1 from tap_hub_project.billing_candidates where id=v_manual_candidate and source_adapter='manual_confirmation' and source_identity=v_confirmation::text and period=to_char(v_today,'YYYY-MM')) then raise exception 'manual confirmation candidate provenance is invalid'; end if;
       begin
+        perform tap_hub_project.create_billing_manual_confirmation(gen_random_uuid(),v_client_service_2,v_today,'Duplicate synthetic confirmation','Duplicate test',v_actor);
+        raise exception 'a second manual confirmation for the same service/date was accepted' using errcode='P0003';
+      exception when unique_violation then null;
+      end;
+      begin
+        perform tap_hub_project.create_billing_manual_confirmation(gen_random_uuid(),v_client_service_2,v_today+1,'Future synthetic confirmation','Future test',v_actor);
+        raise exception 'a future manual confirmation was accepted' using errcode='P0003';
+      exception when sqlstate '22023' then null;
+      end;
+      begin
         perform tap_hub_project.create_billing_manual_confirmation(v_confirmation,v_client_service_2,v_today,'Synthetic owner-confirmed work','Changed reason',v_actor);
         raise exception 'manual confirmation idempotency key accepted a changed reason' using errcode='P0003';
       exception when sqlstate '23505' then null;

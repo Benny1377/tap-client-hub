@@ -4,11 +4,13 @@ import { requireBillingAction, requireBillingPowerUser } from "@/lib/billing-acc
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const access = await requireBillingAction("invoices.draft.manage");
   if (access.response) return access.response;
   const { id } = await params;
+  if (!UUID.test(id)) return NextResponse.json({ error: "Invoice ID must be a UUID", code: "INVALID_INPUT" }, { status: 422 });
   let body: Record<string, unknown>;
   try {
     const parsed: unknown = await request.json();
@@ -20,9 +22,11 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   if (loadError) return NextResponse.json({ error: loadError.message, code: "INVOICE_READ_FAILED" }, { status: 500 });
   if (!current) return NextResponse.json({ error: "Invoice not found", code: "NOT_FOUND" }, { status: 404 });
   if (current.status !== "draft") return NextResponse.json({ error: "Only draft invoices can be edited", code: "INVOICE_NOT_DRAFT" }, { status: 409 });
+  if (Object.keys(body).some((key) => key !== "memo") || (body.memo !== undefined && typeof body.memo !== "string")) {
+    return NextResponse.json({ error: "Only memo may be edited on a draft; invoice number and dates are assigned when issued", code: "INVALID_INPUT" }, { status: 422 });
+  }
   const allowed: Record<string, unknown> = {};
-  for (const key of ["issue_date", "due_date", "memo", "invoice_number"]) if (body[key] !== undefined) allowed[key] = body[key];
-  if (body.due_date && body.issue_date && body.due_date < body.issue_date) return NextResponse.json({ error: "due_date must be on or after issue_date", code: "INVALID_DATE_RANGE" }, { status: 422 });
+  if (body.memo !== undefined) allowed.memo = body.memo;
   allowed.updated_by = access.identity?.id || null;
   const { data, error } = await db.from("invoices").update(allowed).eq("id", id).eq("status", "draft").select("*, invoice_lines(*)").single();
   if (error) return NextResponse.json({ error: error.code === "23505" ? "Invoice number already exists" : error.message, code: error.code === "23505" ? "INVOICE_NUMBER_EXISTS" : "INVOICE_UPDATE_FAILED" }, { status: error.code === "23505" ? 409 : 500 });
@@ -33,6 +37,7 @@ export async function DELETE(_request: Request, { params }: { params: Promise<{ 
   const access = await requireBillingAction("invoices.draft.manage");
   if (access.response) return access.response;
   const { id } = await params;
+  if (!UUID.test(id)) return NextResponse.json({ error: "Invoice ID must be a UUID", code: "INVALID_INPUT" }, { status: 422 });
   const db = createAdminClient();
   const { data: linked } = await db.from("billing_candidate_line_links").select("candidate_id,invoice_lines!inner(invoice_id)").eq("invoice_lines.invoice_id", id);
   const { error } = await db.rpc("delete_draft_invoice", { p_invoice_id: id, p_actor: access.identity!.id });
@@ -47,6 +52,7 @@ export async function DELETE(_request: Request, { params }: { params: Promise<{ 
 
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
+  if (!UUID.test(id)) return NextResponse.json({ error: "Invoice ID must be a UUID", code: "INVALID_INPUT" }, { status: 422 });
   let body: Record<string, unknown>;
   try {
     const parsed: unknown = await request.json();

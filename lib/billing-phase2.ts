@@ -3,6 +3,7 @@ import type { BillingAction } from "@/lib/billing-access";
 
 export const REFRESH_LEDGER = ["invoice", "candidates", "receivables"] as const;
 const MONEY_KEYS = new Set(["unit_amount", "unitAmount", "amount", "total_amount", "totalAmount"]);
+const PRIVATE_AUDIT_KEYS = new Set(["created_by", "updated_by", "reason"]);
 function decimalString(value: unknown, scale: number) {
   if (typeof value === "string" && /^-?\d+(?:\.\d+)?$/.test(value)) {
     const [whole, fraction = ""] = value.split(".");
@@ -21,7 +22,7 @@ function asRecord(value: unknown): JsonRecord {
 export function toCamel(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(toCamel);
   if (!value || typeof value !== "object") return value;
-  return Object.fromEntries(Object.entries(value).map(([key, entry]) => {
+  return Object.fromEntries(Object.entries(value).filter(([key]) => !PRIVATE_AUDIT_KEYS.has(key)).map(([key, entry]) => {
     const camelKey = key.replace(/_([a-z])/g, (_, c) => c.toUpperCase());
     return [camelKey, MONEY_KEYS.has(key) || MONEY_KEYS.has(camelKey) ? moneyString(entry) : toCamel(entry)];
   }));
@@ -35,6 +36,14 @@ export function toPhase2Candidate(value: unknown): JsonRecord {
     delete candidate.sourceIdentity;
   }
   return candidate;
+}
+export function toPhase2Bundle(value: unknown): JsonRecord {
+  const raw = asRecord(value);
+  const bundle = asRecord(toCamel(raw));
+  const rawComponents = Array.isArray(raw.billing_bundle_components) ? raw.billing_bundle_components : [];
+  delete bundle.billingBundleComponents;
+  bundle.components = rawComponents.map((component) => ({ clientServiceId: asRecord(component).client_service_id }));
+  return bundle;
 }
 export function mutationResponse(resource: string, path: string[], value: unknown): unknown {
   const converted = toCamel(value);
