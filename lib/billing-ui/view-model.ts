@@ -85,15 +85,15 @@ export interface InvoiceActions {
   voidRequiresOwnerAdmin: boolean;
 }
 
-export function invoiceActions(invoice: Invoice, viewer: Viewer | null): InvoiceActions {
+export function invoiceActions(invoice: Invoice, viewer: Viewer | null, permissions?: string[]): InvoiceActions {
   const power = viewerIsPowerUser(viewer);
   const draft = invoice.status === "draft";
   const hasLines = (invoice.invoice_lines || []).length > 0;
   return {
-    editable: draft,
-    canIssue: draft && hasLines,
-    issueBlockedReason: draft && !hasLines ? "Add at least one line before issuing." : null,
-    canVoid: invoice.status === "issued" && power,
+    editable: draft && (permissions === undefined || permissions.includes("invoices.draft.manage")),
+    canIssue: draft && hasLines && (permissions === undefined || permissions.includes("invoices.issue")),
+    issueBlockedReason: draft && !hasLines ? "Add at least one line before issuing." : draft && permissions && !permissions.includes("invoices.issue") ? "You do not have permission to issue invoices." : null,
+    canVoid: invoice.status === "issued" && (permissions ? permissions.includes("invoices.void") : power),
     voidRequiresOwnerAdmin: invoice.status === "issued" && !power,
   };
 }

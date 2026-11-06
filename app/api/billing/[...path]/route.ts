@@ -104,7 +104,7 @@ export async function generateFromOperations(db: ReturnType<typeof createAdminCl
   for (const clientServiceId of clientServiceIds) {
     const service = serviceById.get(clientServiceId);
     const applicableMaps = mapsByService.get(clientServiceId) || [];
-    const enabledMaps = applicableMaps.filter((map) => map.enabled && (!map.effective_to || map.effective_to >= from) && (!input.preview || map.adapter === "schedule"));
+    const enabledMaps = applicableMaps.filter((map) => map.enabled && (!map.effective_to || map.effective_to >= from));
     if (!enabledMaps.length) {
       skippedByReason[applicableMaps.length ? "map_disabled" : "no_map"]++;
       continue;

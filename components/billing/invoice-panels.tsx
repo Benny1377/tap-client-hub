@@ -82,13 +82,14 @@ export interface InvoiceDetailHandlers {
   onVoid: (reason: string) => Mutation;
 }
 
-export function InvoiceDetail({ invoice, receivable, viewer, handlers }: {
+export function InvoiceDetail({ invoice, receivable, viewer, permissions, handlers }: {
   invoice: Invoice;
   receivable: Receivable | null;
   viewer: Viewer | null;
+  permissions?: string[];
   handlers: InvoiceDetailHandlers;
 }) {
-  const actions = invoiceActions(invoice, viewer);
+  const actions = invoiceActions(invoice, viewer, permissions);
   const lines = [...(invoice.invoice_lines || [])].sort((a, b) => a.sort_order - b.sort_order);
   return (
     <div data-invoice-detail={invoice.id} data-lifecycle={invoice.status}>
@@ -122,13 +123,15 @@ export function InvoiceDetail({ invoice, receivable, viewer, handlers }: {
             {lines.length === 0 ? (
               <tr><td colSpan={actions.editable ? 6 : 5}>No lines yet.</td></tr>
             ) : lines.map((line) => (
-              <tr key={line.id} data-line-row={line.id}>
+              <tr key={line.id} data-line-row={line.id} data-candidate-linked={Boolean(line.candidateIds?.length)}>
                 <td>{line.description}</td>
                 <td>{line.period || "—"}</td>
                 <td>{String(line.quantity)}</td>
                 <td>{formatMoney(line.unit_amount)}</td>
                 <td>{formatMoney(line.amount)}</td>
-                {actions.editable ? (
+                {actions.editable && line.candidateIds?.length ? (
+                  <td><span style={hintStyle}>Locked · linked to {line.candidateIds.length} billable candidate{line.candidateIds.length === 1 ? "" : "s"}</span></td>
+                ) : actions.editable ? (
                   <td>
                     <details>
                       <summary style={{ cursor: "pointer", fontSize: 12.5 }}>Edit</summary>
@@ -185,9 +188,11 @@ export function InvoiceDetail({ invoice, receivable, viewer, handlers }: {
         {invoice.status === "draft" ? (
           actions.canIssue
             ? <ActionButton label="Issue invoice" onAction={handlers.onIssue} />
-            : <span data-issue-blocked style={{ fontSize: 12.5, color: "var(--muted)" }}>{actions.issueBlockedReason}</span>
+            : actions.issueBlockedReason && (actions.editable || permissions?.includes("invoices.issue"))
+              ? <span data-issue-blocked style={{ fontSize: 12.5, color: "var(--muted)" }}>{actions.issueBlockedReason}</span>
+              : null
         ) : null}
-        {invoice.status === "draft" ? (
+        {invoice.status === "draft" && (permissions === undefined || permissions.includes("invoices.draft.manage")) ? (
           <details data-delete-draft>
             <summary style={{ cursor: "pointer", fontSize: 13, color: "var(--red)", fontWeight: 600 }}>Delete draft</summary>
             <p style={hintStyle}>This permanently removes the draft and its lines. Issued invoices cannot be deleted.</p>

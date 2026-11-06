@@ -169,3 +169,20 @@ test("schedule preview is read-only and omits already-persisted identities", asy
   assert.deepEqual(response.result, { projection: "projected", items: [] });
   assert.equal(writes.length, 0);
 });
+
+test("schedule projection includes configured completion sources and stays read-only", async () => {
+  for (const [adapter, sourceRows, sourceTable] of [
+    ["work_period_done", [{ period: "202611", stage: "done", done_at: null }], "work_periods"],
+    ["period_count_threshold", [{ period: "202611", processed: 3 }], "period_counts"],
+  ]) {
+    const { db, writes, reads } = fixtureDb({ adapter, sourceRows });
+    const response = await generateFromOperations(db, "", {
+      from: "2026-11-01", to: "2026-11-30", clientServiceIds: [clientServiceId], preview: true,
+    });
+    assert.equal(response.result.projection, "projected");
+    assert.equal(response.result.items.length, 1);
+    assert.equal(response.result.items[0].source.adapter, adapter);
+    assert.ok(reads.includes(sourceTable));
+    assert.deepEqual(writes, []);
+  }
+});

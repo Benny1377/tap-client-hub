@@ -1,17 +1,22 @@
 "use client";
 
-import { useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { readyData } from "@/lib/billing-ui/ledger";
 import type { Invoice, Payment, Receivable } from "@/lib/billing-ui/types";
 import { receivableFor } from "@/lib/billing-ui/view-model";
 import { useLedger } from "@/components/billing/use-ledger";
 import { ClientPicker, hintStyle, SectionView, SegFilter, StatCard, StatRow } from "@/components/billing/ui";
 import { InvoiceDetail, InvoiceList, NewInvoiceForm } from "@/components/billing/invoice-panels";
+import { CandidateWorkbench } from "@/components/billing/candidate-workbench";
+import { BillingProjectionWorkbench, BillingPricingWorkbench, BillingSettingsWorkbench } from "@/components/billing/phase3-workbench";
 import { ClientAgingSummary, PaymentsPanel, ReceivablesTable } from "@/components/billing/payment-panels";
 
 // The design splits Billing into tabs; these are the ones with a live backend.
 const TABS = [
   { id: "invoices", label: "Invoices" },
+  { id: "what-next", label: "What bills next" },
+  { id: "pricing", label: "Clients & prices" },
+  { id: "settings", label: "Settings" },
   { id: "payments", label: "Payments" },
   { id: "receivables", label: "Receivables" },
 ] as const;
@@ -50,7 +55,22 @@ export default function BillingPage() {
   const [clientId, setClientId] = useState<string | null>(null);
   const [selectedInvoiceId, setSelectedInvoiceId] = useState<string | null>(null);
   const [filter, setFilter] = useState<InvoiceFilter>("all");
-  const { api, viewer, clients, state, mutate } = useLedger(clientId, ["invoices", "receivables", "payments"]);
+  const { api, viewer, clients, state, mutate, refresh } = useLedger(clientId, ["invoices", "receivables", "payments"]);
+  const [billingActions, setBillingActions] = useState<string[] | null>(null);
+  const [candidateRefreshToken, setCandidateRefreshToken] = useState(0);
+  useEffect(() => {
+    let cancelled = false;
+    api.permissions().then((result) => {
+      if (!cancelled) setBillingActions(result.ok ? result.data.actions : []);
+    });
+    return () => { cancelled = true; };
+  }, [api]);
+  const hasAction = (action: string) => Boolean(billingActions?.includes(action));
+  const mutateInvoice = async <T,>(operation: () => Promise<import("@/lib/billing-ui/api").ApiResult<T>>) => {
+    const result = await mutate(operation);
+    if (result.ok || (result.ok === false && result.kind === "conflict")) setCandidateRefreshToken((value) => value + 1);
+    return result;
+  };
   const clientNames = useMemo(() => Object.fromEntries(clients.map((client) => [client.id, client.name])), [clients]);
   const invoices = readyData(state.invoices, []);
   const payments: Payment[] = readyData(state.payments, []);
@@ -103,7 +123,7 @@ export default function BillingPage() {
           <SectionView state={state.invoices} label="invoices">
             {() => <InvoiceList invoices={visibleInvoices} receivables={receivables} clientNames={clientNames} selectedId={selectedInvoiceId} onSelect={setSelectedInvoiceId} />}
           </SectionView>
-          {state.invoices.status === "ready" ? (
+          {state.invoices.status === "ready" && hasAction("invoices.draft.manage") ? (
             clientId ? (
               <details className="card" style={{ marginTop: 16 }}>
                 <summary style={{ cursor: "pointer", fontWeight: 700, fontSize: 13.5 }}>New draft invoice</summary>
@@ -120,6 +140,19 @@ export default function BillingPage() {
           ) : null}
         </section>
 
+        {clientId && hasAction("candidates.view") ? (
+          <CandidateWorkbench
+            clientId={clientId}
+            api={api}
+            refreshToken={candidateRefreshToken}
+            onCreated={async (invoiceId) => {
+              setFilter("all"); setSelectedInvoiceId(invoiceId);
+              setCandidateRefreshToken((value) => value + 1);
+              await refresh();
+            }}
+          />
+        ) : null}
+
         <section className="card" style={{ marginTop: 16 }} aria-label="Invoice detail">
           <h3>Invoice detail<span>{selectedInvoice ? selectedInvoice.invoice_number ?? "Draft" : "select an invoice"}</span></h3>
           {selectedInvoice ? (
@@ -128,18 +161,19 @@ export default function BillingPage() {
               invoice={selectedInvoice}
               receivable={receivableFor(selectedInvoice.id, receivables)}
               viewer={viewer}
+              permissions={billingActions || []}
               handlers={{
-                onUpdate: (values) => mutate(() => api.updateInvoice(selectedInvoice.id, { memo: values.memo.trim() || null })),
-                onAddLine: (values) => mutate(() => api.addLine({ invoice_id: selectedInvoice.id, description: values.description.trim(), quantity: values.quantity.trim() || "1", unit_amount: values.unit_amount.trim(), period: values.period || null })),
-                onUpdateLine: (lineId, values) => mutate(() => api.updateLine(lineId, { description: values.description.trim(), quantity: values.quantity.trim(), unit_amount: values.unit_amount.trim(), period: values.period || null })),
-                onDeleteLine: (lineId) => mutate(() => api.deleteLine(lineId)),
-                onIssue: () => mutate(() => api.issueInvoice(selectedInvoice.id)),
+                onUpdate: (values) => mutateInvoice(() => api.updateInvoice(selectedInvoice.id, { memo: values.memo.trim() || null })),
+                onAddLine: (values) => mutateInvoice(() => api.addLine({ invoice_id: selectedInvoice.id, description: values.description.trim(), quantity: values.quantity.trim() || "1", unit_amount: values.unit_amount.trim(), period: values.period || null })),
+                onUpdateLine: (lineId, values) => mutateInvoice(() => api.updateLine(lineId, { description: values.description.trim(), quantity: values.quantity.trim(), unit_amount: values.unit_amount.trim(), period: values.period || null })),
+                onDeleteLine: (lineId) => mutateInvoice(() => api.deleteLine(lineId)),
+                onIssue: () => mutateInvoice(() => api.issueInvoice(selectedInvoice.id)),
                 onDeleteDraft: async () => {
-                  const result = await mutate(() => api.deleteDraftInvoice(selectedInvoice.id));
+                  const result = await mutateInvoice(() => api.deleteDraftInvoice(selectedInvoice.id));
                   if (result.ok) setSelectedInvoiceId(null);
                   return result;
                 },
-                onVoid: (reason) => mutate(() => api.voidInvoice(selectedInvoice.id, reason.trim())),
+                onVoid: (reason) => mutateInvoice(() => api.voidInvoice(selectedInvoice.id, reason.trim())),
               }}
             />
           ) : <p style={hintStyle}>Select an invoice to see its lines and actions.</p>}
@@ -172,6 +206,30 @@ export default function BillingPage() {
             )}
           </SectionView>
         </section>
+      </TabPanel>
+
+      <TabPanel id="what-next" active={tab}>
+        <BillingProjectionWorkbench
+          api={api}
+          clientId={clientId}
+          clients={clients}
+          canGenerate={hasAction("candidates.manage")}
+          onGenerated={() => { setCandidateRefreshToken((value) => value + 1); void refresh(); }}
+        />
+      </TabPanel>
+
+      <TabPanel id="pricing" active={tab}>
+        <BillingPricingWorkbench
+          api={api}
+          clientId={clientId}
+          clients={clients}
+          canView={hasAction("pricing.view")}
+          canManage={hasAction("pricing.manage")}
+        />
+      </TabPanel>
+
+      <TabPanel id="settings" active={tab}>
+        <BillingSettingsWorkbench api={api} clientId={clientId} clients={clients} actions={billingActions || []} viewerRole={viewer?.role || ""} />
       </TabPanel>
 
       <TabPanel id="receivables" active={tab}>

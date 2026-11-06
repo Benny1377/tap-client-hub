@@ -220,15 +220,15 @@ export function ClientPicker({ clients, value, onChange }: { clients: Array<{ id
 }
 
 /** A one-click mutation button that shows the server's error next to it. */
-export function ActionButton({ label, onAction, quiet }: { label: string; onAction: () => Promise<ApiResult<unknown>>; quiet?: boolean }) {
+export function ActionButton({ label, onAction, quiet, disabled = false }: { label: string; onAction: () => Promise<ApiResult<unknown>>; quiet?: boolean; disabled?: boolean }) {
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<ServerError>(null);
   return (
     <span style={{ display: "inline-flex", flexDirection: "column", gap: 4 }}>
       <button
         type="button"
-        disabled={pending}
-        style={{ ...(quiet ? quietButtonStyle : buttonStyle), opacity: pending ? 0.6 : 1 }}
+        disabled={pending || disabled}
+        style={{ ...(quiet ? quietButtonStyle : buttonStyle), opacity: pending || disabled ? 0.6 : 1 }}
         onClick={async () => {
           setPending(true);
           setError(null);
