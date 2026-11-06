@@ -16,7 +16,7 @@
 - All 93 hosted authenticated checks pass: 90 in the main run, plus A3, A4 and D8 in a separate rerun after the Collections account was reset.
 - Billing-staff browser smoke on the deployment passed, including creating a draft through the UI.
 - Local at the same code: Phase 2 matrix 89/89, Phase 1 matrix 37/37, `test.sh --local`, concurrency test, 50/50 unit tests, `tsc`.
-- Findings 1 to 9 from the first validation are fixed, or resolved on the contract side (finding 6).
+- Findings 1 to 5 and 8 from the first validation are fixed, and finding 6 is resolved on the contract side. Findings 7 and 9 are addressed in `d9cd4a6`, by Engineer B's account and SQL tests; the matrix does not test them directly. Finding 8 was checked by code reading only.
 - The two extension endpoints and the extra error codes are in the Phase 2 contract.
 - No migration automation found on `dev` at `f9c729f`; migrations are applied deliberately.
 - The test harness pins writes to the sandbox and restores temporary settings on failure. After the hosted run, policy and remittance matched their snapshot exactly.
