@@ -1,6 +1,7 @@
 # TAP Client Hub Handoffs
 
 - [Billing project initialization](2026-10-19-billing-project-initialization.md)
+- [Payroll credential access remediation](2026-11-06-payroll-credential-access-remediation.md)
 - [Billing Phase 1 invariants and fixtures](2026-10-24-billing-phase1-invariants-and-fixtures.md)
 - [Collections Phase 4 backend handoff](2026-10-18-collections-phase4-backend.md)
 
