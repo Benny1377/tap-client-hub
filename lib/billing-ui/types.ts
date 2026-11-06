@@ -22,6 +22,37 @@ export interface InvoiceLine {
   unit_amount: Numeric;
   amount: Numeric;
   sort_order: number;
+  /** Active Phase 2 candidate provenance; populated by the invoice-list serializer. */
+  candidateIds?: string[];
+}
+
+export interface BillingCandidate {
+  id: string;
+  clientId: string;
+  clientServiceId: string;
+  candidateType: "recurring" | "completion";
+  sourceAdapter?: "schedule" | "work_period_done" | "period_count_threshold" | "manual_confirmation";
+  sourceIdentity?: string;
+  state: "unpriced" | "open" | "drafted" | "invoiced" | "dismissed";
+  period: string | null;
+  candidateDate: string;
+  description: string;
+  serviceCode: string | null;
+  unit: string | null;
+  unitAmount: string | null;
+  priceSource: string | null;
+  source?: { adapter?: string; identity?: string };
+}
+
+export interface BillingBundle {
+  id: string;
+  name: string;
+  clientId: string;
+  unitAmount: string;
+  active: boolean;
+  effectiveFrom: string;
+  effectiveTo: string | null;
+  components: Array<{ clientServiceId: string }>;
 }
 
 export interface Invoice {

@@ -10,6 +10,7 @@ const api = loadTs("lib/billing-ui/api.ts");
 const ledger = loadTs("lib/billing-ui/ledger.ts");
 const validation = loadTs("lib/billing-ui/validation.ts");
 const vm = loadTs("lib/billing-ui/view-model.ts");
+const candidateOptions = loadTs("lib/billing-ui/candidate-options.ts").candidateOptions;
 
 let passed = 0;
 async function check(label, fn) {
@@ -69,6 +70,21 @@ await check("network failure is reported, not thrown", async () => {
   assert.equal(result.kind, "network");
 });
 
+await check("candidate choices keep bundles as one package and disable incomplete or unverifiable groups", () => {
+  const candidates = [
+    { id: "a", clientId: "c", clientServiceId: "cs-a", state: "open", candidateDate: "2026-11-01", description: "A", serviceCode: "A", unitAmount: "40.00", priceSource: "bundle", source: { adapter: "schedule" } },
+    { id: "b", clientId: "c", clientServiceId: "cs-b", state: "open", candidateDate: "2026-11-01", description: "B", serviceCode: "B", unitAmount: "40.00", priceSource: "bundle", source: { adapter: "schedule" } },
+    { id: "c", clientId: "c", clientServiceId: "cs-c", state: "open", candidateDate: "2026-11-02", description: "C", serviceCode: "C", unitAmount: "12.00", priceSource: "override", source: { adapter: "manual_confirmation" } },
+  ];
+  const bundles = [{ id: "bundle", name: "Package", clientId: "c", unitAmount: "70.00", active: true, effectiveFrom: "2026-01-01", effectiveTo: null, components: [{ clientServiceId: "cs-a" }, { clientServiceId: "cs-b" }] }];
+  const options = candidateOptions(candidates, bundles);
+  assert.deepEqual(options.find((option) => option.key === "bundle:bundle:2026-11-01").candidateIds, ["a", "b"]);
+  assert.equal(options.find((option) => option.key === "bundle:bundle:2026-11-01").amount, "70.00");
+  assert.deepEqual(options.find((option) => option.key === "c").candidateIds, ["c"]);
+  assert.equal(candidateOptions([candidates[0]], [bundles[0]])[0].selectable, false);
+  assert.equal(candidateOptions([candidates[0]], null)[0].selectable, false);
+});
+
 await check("client filter is passed as client_id and requests are not cached", async () => {
   const { fetchImpl, calls } = fakeFetch({ "GET /api/billing/receivables": [200, { receivables: [] }] });
   const seen = [];
@@ -79,7 +95,8 @@ await check("client filter is passed as client_id and requests are not cached", 
 
 await check("mutations call the contract routes with the contract bodies", async () => {
   const { fetchImpl, calls } = fakeFetch({
-    "POST /api/billing/invoices/inv-1": [200, { invoice: invoice() }],
+    "POST /api/billing/invoices/inv-1/issue": [200, { invoice: invoice() }],
+    "POST /api/billing/invoices/inv-1/void": [200, { invoice: invoice() }],
     "POST /api/billing/allocations": [201, { allocation_id: "a-1" }],
     "POST /api/collections/events/approve": [201, { event: {} }],
     "PATCH /api/collections/holds": [200, { hold: {} }],
@@ -97,21 +114,79 @@ await check("mutations call the contract routes with the contract bodies", async
   await client.deleteLine("l-1");
   await client.deleteDraftInvoice("inv-1");
   assert.deepEqual(calls.map((c) => `${c.method} ${c.url}`), [
-    "POST /api/billing/invoices/inv-1",
-    "POST /api/billing/invoices/inv-1",
+    "POST /api/billing/invoices/inv-1/issue",
+    "POST /api/billing/invoices/inv-1/void",
     "POST /api/billing/allocations",
     "POST /api/collections/events/approve",
     "PATCH /api/collections/holds",
     "PATCH /api/collections/rules",
-    "DELETE /api/billing/invoice-lines?id=l-1",
+    "DELETE /api/billing/invoice-lines",
     "DELETE /api/billing/invoices/inv-1",
   ]);
-  assert.deepEqual(calls[0].body, { action: "issue" });
-  assert.deepEqual(calls[1].body, { action: "void", reason: "Duplicate" });
+  assert.deepEqual(calls[0].body, {});
+  assert.deepEqual(calls[1].body, { reason: "Duplicate" });
   assert.deepEqual(calls[2].body, { payment_id: "p-1", invoice_id: "inv-1", amount: "10.00" });
   assert.deepEqual(calls[3].body, { event_id: "e-1", event_type: "escalated" });
   assert.deepEqual(calls[4].body, { id: "h-1" });
   assert.deepEqual(calls[5].body, { rules: [{ stage: 1, days_past_due: 2 }], settings: { minimum_balance: 80 } });
+  assert.deepEqual(calls[6].body, { id: "l-1" });
+});
+
+await check("Phase 3 candidate reads and candidate-backed drafts use camelCase contract shapes", async () => {
+  const { fetchImpl, calls } = fakeFetch({
+    "GET /api/billing/permissions": [200, { role: "staff", modules: ["Billing"], actions: ["candidates.view"] }],
+    "GET /api/billing/candidates": [200, { items: [], nextCursor: "opaque" }],
+    "GET /api/billing/bundles": [200, { items: [], nextCursor: null }],
+    "POST /api/billing/invoices/from-candidates": [201, { invoice: { id: "inv-new" }, refresh: ["candidates", "invoice", "receivables"] }],
+  });
+  const client = api.createBillingApi(fetchImpl);
+  assert.equal((await client.permissions()).data.actions[0], "candidates.view");
+  await client.candidates({ clientId: "client-1", state: "open", limit: 50, cursor: "opaque-cursor" });
+  await client.bundles("client-1");
+  await client.createInvoiceFromCandidates({ candidateIds: ["candidate-1"], memo: "November" });
+  assert.equal(calls[1].url, "/api/billing/candidates?clientId=client-1&state=open&limit=50&cursor=opaque-cursor");
+  assert.equal(calls[2].url, "/api/billing/bundles?clientId=client-1&active=true&limit=100");
+  assert.deepEqual(calls[3].body, { candidateIds: ["candidate-1"], memo: "November" });
+});
+
+await check("Phase 3 workbench API calls use frozen paths, methods, camelCase bodies, and reasons", async () => {
+  const { fetchImpl, calls } = fakeFetch({
+    "GET /api/billing/candidates/schedule?from=2026-11-01&to=2026-11-30&clientId=client-1": [200, { projection: "projected", items: [] }],
+    "POST /api/billing/candidates/generate": [200, { created: 0, unpriced: 0, existing: 0, skipped: 0, skippedByReason: {}, candidateIds: [] }],
+    "GET /api/billing/client-services?clientId=client-1": [200, { items: [] }],
+    "GET /api/billing/client-pricing?clientId=client-1": [200, { clientId: "client-1", overrides: [], bundles: [] }],
+    "GET /api/billing/bundles?clientId=client-1&limit=100&cursor=bundle-cursor": [200, { items: [], nextCursor: null }],
+    "GET /api/billing/permissions/policy": [200, { policies: [] }],
+    "PATCH /api/billing/permissions/policy": [200, { policies: [], refresh: ["permissions"] }],
+    "POST /api/billing/rate-cards": [201, { rateCard: {} }],
+    "PUT /api/billing/bundles/bundle-1/components": [200, { components: [] }],
+    "PATCH /api/billing/settings/remittance": [200, { remittance: {}, updatedAt: "now" }],
+  });
+  const client = api.createBillingApi(fetchImpl);
+  await client.schedule({ from: "2026-11-01", to: "2026-11-30", clientId: "client-1" });
+  await client.generateCandidates({ from: "2026-11-01", to: "2026-11-30", clientId: "client-1" });
+  await client.clientServices("client-1");
+  await client.clientPricing("client-1");
+  await client.bundleCatalog("client-1", "bundle-cursor");
+  await client.permissionsPolicy();
+  await client.updatePermissionsPolicy([{ actionKey: "billing.view", allowedRoles: ["staff"], enabled: true }], "contract test");
+  await client.createRateCard({ name: "Standard", effectiveFrom: "2026-11-01", reason: "contract test" });
+  await client.setBundleComponents("bundle-1", [{ clientServiceId: "service-1" }], "contract test");
+  await client.updateRemittance({ payeeName: "TAP", address: "Address", instructions: "Mail check", reason: "contract test" });
+  assert.deepEqual(calls.map((call) => `${call.method} ${call.url}`), [
+    "GET /api/billing/candidates/schedule?from=2026-11-01&to=2026-11-30&clientId=client-1",
+    "POST /api/billing/candidates/generate",
+    "GET /api/billing/client-services?clientId=client-1",
+    "GET /api/billing/client-pricing?clientId=client-1",
+    "GET /api/billing/bundles?clientId=client-1&limit=100&cursor=bundle-cursor",
+    "GET /api/billing/permissions/policy",
+    "PATCH /api/billing/permissions/policy",
+    "POST /api/billing/rate-cards",
+    "PUT /api/billing/bundles/bundle-1/components",
+    "PATCH /api/billing/settings/remittance",
+  ]);
+  assert.deepEqual(calls[6].body, { policies: [{ actionKey: "billing.view", allowedRoles: ["staff"], enabled: true }], reason: "contract test" });
+  assert.deepEqual(calls[8].body, { components: [{ clientServiceId: "service-1" }], reason: "contract test" });
 });
 
 // --- Refresh after mutation ------------------------------------------------

@@ -11,6 +11,8 @@ import type {
 } from "@/lib/collections-api";
 import type {
   ClientOption,
+  BillingBundle,
+  BillingCandidate,
   CollectionEvent,
   CollectionRuleSettings,
   CollectionHold,
@@ -121,6 +123,67 @@ export function createBillingApi(fetchImpl: FetchLike) {
     },
 
     invoices: (clientId?: string | null) => request<{ invoices: Invoice[] }>(fetchImpl, withClient("/api/billing/invoices", clientId)),
+    permissions: () => request<{ role: string; modules: string[]; actions: string[] }>(fetchImpl, "/api/billing/permissions"),
+    permissionsPolicy: () => request<{ policies: Array<{ actionKey: string; allowedRoles: string[]; enabled: boolean }> }>(fetchImpl, "/api/billing/permissions/policy"),
+    updatePermissionsPolicy: (policies: Array<{ actionKey: string; allowedRoles: string[]; enabled: boolean }>, reason: string) =>
+      patch<{ policies: Array<{ actionKey: string; allowedRoles: string[]; enabled: boolean }>; refresh?: string[] }>(fetchImpl, "/api/billing/permissions/policy", { policies, reason }),
+    clientServices: (clientId: string) => request<{ items: Array<{ id: string; active: boolean; frequency: string | null; serviceCode: string | null; serviceName: string | null }> }>(fetchImpl, `/api/billing/client-services?clientId=${encodeURIComponent(clientId)}`),
+    candidates: (params: { clientId?: string | null; state?: string; limit?: number; cursor?: string | null } = {}) => {
+      const query = new URLSearchParams();
+      if (params.clientId) query.set("clientId", params.clientId);
+      if (params.state) query.set("state", params.state);
+      if (params.limit !== undefined) query.set("limit", String(params.limit));
+      if (params.cursor) query.set("cursor", params.cursor);
+      const suffix = query.toString();
+      return request<{ items: BillingCandidate[]; nextCursor: string | null }>(fetchImpl, `/api/billing/candidates${suffix ? `?${suffix}` : ""}`);
+    },
+    bundles: (clientId: string, cursor?: string | null) => {
+      const query = new URLSearchParams({ clientId, active: "true", limit: "100" });
+      if (cursor) query.set("cursor", cursor);
+      return request<{ items: BillingBundle[]; nextCursor: string | null }>(fetchImpl, `/api/billing/bundles?${query.toString()}`);
+    },
+    bundleCatalog: (clientId: string, cursor?: string | null) => {
+      const query = new URLSearchParams({ clientId, limit: "100" });
+      if (cursor) query.set("cursor", cursor);
+      return request<{ items: BillingBundle[]; nextCursor: string | null }>(fetchImpl, `/api/billing/bundles?${query.toString()}`);
+    },
+    rateCards: (cursor?: string | null) => {
+      const query = new URLSearchParams({ limit: "100" });
+      if (cursor) query.set("cursor", cursor);
+      return request<{ items: Array<Record<string, unknown>>; nextCursor: string | null }>(fetchImpl, `/api/billing/rate-cards?${query}`);
+    },
+    rateCard: (id: string) => request<{ rateCard: Record<string, unknown>; entries: Array<Record<string, unknown>> }>(fetchImpl, `/api/billing/rate-cards/${encodeURIComponent(id)}`),
+    clientPricing: (clientId: string, clientServiceId?: string) => {
+      const query = new URLSearchParams({ clientId });
+      if (clientServiceId) query.set("clientServiceId", clientServiceId);
+      return request<{ clientId: string; overrides: Array<Record<string, unknown>>; bundles: BillingBundle[] }>(fetchImpl, `/api/billing/client-pricing?${query}`);
+    },
+    schedule: (params: { from: string; to: string; clientId: string }) => {
+      const query = new URLSearchParams(params);
+      return request<{ projection: "projected"; items: Array<Record<string, unknown>> }>(fetchImpl, `/api/billing/candidates/schedule?${query}`);
+    },
+    generateCandidates: (input: { from: string; to: string; clientId: string }) =>
+      post<{ created: number; unpriced: number; existing: number; skipped: number; skippedByReason: Record<string, number>; candidateIds: string[] }>(fetchImpl, "/api/billing/candidates/generate", input),
+    createRateCard: (input: Record<string, unknown>) => post<Record<string, unknown>>(fetchImpl, "/api/billing/rate-cards", input),
+    updateRateCard: (id: string, input: Record<string, unknown>) => patch<Record<string, unknown>>(fetchImpl, `/api/billing/rate-cards/${encodeURIComponent(id)}`, input),
+    createRateEntry: (id: string, input: Record<string, unknown>) => post<Record<string, unknown>>(fetchImpl, `/api/billing/rate-cards/${encodeURIComponent(id)}/entries`, input),
+    updateRateEntry: (id: string, entryId: string, input: Record<string, unknown>) => patch<Record<string, unknown>>(fetchImpl, `/api/billing/rate-cards/${encodeURIComponent(id)}/entries/${encodeURIComponent(entryId)}`, input),
+    createPriceOverride: (input: Record<string, unknown>) => post<Record<string, unknown>>(fetchImpl, "/api/billing/client-pricing/overrides", input),
+    updatePriceOverride: (id: string, input: Record<string, unknown>) => patch<Record<string, unknown>>(fetchImpl, `/api/billing/client-pricing/overrides/${encodeURIComponent(id)}`, input),
+    createBundle: (input: Record<string, unknown>) => post<Record<string, unknown>>(fetchImpl, "/api/billing/bundles", input),
+    updateBundle: (id: string, input: Record<string, unknown>) => patch<Record<string, unknown>>(fetchImpl, `/api/billing/bundles/${encodeURIComponent(id)}`, input),
+    setBundleComponents: (id: string, components: Array<{ clientServiceId: string }>, reason: string) =>
+      request<Record<string, unknown>>(fetchImpl, `/api/billing/bundles/${encodeURIComponent(id)}/components`, { method: "PUT", body: JSON.stringify({ components, reason }) }),
+    terms: () => request<Record<string, unknown> & { overrides: Array<Record<string, unknown>> }>(fetchImpl, "/api/billing/settings/terms"),
+    updateTerms: (input: Record<string, unknown>) => patch<Record<string, unknown>>(fetchImpl, "/api/billing/settings/terms", input),
+    createTermsOverride: (input: Record<string, unknown>) => post<Record<string, unknown>>(fetchImpl, "/api/billing/settings/terms/overrides", input),
+    updateTermsOverride: (id: string, input: Record<string, unknown>) => patch<Record<string, unknown>>(fetchImpl, `/api/billing/settings/terms/overrides/${encodeURIComponent(id)}`, input),
+    remittance: () => request<{ remittance: { payeeName: string | null; address: string | null; instructions: string | null }; updatedAt: string | null }>(fetchImpl, "/api/billing/settings/remittance"),
+    updateRemittance: (input: Record<string, unknown>) => patch<Record<string, unknown>>(fetchImpl, "/api/billing/settings/remittance", input),
+    completionMaps: (clientServiceId?: string) => request<{ items: Array<Record<string, unknown>> }>(fetchImpl, `/api/billing/completion-source-maps${clientServiceId ? `?clientServiceId=${encodeURIComponent(clientServiceId)}` : ""}`),
+    createCompletionMap: (input: Record<string, unknown>) => post<Record<string, unknown>>(fetchImpl, "/api/billing/completion-source-maps", input),
+    updateCompletionMap: (id: string, input: Record<string, unknown>) => patch<Record<string, unknown>>(fetchImpl, `/api/billing/completion-source-maps/${encodeURIComponent(id)}`, input),
+    manualConfirmation: (input: Record<string, unknown>) => post<Record<string, unknown>>(fetchImpl, "/api/billing/candidates/manual-confirmations", input),
     receivables: (clientId?: string | null) => request<ReceivablesResponse>(fetchImpl, withClient("/api/billing/receivables", clientId)),
     payments: (clientId?: string | null) => request<{ payments: Payment[] }>(fetchImpl, withClient("/api/billing/payments", clientId)),
     holds: (clientId?: string | null) => request<{ holds: CollectionHold[] }>(fetchImpl, withClient("/api/collections/holds", clientId)),
@@ -174,21 +237,23 @@ export function createBillingApi(fetchImpl: FetchLike) {
     /** Phase 2: a draft is created from a client and an optional memo. The server assigns the number and dates at issue. */
     createInvoice: (input: { clientId: string; memo?: string }) =>
       post<{ invoice: { id: string } }>(fetchImpl, "/api/billing/invoices", input),
+    createInvoiceFromCandidates: (input: { candidateIds: string[]; memo?: string }) =>
+      post<{ invoice: { id: string }; refresh?: string[] }>(fetchImpl, "/api/billing/invoices/from-candidates", input),
     /** Only the memo of a draft is editable. */
     updateInvoice: (id: string, input: Partial<Pick<Invoice, "memo">>) =>
       patch<{ invoice: Invoice }>(fetchImpl, `/api/billing/invoices/${encodeURIComponent(id)}`, input),
     deleteDraftInvoice: (id: string) =>
       request<{ deleted: boolean }>(fetchImpl, `/api/billing/invoices/${encodeURIComponent(id)}`, { method: "DELETE" }),
-    issueInvoice: (id: string) => post<{ invoice: Invoice }>(fetchImpl, `/api/billing/invoices/${encodeURIComponent(id)}`, { action: "issue" }),
+    issueInvoice: (id: string) => post<{ invoice: Invoice; refresh?: string[] }>(fetchImpl, `/api/billing/invoices/${encodeURIComponent(id)}/issue`, {}),
     voidInvoice: (id: string, reason: string) =>
-      post<{ invoice: Invoice }>(fetchImpl, `/api/billing/invoices/${encodeURIComponent(id)}`, { action: "void", reason }),
+      post<{ invoice: Invoice; returnedCandidateIds?: string[]; refresh?: string[] }>(fetchImpl, `/api/billing/invoices/${encodeURIComponent(id)}/void`, { reason }),
 
     addLine: (input: { invoice_id: string; description: string; quantity: string; unit_amount: string; period?: string | null }) =>
       post<{ line: InvoiceLine }>(fetchImpl, "/api/billing/invoice-lines", input),
     updateLine: (id: string, input: Partial<{ description: string; quantity: string; unit_amount: string; period: string | null }>) =>
       patch<{ line: InvoiceLine }>(fetchImpl, "/api/billing/invoice-lines", { id, ...input }),
     deleteLine: (id: string) =>
-      request<{ deleted: boolean }>(fetchImpl, `/api/billing/invoice-lines?id=${encodeURIComponent(id)}`, { method: "DELETE" }),
+      request<{ deleted: boolean; returnedCandidateIds?: string[]; refresh?: string[] }>(fetchImpl, "/api/billing/invoice-lines", { method: "DELETE", body: JSON.stringify({ id }) }),
 
     recordPayment: (input: { client_id: string; received_on: string; amount: string; method: string; reference?: string | null }) =>
       post<{ payment: Payment }>(fetchImpl, "/api/billing/payments", input),

@@ -54,6 +54,9 @@ check("sections show a loading status", () => {
 check("pages render every section as loading before the API responds", () => {
   const billing = render(h(BillingPage));
   for (const label of ["invoices", "payments", "receivables"]) assert.match(billing, new RegExp(`Loading ${label}…`));
+  for (const label of ["What bills next", "Clients & prices", "Settings"]) assert.match(billing, new RegExp(label.replaceAll("&", "&amp;")));
+  assert.match(billing, /Candidate generation requires Owner\/Admin/);
+  assert.match(billing, /Projected items/);
   const collectionsHtml = render(h(CollectionsPage));
   for (const label of ["AR insights", "call list", "Collections activity", "holds"]) assert.match(collectionsHtml, new RegExp(`Loading ${label}…`));
 });
@@ -134,6 +137,22 @@ check("draft with lines: lines are editable and can be issued", () => {
   const html = detail(invoice({ invoice_lines: [line] }), staff);
   assert.match(html, />Issue invoice</);
   assert.match(html, /data-line-row="l-1"[\s\S]*>Edit<[\s\S]*>Remove</);
+});
+
+check("candidate-linked draft lines show provenance lock and cannot be edited or removed", () => {
+  const linked = { ...line, candidateIds: ["candidate-1", "candidate-2"] };
+  const html = detail(invoice({ invoice_lines: [linked] }), staff);
+  assert.match(html, /data-candidate-linked="true"/);
+  assert.match(html, /Locked · linked to 2 billable candidates/);
+  assert.doesNotMatch(html, /data-line-row="l-1"[\s\S]*?>Edit<|data-line-row="l-1"[\s\S]*?>Remove</);
+});
+
+check("draft controls follow effective Billing permission actions", () => {
+  const html = render(h(invoicePanels.InvoiceDetail, {
+    invoice: invoice({ invoice_lines: [line] }), receivable: null, viewer: staff,
+    permissions: ["billing.view"], handlers,
+  }));
+  assert.doesNotMatch(html, /aria-label="Add line"|aria-label="Edit draft"|Issue invoice|data-delete-draft/);
 });
 
 check("issued for staff and managers: locked, void requires Owner/Admin", () => {
