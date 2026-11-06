@@ -1,6 +1,7 @@
 # TAP Client Hub Contracts
 
 - [Billing Project Foundation](billing-project-foundation.md) — Draft; owner decisions approved, awaiting engineer review.
+- [Billing Phase 3: workbench and configuration UI](billing-phase-3-workbench.md) — Draft; endpoint-consumer contract, gated on Phase 2 closeout and joint acknowledgement.
 - [Phase 4: QuickBooks A/R PDF intake](collections-phase-4-ar-pdf-intake.md)
 - [Phase 3 source-identity addendum](collections-phase-3-source-identity-addendum.md)
 
