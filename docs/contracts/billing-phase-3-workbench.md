@@ -1,6 +1,6 @@
 # Billing Phase 3: workbench and configuration UI
 
-State: **Draft for Engineer A and owner review.** Owner approved the scope boundary on 2026-11-06: manual payment and reconciliation workflows remain out of Phase 3 and require a separate future contract; they are not implicitly assigned to Phase 4. This contract adds no API, schema, or database requirements. It consumes the Phase 2 boundary in [Billing Phase 2: pricing and billable candidates](billing-phase-2-pricing-and-candidates.md). UI implementation begins only after Phase 2 backend closeout and this contract is acknowledged by both engineers and the owner.
+State: **Draft, owner-approved for this revision (2026-11-06), pending Engineer A acknowledgement.** Owner approved the scope boundary on 2026-11-06: manual payment and reconciliation workflows remain out of Phase 3 and require a separate future contract; they are not implicitly assigned to Phase 4. This revision adds two narrowly scoped read endpoints and one additive invoice-line provenance field requested in Engineer A's review; it does not change persistence or the Phase 2 ledger rules. It consumes the Phase 2 boundary in [Billing Phase 2: pricing and billable candidates](billing-phase-2-pricing-and-candidates.md). UI implementation begins only after Phase 2 backend closeout and this contract is acknowledged by both engineers and the owner.
 
 ## Goal and scope
 
@@ -16,7 +16,7 @@ The sequence is an implementation order, not a data dependency order. Existing P
 ## Contract boundaries
 
 - All reads and writes use the Phase 2 `/api/billing/*` endpoints. No UI writes directly to Supabase or Operations tables.
-- Phase 2 canonical request/response fields are camelCase. Existing Phase 1 invoice-list, receivables, and ordinary manual-line routes retain their snake_case compatibility shapes. A typed client-side view-model adapter may normalize these legacy reads for rendering, but must not silently change server contracts. New candidate/draft flows and explicit issue/void endpoints use their Phase 2 camelCase shapes; do not use the deprecated `POST /invoices/[id]` action adapter.
+- Phase 2 canonical request/response fields are camelCase. Existing Phase 1 invoice-list, receivables, and ordinary manual-line routes retain their snake_case compatibility shapes. `GET /invoices` adds only the camelCase `candidateIds` array to each legacy snake_case invoice-line object; it retains all prior fields and does not expose the nested link-table payload. A typed client-side view-model adapter may normalize these legacy reads for rendering, but must not silently change server contracts. New candidate/draft flows and explicit issue/void endpoints use their Phase 2 camelCase shapes; do not use the deprecated `POST /invoices/[id]` action adapter.
 - Money is received as decimal strings and formatted for display only. The browser does not compute authoritative amounts, balances, taxes, or due dates.
 - Every mutation remains server-authorized and audited. UI permission checks control presentation only and never replace server checks.
 - Operations remains read-only. Billing may read only the four contracted source tables and fields described in Phase 2; it must not expose Operations secrets or unrelated client-service fields.
@@ -38,6 +38,8 @@ Extend the current invoice list/detail view. Keep manual draft creation availabl
 - After mutations, refresh the resource groups named by the API response (or the documented Phase 2 refresh target); do not locally infer candidate state.
 
 Primary endpoints: existing `GET /api/billing/invoices?client_id=` and `GET /api/billing/receivables`; Phase 2 `POST /api/billing/invoices`, `POST /api/billing/invoices/from-candidates`, `PATCH/DELETE /api/billing/invoices/[id]`, `POST /api/billing/invoices/[id]/issue`, `POST /api/billing/invoices/[id]/void`, `GET /api/billing/candidates`, and `POST /api/billing/candidates/[id]/dismiss|reopen|reprice`; plus `/api/billing/invoice-lines`. Do not assume a standalone invoice-detail GET exists; select from the loaded list and refetch it after a mutation.
+
+Candidate-linked invoice lines include the additive `candidateIds` array; only active provenance links are returned. Example legacy response fragment: `{"id":"inv_01","invoice_lines":[{"id":"line_01","description":"Monthly bookkeeping","candidateIds":["ca_01"]}]}`. A line with a non-empty array is locked against edits. After deletion or void, the refreshed response is authoritative.
 
 For candidate-linked line removal, send `DELETE /api/billing/invoice-lines` with JSON body `{"id":"<line UUID>"}`. The API also accepts a query ID for compatibility, but Phase 3 follows the frozen request example.
 
@@ -63,16 +65,30 @@ Provide client-scoped price visibility and administration for rate cards, client
 
 Primary endpoints: `/api/billing/rate-cards`, `/api/billing/rate-cards/[id]`, `/api/billing/rate-cards/[id]/entries[/entryId]`, `/api/billing/client-pricing?clientId=`, `/api/billing/client-pricing/overrides[/id]`, and `/api/billing/bundles[/id]` including `PUT /api/billing/bundles/[id]/components`.
 
+The workbench also uses read-only `GET /api/billing/client-services?clientId=<UUID>`, authorized when the caller has either `pricing.view` or `candidates.view`. It returns only `{items:[{id,active,frequency,serviceCode,serviceName}]}` from Operations; a valid client with no service assignments returns an empty list. Example: `{"items":[{"id":"cs_01","active":true,"frequency":"Monthly","serviceCode":"FIN","serviceName":"Bookkeeping"}]}`. Invalid or missing `clientId` returns `422 INVALID_INPUT`; source read failures return `500 BILLING_READ_FAILED`. It must never return payroll passwords, EFTPS credentials, or any other Operations columns.
+
 ### 4. Settings and completion-rule configuration
 
 Group firm defaults, effective-dated terms overrides, remittance instructions, action policy, and completion-source maps under Settings. Keep unrelated Collections settings out of this area.
 
 - Load effective actions from `GET /api/billing/permissions`. Gate each read/write control by its documented action. Owner/Admin-only actions remain non-delegable even if the UI is manipulated.
+- Load current values before showing the policy editor with `GET /api/billing/permissions/policy`. This read is Owner/Admin-only (`policy.manage`) and returns `{"policies":[{"actionKey":"billing.view","allowedRoles":["staff"],"enabled":true}]}`. It is a read-only projection of the fixed-key policy table. Billing staff, Collections-only, and unassigned users receive `403 FORBIDDEN`; save remains `PATCH /api/billing/permissions/policy`.
 - Terms UI reads/writes `GET/PATCH /api/billing/settings/terms` and `POST/PATCH /api/billing/settings/terms/overrides[/id]`. Display Net 15 and the configured service-period billing day; make clear that a service-level override takes precedence over a client override, then the firm default.
 - Remittance UI reads/writes `GET/PATCH /api/billing/settings/remittance`. Show a save confirmation, but never log or include remittance values in analytics, errors, or telemetry. Issued invoice remittance is the immutable server snapshot, not a live view of the current settings.
 - Completion rules are dynamic per client service and effective date. Use `GET/POST/PATCH /api/billing/completion-source-maps`; offer only the bounded adapters and predicate/date-rule combinations the server accepts. Do not hard-code a client or service mapping from the demo. Explain that a rule change applies to future not-yet-generated occurrences and does not rewrite existing candidates or invoices.
 - Manual confirmation is available only to users with `candidates.manage`; it requires the contract's idempotency key, service, date, source note, and reason. Treat a duplicate response as an existing confirmation, not a new one.
 - Policy editing uses `PATCH /api/billing/permissions/policy` and is Owner/Admin-only. Clearly distinguish delegated staff actions from the fixed Owner/Admin-only actions `policy.manage`, `invoices.void`, and `payments.reverse`.
+
+### Endpoint behavior clarifications from Engineer A review
+
+- After candidate generation, refetch candidates and invoices. The response's `candidateIds` identifies newly created rows only; it is not a refresh instruction.
+- Projection and generation require an explicit client or client-service scope. Never run an all-client projection or generation.
+- `PATCH /api/billing/settings/remittance` is a full replacement. Send all three fields (`payeeName`, `address`, `instructions`) every time; omitted fields are cleared to null.
+- Use the server's `{error,code}` response. `INVALID_INPUT` is a generic validation code; use client-side validation for field placement and show server error text as a summary. Do not expect one server error per form field.
+- Manual-confirmation replay with HTTP 200 and `created:false` means the same idempotency key returned the existing confirmation. HTTP 409 `DUPLICATE_RESOURCE` means a different confirmation already exists for that client service/date and is a conflict.
+- A bundle candidate carries the full package price on each component candidate. Group these by the client-specific bundle and candidate date; selecting a package selects the whole group. Never sum component candidate amounts as separate charges.
+- Collections-only users may read the invoice ledger but do not see Billing candidate/pricing panels. `GET /api/billing/permissions` returns 403 to Collections-only and unassigned users. Invoice-list access remains available to Collections even if `billing.view` is revoked; this legacy ledger-read rule does not grant candidate or pricing access.
+- Date-only values use the Houston firm calendar (Central time, `America/Chicago`) and must not shift across browser timezones. Acceptance is synthetic-only until the real Operations source is identified; run a real-shaped Operations compatibility check before production.
 
 ## Shared interaction and error behavior
 
@@ -92,5 +108,7 @@ Engineer A owns UI implementation and UI tests; Engineer B owns API/database con
 4. Rate-card/client override/bundle precedence, bundle single-line display, effective-date overlap errors, cursor pagination, and immutable historical amounts.
 5. Terms precedence, remittance edit/snapshot behavior, completion-map effective dates, manual-confirmation idempotency, and protected permission actions.
 6. Houston firm dates at month-end/DST, decimal-string display, empty/error/loading states, keyboard/accessibility checks, and no sensitive Operations/remittance values in logs.
+7. `GET /api/billing/permissions/policy` blocks every non-Owner/Admin role and returns the current full policy without mutation; `GET /api/billing/client-services` allows Billing `pricing.view` or `candidates.view` only and returns exactly the five documented fields.
+8. Invoice-list candidate provenance includes active candidate IDs on each line without changing legacy snake_case fields or exposing the junction table.
 
 Phase 3 is ready for handoff when the consumer acknowledges the contract, the Phase 2 endpoints are accepted as complete, each screen's API exists on the shared integration commit, and the integrated UI/API tests pass on synthetic data. Preview results must record URL, deployed commit, sandbox identity, test command, result, and limitations. This contract does not authorize production rollout or external payment/delivery integrations.

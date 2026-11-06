@@ -234,6 +234,39 @@ async function permissionGet() {
   const actions = await resolveBillingActions(access.identity);
   return NextResponse.json({role:access.identity.role,modules:access.identity.modules,actions},{headers:{"Cache-Control":"no-store"}});
 }
+async function policyGet() {
+  const access = await requireBillingAction("policy.manage");
+  if (access.response || !access.identity) return access.response;
+  const { data, error } = await createAdminClient()
+    .from("billing_action_policy")
+    .select("action_key,allowed_roles,enabled")
+    .order("action_key", { ascending: true });
+  if (error) return apiError("Unable to load Billing permission policy", "BILLING_READ_FAILED", 500);
+  return NextResponse.json({ policies: (data || []).map((row: Row) => ({
+    actionKey: row.action_key,
+    allowedRoles: row.allowed_roles,
+    enabled: row.enabled,
+  })) }, { headers: { "Cache-Control": "no-store" } });
+}
+async function clientServicesGet(request: NextRequest) {
+  const pricingAccess = await requireBillingAction("pricing.view");
+  if (pricingAccess.response) {
+    const candidateAccess = await requireBillingAction("candidates.view");
+    if (candidateAccess.response) return candidateAccess.response;
+  }
+  const clientId = request.nextUrl.searchParams.get("clientId");
+  if (!clientId || !UUID.test(clientId)) return apiError("clientId must be a UUID", "INVALID_INPUT", 422);
+  const { data, error } = await createAdminClient()
+    .from("client_services")
+    .select("id,active,frequency,service:services(code,name)")
+    .eq("client_id", clientId)
+    .order("id", { ascending: true });
+  if (error) return apiError("Unable to load client services", "BILLING_READ_FAILED", 500);
+  return NextResponse.json({ items: (data || []).map((row: Row) => {
+    const service = Array.isArray(row.service) ? row.service[0] : row.service;
+    return { id: row.id, active: row.active, frequency: row.frequency, serviceCode: service?.code ?? null, serviceName: service?.name ?? null };
+  }) }, { headers: { "Cache-Control": "no-store" } });
+}
 async function listResource(request: NextRequest, path: string[]) {
   const db=createAdminClient(), q=request.nextUrl.searchParams, limit=boundedLimit(q.get("limit"));
   if (!limit) return apiError("limit must be between 1 and 100","INVALID_INPUT",422);
@@ -365,6 +398,8 @@ async function mutate(request: NextRequest,path:string[],method:string) {
 async function handler(request:NextRequest,ctx:Ctx,method:string) {
   const path=await pathParts(ctx);
   if(path.length===1&&path[0]==="permissions"&&method==="GET")return permissionGet();
+  if(path.length===2&&path[0]==="permissions"&&path[1]==="policy"&&method==="GET")return policyGet();
+  if(path.length===1&&path[0]==="client-services"&&method==="GET")return clientServicesGet(request);
   const access=await authorized(path,method);
   if(access.response)return access.response;
   let resourceId: string | undefined;

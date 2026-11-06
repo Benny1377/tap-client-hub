@@ -12,11 +12,24 @@ export async function GET(request: NextRequest) {
   if (access.response) return access.response;
   const clientId = request.nextUrl.searchParams.get("client_id");
   const db = createAdminClient();
-  let query = db.from("invoices").select("*, invoice_lines(*)").order("issue_date", { ascending: false });
+  let query = db.from("invoices").select("*, invoice_lines(*, billing_candidate_line_links(candidate_id,active))").order("issue_date", { ascending: false });
   if (clientId) query = query.eq("client_id", clientId);
   const { data, error } = await query;
   if (error) return NextResponse.json({ error: "Unable to load invoices", code: "INVOICE_READ_FAILED" }, { status: 500 });
-  return NextResponse.json({ invoices: data || [] }, { headers: { "Cache-Control": "no-store" } });
+  const invoices = (data || []).map((invoice: Record<string, unknown>) => {
+    const { invoice_lines: lines, ...fields } = invoice;
+    return {
+      ...fields,
+      invoice_lines: Array.isArray(lines) ? lines.map((line: Record<string, unknown>) => {
+        const { billing_candidate_line_links: links, ...lineFields } = line;
+        const candidateIds = Array.isArray(links)
+          ? links.filter((link: Record<string, unknown>) => link.active !== false).map((link: Record<string, unknown>) => link.candidate_id)
+          : [];
+        return { ...lineFields, candidateIds };
+      }) : [],
+    };
+  });
+  return NextResponse.json({ invoices }, { headers: { "Cache-Control": "no-store" } });
 }
 
 export async function POST(request: NextRequest) {
