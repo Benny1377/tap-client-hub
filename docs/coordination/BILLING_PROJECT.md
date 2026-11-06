@@ -1,6 +1,8 @@
 # TAB-HUB Billing Project Register
 
-Status: **Phase 0 frozen; Phase 2 contract refinement under Engineer A review** on 2026-10-30. The Phase 2 document remains un-frozen; migration, deployment, production access, and external changes remain separately governed.
+Status as of 2026-11-06: **Phase 1 closeout evidence is reported complete; Phase 2 hosted Preview/matrix validation is pending; Phase 3 planning is prepared on `codex/billing-phase3-planning`.** The owner reports the two pending Phase 2 migrations are applied to the shared sandbox and supplied actual Operations schema/period-format evidence. These are owner-provided results; the latest hosted Preview run has not yet been recorded. See [Phase 3 planning and readiness](../handoffs/2026-11-06-billing-phase3-planning.md). No Phase 3 UI has started.
+
+The remainder of this register records the original Phase 0 planning snapshot and is retained as historical context; current branch, phase, and external validation status is tracked in the linked dated handoff.
 
 ## Source-of-truth order
 

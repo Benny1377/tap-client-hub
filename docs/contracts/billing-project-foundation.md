@@ -58,7 +58,7 @@ Server-side permission resolution combines authenticated role, assigned modules,
 
 - Active `client_services`, joined to `services`, supply service enrollment and cadence. Billing rules derive recurring schedules; `work_periods` (`stage = done`, `done_at`), `period_counts`, or explicit manual confirmation can supply configured one-off completion evidence.
 - An unmapped one-off service produces no candidate. The client-specific source map remains required before its Phase 2 implementation.
-- Manual reconciliation is UI over native payment/allocation APIs. A future suggestion endpoint is read-only and no new deposit entity is introduced.
+- Manual reconciliation is deferred from Phase 3. If separately approved later, it should build on native payment/allocation APIs; any future suggestion endpoint remains read-only, with no new deposit entity unless separately contracted.
 - Invoice void requires a non-empty reason. `GET /api/billing/invoices` supports status, client, and date filters.
 
 ## Phased delivery
@@ -68,8 +68,10 @@ Server-side permission resolution combines authenticated role, assigned modules,
 | 0 — Integration baseline | Use `codex/security-fixes` at `6859607`; reconcile ancestry, migrations, APIs, UI, and tests; assign path ownership | Shared inventory and accepted merge/implementation sequence; no duplicate work |
 | 1 — Native ledger release | Validate existing invoice/payment/allocation/audit/receivables foundation | Local synthetic schema/RPC/API/access/audit/RLS evidence |
 | 2 — Pricing and candidates | Rate card, overrides/bundles, effective dates, recurring schedules, and configured one-off completion triggers in one delivery | Frozen API contract, synthetic Operations fixtures, and candidate source/amount evidence |
-| 3 — Workbench and reconciliation | Draft-to-issue UI, remittance settings, manual payment/reconciliation | UI → API → database → reload and role-session evidence |
+| 3 — Workbench and configuration | Draft-to-issue UI, candidate/schedule workbench, client pricing, remittance and completion-rule settings | UI → API → database → reload and role-session evidence |
 | 4 — Deferred integrations | Consider delivery, processor/bank feed, portal, QuickBooks API separately | New approved contract |
+
+Manual payment and reconciliation workflows are deferred from Phase 3 and are not assigned to Phase 4 by this roadmap; they require a separately approved scope and contract. Phase 3 preserves the existing Payments and Receivables views and does not expand their workflows.
 
 ## API, refresh, and validation
 
