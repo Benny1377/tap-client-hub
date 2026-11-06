@@ -4,8 +4,13 @@
 // key instead of psql. Synthetic data only. Never prints credentials.
 //
 // WRITES TO A SHARED, FORWARD-ONLY SANDBOX. Everything it adds is tagged P2<tag>. Billing rows cannot be deleted (issued
-// invoices and audit rows are immutable), so there is no cleanup: the run prints a manifest of what it added. It temporarily
-// delegates a Billing action to staff and edits the remittance settings, and restores both at the end (see G and Z).
+// invoices and audit rows are immutable), so there is no cleanup: the run writes a manifest of every row it added.
+//
+// Pinning: the env file's Supabase host must equal BILLING_SANDBOX_HOST. Before any write the deployment must serve the Phase 2
+// routes and report the same remittance updatedAt as the pinned sandbox (P-1). After the first write through the deployment the
+// row must be visible in the pinned sandbox, or the run aborts (P0).
+// Temporary settings: the run delegates Billing actions and edits remittance. Both are snapshotted first and restored exactly from
+// the snapshot in a finally block (also on SIGINT/SIGTERM) and then verified (Z1, Z2), even if the run aborts part way.
 //
 // Required (nothing is guessed):
 //   BILLING_PREVIEW_URL            https URL of the Preview deployment (no trailing slash)
@@ -14,12 +19,14 @@
 //   BILLING_PREVIEW_ALLOW_WRITES   must be "yes"
 // Optional:
 //   BILLING_PREVIEW_COMMIT         the commit the Preview was built from (from the Vercel dashboard); printed in the report
+//   BILLING_PREVIEW_MANIFEST       path for the JSON manifest of added rows (default preview-matrix-manifest.json)
+//   BILLING_PREVIEW_SKIP_COLLECTIONS  "yes" records the Collections-only checks as SKIP if that account cannot sign in; otherwise the run stops
 //   BILLING_PREVIEW_ENV_FILE       default .env.preview.local (git-ignored). Keys: NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY,
 //                                  SUPABASE_SERVICE_ROLE_KEY, TEST_{OWNER,ADMIN,STAFF_BILLING,STAFF_COLLECTIONS,STAFF_UNASSIGNED}_{EMAIL,PASSWORD}
 // Run: BILLING_PREVIEW_URL=... BILLING_SANDBOX_HOST=... BILLING_PREVIEW_CLIENT_ID=... BILLING_PREVIEW_ALLOW_WRITES=yes \
 //        node tools/billing-preview/verify-billing-phase2-preview.mjs
 import { randomUUID } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 
 const BASE = (process.env.BILLING_PREVIEW_URL || "").replace(/\/$/, "");
 const envFile = process.env.BILLING_PREVIEW_ENV_FILE || ".env.preview.local";
@@ -45,6 +52,52 @@ const insertOne = async (table, row) => { const r = await rest("POST", table, ""
 const candState = async (id) => (await getRows("billing_candidates", `id=eq.${id}&select=state`))?.[0]?.state;
 const aud = (entity, actor) => countRows("audit_log", `entity=eq.${entity}&actor=eq.${actor}`);
 const added = { services: [], clientServices: [], workPeriods: [], periodCounts: [] };
+const loopbackBase = /^http:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/.test(BASE);
+const POLICY_COLS = "action_key,allowed_roles,enabled,reason";
+const REM_COLS = "payee_name,address,instructions,reason";
+const snapshot = { policy: null, remittance: null };
+const sortPolicy = (rows) => JSON.stringify([...(rows || [])].sort((a, b) => a.action_key.localeCompare(b.action_key)));
+// Direct service-role writes on purpose: this has to work even when the deployment is the thing that failed.
+async function restoreSharedSettings() {
+  const problems = [];
+  if (snapshot.policy) {
+    for (const row of (await getRows("billing_action_policy", `select=${POLICY_COLS}`)) || []) {
+      if (snapshot.policy.some((x) => x.action_key === row.action_key)) continue;
+      const r = await rest("DELETE", "billing_action_policy", `action_key=eq.${row.action_key}`);
+      if (r.status >= 300) problems.push(`delete ${row.action_key} ${r.status}`);
+    }
+    for (const { action_key, ...values } of snapshot.policy) {
+      const r = await rest("PATCH", "billing_action_policy", `action_key=eq.${action_key}`, values);
+      if (r.status >= 300) problems.push(`patch ${action_key} ${r.status} ${r.text.slice(0, 100)}`);
+    }
+  }
+  if (snapshot.remittance) {
+    const r = await rest("PATCH", "billing_remittance_settings", "singleton=eq.true", snapshot.remittance);
+    if (r.status >= 300) problems.push(`remittance ${r.status} ${r.text.slice(0, 100)}`);
+  }
+  return problems;
+}
+async function writeManifest(runTag) {
+  const ids = async (t, q) => ((await getRows(t, `${q}&select=id&limit=10000`)) || []).map((r) => r.id);
+  const inList = (a) => `in.(${a.join(",")})`;
+  const cs = inList(added.clientServices.length ? added.clientServices : ["00000000-0000-4000-8000-000000000000"]);
+  const b = {};
+  b.rateCards = await ids("billing_rate_cards", `name=like.P2%20${runTag}*`);
+  b.rateCardEntries = b.rateCards.length ? await ids("billing_rate_card_entries", `rate_card_id=${inList(b.rateCards)}`) : [];
+  b.clientServiceOverrides = await ids("billing_client_service_overrides", `client_service_id=${cs}`);
+  b.bundles = await ids("billing_bundles", `client_id=eq.${C1}`);
+  b.termsOverrides = await ids("billing_terms_overrides", `client_id=eq.${C1}`);
+  b.completionSourceMaps = await ids("billing_completion_source_maps", `client_service_id=${cs}`);
+  b.candidates = await ids("billing_candidates", `client_id=eq.${C1}`);
+  b.manualConfirmations = await ids("billing_manual_confirmations", `client_service_id=${cs}`);
+  b.invoices = await ids("invoices", `client_id=eq.${C1}`);
+  b.invoiceLines = b.invoices.length ? await ids("invoice_lines", `invoice_id=${inList(b.invoices)}`) : [];
+  b.payments = await ids("payments", `client_id=eq.${C1}`);
+  b.paymentAllocations = b.invoices.length ? await ids("payment_allocations", `invoice_id=${inList(b.invoices)}`) : [];
+  const path = process.env.BILLING_PREVIEW_MANIFEST || "preview-matrix-manifest.json";
+  writeFileSync(path, JSON.stringify({ tag: `P2${runTag}`, client: C1, ...added, billing: b }, null, 2) + "\n");
+  console.log(`\nAdded by this run: ${Object.entries({ ...added, ...b }).map(([k, v]) => `${k}=${v.length}`).join(" ")} (ids in ${path})`);
+}
 
 class Session {
   constructor() { this.jar = new Map(); }
@@ -60,6 +113,8 @@ class Session {
 const results = [];
 const rec = (id, name, ok, ev = "") => { results.push(ok); console.log(`${ok ? "PASS" : "FAIL"} ${id} ${name} :: ${String(ev).slice(0, 200)}`); };
 const info = (id, name, ev) => console.log(`INFO ${id} ${name} :: ${String(ev).slice(0, 200)}`);
+const skipped = [];
+const skip = (id, name, why) => { skipped.push(id); console.log(`SKIP ${id} ${name} :: ${why}`); };
 const DEC = /^-?\d+\.\d{2}$/;
 const tag = Date.now().toString(36).toUpperCase();
 let OWNER_ID, BILLING_ID;
@@ -84,7 +139,7 @@ const anon = new Session();
 const owner = await new Session().signIn("OWNER");
 const admin = await new Session().signIn("ADMIN");
 const billing = await new Session().signIn("STAFF_BILLING");
-const colls = await new Session().signIn("STAFF_COLLECTIONS");
+const colls = await new Session().signIn("STAFF_COLLECTIONS").catch((e) => { if (process.env.BILLING_PREVIEW_SKIP_COLLECTIONS === "yes") return null; throw e; });
 const unassigned = await new Session().signIn("STAFF_UNASSIGNED");
 {
   const ur = await fetch(`${API}/auth/v1/admin/users?per_page=1000`, { headers: { apikey: SRK, Authorization: `Bearer ${SRK}` } });
@@ -94,16 +149,35 @@ const unassigned = await new Session().signIn("STAFF_UNASSIGNED");
   if (!OWNER_ID || !BILLING_ID) throw new Error("Could not resolve the Owner and Billing test user ids in the sandbox");
 }
 const base = { mc: await aud("billing_manual_confirmations", BILLING_ID), pol: await aud("billing_action_policy", OWNER_ID), rc: await aud("billing_rate_cards", OWNER_ID), cand: await aud("billing_candidates", BILLING_ID), inv: await aud("invoices", BILLING_ID) };
+snapshot.policy = await getRows("billing_action_policy", `select=${POLICY_COLS}`);
+const remRows = await getRows("billing_remittance_settings", `select=${REM_COLS},updated_at`);
+if (!snapshot.policy || remRows?.length !== 1) throw new Error("Refusing: could not snapshot the policy and remittance settings");
+const { updated_at: sandboxRemAt, ...remValues } = remRows[0];
+snapshot.remittance = remValues;
 const remBefore = await owner.call("GET", "/api/billing/settings/remittance");
+const p2probe = await owner.call("GET", "/api/billing/rate-cards?limit=1");
+if (p2probe.status !== 200 || !Array.isArray(p2probe.json?.items)) throw new Error(`Refusing: this deployment does not serve the Phase 2 routes (${p2probe.status})`);
+if (remBefore.status !== 200 || new Date(remBefore.json?.updatedAt).getTime() !== new Date(sandboxRemAt).getTime()) throw new Error("Refusing: the deployment's remittance updatedAt differs from the pinned sandbox, so it is not reading this database");
+rec("P-1", "before any write: Phase 2 routes are served and the deployment reads the pinned sandbox (remittance updatedAt matches)", true, `${new URL(API).host} ${sandboxRemAt}`);
 const hdr = await fetch(BASE + "/", { redirect: "manual" });
 info("P-INFO", "Preview", `${BASE} commit(declared)=${process.env.BILLING_PREVIEW_COMMIT || "not given"} vercel-id=${hdr.headers.get("x-vercel-id") ? "present" : "absent"}`);
 
-// ---- Operations fixtures (synthetic, via psql) --------------------------------------------------------
+// Restore even when interrupted.
+for (const sig of ["SIGINT", "SIGTERM"]) process.on(sig, async () => {
+  console.log(`\n${sig}: restoring shared settings`);
+  const p = await restoreSharedSettings();
+  console.log(p.length ? "RESTORE PROBLEMS: " + p.join("; ") : "restored");
+  process.exit(130);
+});
+
+try {
+// ---- Operations fixtures (synthetic, through the sandbox REST API) ------------------------------------
 const cs = {};
 for (const [k, suf, f] of [["rec", "REC", "monthly"], ["unp", "UNP", "monthly"], ["wp", "WP", null], ["cnt", "CNT", null], ["man", "MAN", null], ["none", "NOMAP", "monthly"], ["b1", "B1", "monthly"], ["b2", "B2", "monthly"]]) cs[k] = await mkService(suf, f);
 // The real Operations tables store periods as text YYYYMM; Billing normalizes them to YYYY-MM.
 added.workPeriods.push((await insertOne("work_periods", { client_service_id: cs.wp, period: "202610", stage: "done", done_at: "2026-10-20T15:00:00+00:00" })).id);
-added.periodCounts.push((await insertOne("period_counts", { client_service_id: cs.cnt, period: "202610", processed: 3, expected: 3 })).id);
+await insertOne("period_counts", { client_service_id: cs.cnt, period: "202610", processed: 3, expected: 3 });
+added.periodCounts.push(`${cs.cnt}:202610`);
 
 // ---- A. Access and permissions -------------------------------------------------------------------------
 const gets = ["/permissions", "/rate-cards", "/candidates", "/candidates/schedule?from=2026-11-01&to=2026-11-30&clientId=" + C1, "/completion-source-maps", "/settings/terms", "/settings/remittance", "/bundles", "/client-pricing?clientId=" + C1];
@@ -114,6 +188,7 @@ const anonW = [["POST", "/candidates/generate", { from: "2026-11-01", to: "2026-
 bad = []; for (const [m, p, b] of anonW) { const r = await anon.call(m, "/api/billing" + p, b); if (r.status !== 401) bad.push(`${m} ${p}=${r.status}`); }
 rec("A2", "anonymous gets 401 on Phase 2 writes", !bad.length, bad.join(" "));
 for (const [who, s] of [["Collections-only", colls], ["unassigned", unassigned]]) {
+  if (!s) { skip(`A3-${who}`, `${who} staff get 403 on every Phase 2 read`, "account could not sign in"); skip(`A4-${who}`, `${who} staff get 403 on Phase 2 writes`, "account could not sign in"); continue; }
   bad = []; for (const p of gets) { const r = await s.call("GET", "/api/billing" + p); if (r.status !== 403) bad.push(`${p}=${r.status}`); }
   rec(`A3-${who}`, `${who} staff get 403 (no redacted body) on every Phase 2 read incl. /permissions`, !bad.length, bad.join(" ") || `${gets.length} paths`);
   bad = []; for (const [m, p, b] of anonW) { const r = await s.call(m, "/api/billing" + p, b); if (r.status !== 403) bad.push(`${m} ${p}=${r.status}`); }
@@ -140,6 +215,7 @@ const rateCardId = rc.json?.rateCard?.id;
 rec("B2", "rate card created with camelCase shape", rc.status === 201 && !!rateCardId && rc.json.rateCard.effectiveFrom === "2026-01-01" && rc.json.rateCard.active === true, `status ${rc.status} (first attempt ${rcLiteral})`);
 const sbRc = rateCardId ? await getRows("billing_rate_cards", `id=eq.${rateCardId}&select=id`) : null;
 rec("P0", "the Preview wrote to the sandbox database named in the env file (a rate card created over HTTP is visible there)", sbRc?.length === 1, `rows ${sbRc?.length}`);
+if (sbRc?.length !== 1) throw new Error("Abort: the first write through the deployment is not in the pinned sandbox");
 let ent = await owner.call("POST", `/api/billing/rate-cards/${rateCardId}/entries`, { serviceCode: serviceCode("REC"), unit: "service", unitAmount: "125.00", effectiveFrom: "2026-01-01", reason: "Initial rate entry" });
 const entLiteral = ent.status;
 rec("B3", "POST entries with the contract's literal example body (includes reason, b630f2a) returns 201", ent.status === 201, `status ${ent.status} ${ent.code || ""}`);
@@ -255,8 +331,7 @@ const m6 = await billing.call("POST", "/api/billing/candidates/manual-confirmati
 rec("D6", "a second confirmation for the same service and date with a new key must not create a duplicate candidate (contract: 'cannot create a duplicate candidate')", m6.status === 409, `status ${m6.status} created=${m6.json?.created} candidates=${await countRows("billing_candidates", `client_service_id=eq.${cs.man}&candidate_date=eq.2026-11-03`)}`);
 const m7 = await billing.call("POST", "/api/billing/candidates/manual-confirmations", mc({ idempotencyKey: randomUUID(), confirmedDate: "2031-01-15" }));
 rec("D7", "a confirmation dated in the future is 422 CONFIRMATION_DATE_FUTURE", m7.status === 422 && m7.code === "CONFIRMATION_DATE_FUTURE", `status ${m7.status} ${m7.code || ""}`);
-const m8 = await colls.call("POST", "/api/billing/candidates/manual-confirmations", mc());
-rec("D8", "Collections-only staff cannot create a confirmation (403)", m8.status === 403, `${m8.status}`);
+if (colls) { const m8 = await colls.call("POST", "/api/billing/candidates/manual-confirmations", mc()); rec("D8", "Collections-only staff cannot create a confirmation (403)", m8.status === 403, `${m8.status}`); } else skip("D8", "Collections-only staff cannot create a confirmation (403)", "account could not sign in");
 rec("D9", "confirmation is audited with the Billing actor", (await aud("billing_manual_confirmations", BILLING_ID)) > base.mc, `before ${base.mc}`);
 
 // ---- E. Draft, line rules, issue, void, delete ---------------------------------------------------------
@@ -340,6 +415,7 @@ const p4 = await owner.call("PATCH", "/api/billing/permissions/policy", pol([{ a
 rec("G1", "policy edit refuses fixed actions, non-delegable roles, a missing reason and duplicate roles (all 422)", [p0, p1, p2, p3, p4].every((r) => r.status === 422), [p0, p1, p2, p3, p4].map((r) => r.status).join("/"));
 const before = await billing.call("POST", "/api/billing/rate-cards", { name: `P2 ${tag} Delegated`, effectiveFrom: "2026-01-01", reason: "x" });
 const grant = await owner.call("PATCH", "/api/billing/permissions/policy", pol([{ actionKey: "pricing.manage", allowedRoles: ["staff"], enabled: true }, { actionKey: "candidates.manage", allowedRoles: ["staff"], enabled: false }]));
+if (loopbackBase && process.env.BILLING_PREVIEW_TEST_CRASH === "after-grant") throw new Error("test crash after the policy grant");
 const afterPerm = await billing.call("GET", "/api/billing/permissions");
 const afterRc = await billing.call("POST", "/api/billing/rate-cards", { name: `P2 ${tag} Delegated`, effectiveFrom: "2026-01-01", reason: "Delegated by Owner" });
 const revoked = await billing.call("POST", `/api/billing/candidates/${unpCand?.id}/dismiss`, { reason: "Policy test" });
@@ -363,12 +439,18 @@ rec("H2", "the anon key cannot read any Phase 2 table", !bad.length, bad.join(" 
 const allNums = ((await getRows("invoices", "invoice_number=not.is.null&select=invoice_number&limit=100000")) || []).map((x) => x.invoice_number);
 rec("H3", "no invoice number is shared by two invoices (voided numbers are never reused)", allNums.length > 0 && new Set(allNums).size === allNums.length, `${allNums.length} numbered invoices`);
 
-// ---- Z. Restore shared settings and report what was added -----------------------------------------------
-if (remBefore.status === 200 && remBefore.json?.remittance) {
-  const restoreRem = await owner.call("PATCH", "/api/billing/settings/remittance", { ...Object.fromEntries(Object.entries(remBefore.json.remittance).filter(([, v]) => typeof v === "string")), reason: "Restore sandbox remittance after the Phase 2 matrix" });
-  info("Z1", "remittance settings restored to their pre-run values", `status ${restoreRem.status}`);
+} catch (e) {
+  rec("ABORT", "the run finished without aborting", false, e?.message || e);
+} finally {
+  // ---- Z. Restore shared settings exactly, verify, report what was added ---------------------------------
+  const problems = await restoreSharedSettings();
+  const polNow = await getRows("billing_action_policy", `select=${POLICY_COLS}`);
+  const remNow = (await getRows("billing_remittance_settings", `select=${REM_COLS}`))?.[0];
+  rec("Z1", "Billing action policy rows match the pre-run snapshot exactly", !problems.length && sortPolicy(polNow) === sortPolicy(snapshot.policy), problems.join("; ") || `${polNow?.length} rows`);
+  rec("Z2", "remittance settings match the pre-run snapshot exactly", JSON.stringify(remNow) === JSON.stringify(snapshot.remittance), "");
+  await writeManifest(tag).catch((e) => console.log("MANIFEST FAILED: " + e.message));
 }
-console.log("\nAdded by this run (tag P2" + tag + "): " + JSON.stringify({ ...added, client: C1 }));
+
 const failed = results.filter((x) => !x).length;
-console.log(`\n${results.length - failed}/${results.length} passed`);
+console.log(`\n${results.length - failed}/${results.length} passed${skipped.length ? `, ${skipped.length} skipped (${skipped.join(" ")})` : ""}`);
 process.exit(failed ? 1 : 0);
