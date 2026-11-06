@@ -56,5 +56,4 @@ Synthetic batch `7280e321` could not be fully removed, so it is closed as `rejec
 
 1. **Blocked:** load real-shaped clients into the sandbox, or say how candidates on the real report should be checked.
 2. **Refresh failure, found by reading the code, not tested:** in the parse route, a PDF extraction failure during a refresh sets the batch to `failed`. A later parse of a `failed` batch deletes and rebuilds all rows, which would lose reviewer decisions. A failed refresh should leave the batch in `needs_review`.
-3. Please confirm the refresh auto-labelling customer headings as `header` matches the owner's approval. The 2026-11-04 amendment names only column headers and report totals.
-4. Decide when `b2d614c` goes to `dev`. It merges cleanly.
+3. Decide when `b2d614c` goes to `dev`. It merges cleanly.
