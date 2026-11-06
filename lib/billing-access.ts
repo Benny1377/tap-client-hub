@@ -13,7 +13,8 @@ export const BILLING_ACTIONS = [
 export type BillingAction = typeof BILLING_ACTIONS[number];
 const OWNER_ONLY = new Set<BillingAction>(["policy.manage", "invoices.void", "payments.reverse"]);
 const STAFF_DEFAULTS: BillingAction[] = ["billing.view", "pricing.view", "candidates.view", "candidates.manage", "invoices.draft.manage", "invoices.issue", "payments.record", "payments.allocate"];
-const DEFAULT_DELEGABLE_ROLES = ["manager", "staff", "offshore"];
+export const DELEGABLE_BILLING_ROLES: readonly string[] = ["manager", "staff", "offshore"];
+const DEFAULT_DELEGABLE_ROLES = [...DELEGABLE_BILLING_ROLES];
 export const DELEGABLE_BILLING_ACTIONS = BILLING_ACTIONS.filter((action) => !OWNER_ONLY.has(action));
 export type BillingPolicyRow = { action_key: BillingAction; allowed_roles: string[]; enabled: boolean };
 
@@ -24,7 +25,11 @@ export function effectiveBillingPolicy(policyRows: BillingPolicyRow[]) {
     const defaultEnabled = STAFF_DEFAULTS.includes(actionKey);
     return {
       actionKey,
-      allowedRoles: row ? row.allowed_roles : defaultEnabled ? [...DEFAULT_DELEGABLE_ROLES] : [],
+      // Owner/Admin privileges are inherent and not delegated through policy rows.
+      // Keep the GET snapshot valid as-is for PATCH.
+      allowedRoles: row
+        ? row.allowed_roles.filter((role) => DELEGABLE_BILLING_ROLES.includes(role))
+        : defaultEnabled ? [...DEFAULT_DELEGABLE_ROLES] : [],
       enabled: row ? row.enabled : defaultEnabled,
     };
   });

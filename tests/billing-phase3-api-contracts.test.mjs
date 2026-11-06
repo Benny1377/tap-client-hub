@@ -10,6 +10,7 @@ test("policy read is explicit, Owner/Admin-gated, and returns only policy fields
   assert.match(policy, /requireBillingAction\("policy\.manage"\)/);
   assert.match(policy, /select\("action_key,allowed_roles,enabled"\)/);
   assert.match(policy, /effectiveBillingPolicy\(/);
+  assert.match(route, /const roles=DELEGABLE_BILLING_ROLES/);
   assert.doesNotMatch(policy, /select\("\*"\)/);
 });
 
@@ -41,6 +42,8 @@ test("Phase 3 contract records all review clarifications and new read shapes", (
     "created:false",
     "full replacement",
     "all-client projection or generation",
-    "Operations source is identified",
+    "identified Operations project",
+    "read-only compatibility check from an isolated Preview",
+    "Operations-owner-approved service",
   ]) assert.ok(contract.includes(phrase), `missing Phase 3 contract rule: ${phrase}`);
 });

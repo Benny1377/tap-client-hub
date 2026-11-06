@@ -103,6 +103,7 @@ export default function ClientSlideover({ client, open, onClose, onSave, onDelet
   const bodyRef = useRef<HTMLDivElement>(null);
   const scrollPosRef = useRef(0);
   const clientRef = useRef(client.id);
+  const payrollCredentialAccessRef = useRef(mayViewPayrollCredentials);
   const [editing, setEditing] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [localSvcs, setLocalSvcs] = useState<any[]>(client.services);
@@ -414,7 +415,7 @@ export default function ClientSlideover({ client, open, onClose, onSave, onDelet
         })
         .catch(() => {});
     }
-  }, [client, mayViewPayrollCredentials]);
+  }, [client]);
   useEffect(() => {
     // Sync local state when switching clients OR when underlying data changes
     const currentId = clientRef.current;
@@ -424,7 +425,9 @@ export default function ClientSlideover({ client, open, onClose, onSave, onDelet
       const oldStx = localSvcs.find((s: any) => s.key === "sales_tax");
       return JSON.stringify(newStx?.salesTaxLineItems) !== JSON.stringify(oldStx?.salesTaxLineItems);
     })();
-    if (currentId === client.id && !stxItemsChanged) return;
+    const payrollAccessChanged = payrollCredentialAccessRef.current !== mayViewPayrollCredentials;
+    if (currentId === client.id && !stxItemsChanged && !payrollAccessChanged) return;
+    payrollCredentialAccessRef.current = mayViewPayrollCredentials;
     clientRef.current = client.id;
     clientIdRef.current = client.id;
     setLocalSvcs(client.services);
@@ -507,7 +510,7 @@ export default function ClientSlideover({ client, open, onClose, onSave, onDelet
     if (stxSvc?.enabled && items.length === 0 && !editing) {
       setAddingStx(true);
     }
-  }, [client]);
+  }, [client, mayViewPayrollCredentials]);
 
   // ── Edit view state ──
   const [eName, setEName] = useState(client.name);

@@ -25,8 +25,11 @@ test("policy projection includes all delegable actions and effective defaults", 
     actionKey: "billing.view", allowedRoles: ["manager", "staff", "offshore"], enabled: true,
   });
   assert.deepEqual(policies.find((policy) => policy.actionKey === "pricing.manage"), {
-    actionKey: "pricing.manage", allowedRoles: ["owner", "admin"], enabled: true,
+    actionKey: "pricing.manage", allowedRoles: [], enabled: true,
   });
+  for (const policy of policies) {
+    assert.ok(policy.allowedRoles.every((role) => ["manager", "staff", "offshore"].includes(role)));
+  }
   assert.deepEqual(policies.find((policy) => policy.actionKey === "settings.remittance.manage"), {
     actionKey: "settings.remittance.manage", allowedRoles: [], enabled: false,
   });

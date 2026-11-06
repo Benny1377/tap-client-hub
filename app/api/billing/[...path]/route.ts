@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { effectiveBillingPolicy, requireBillingAccess, requireBillingAction, resolveBillingActions, type BillingPolicyRow } from "@/lib/billing-access";
+import { DELEGABLE_BILLING_ROLES, effectiveBillingPolicy, requireBillingAccess, requireBillingAction, resolveBillingActions, type BillingPolicyRow } from "@/lib/billing-access";
 import { apiError, boundedLimit, cursorDecode, cursorEncode, firmDateISO, isDateOnly, moneyString, mutationResponse, permissionActionFor, toCamel, toPhase2Bundle, toPhase2Candidate } from "@/lib/billing-phase2";
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -425,7 +425,7 @@ async function handler(request:NextRequest,ctx:Ctx,method:string) {
   }
   if(path.length===2&&path[0]==="permissions"&&path[1]==="policy"&&method==="PATCH") {
     const body=await readObjectBody(request);if(!body)return apiError("Invalid JSON body","INVALID_JSON",400);
-    const roles=["manager","staff","offshore"];
+    const roles=DELEGABLE_BILLING_ROLES;
     const fixed=new Set(["policy.manage","invoices.void","payments.reverse"]);
     if(!Array.isArray(body.policies)||body.policies.length<1||body.policies.length>14||typeof body.reason!=="string"||!body.reason.trim())return apiError("policies and a non-empty reason are required","INVALID_INPUT",422);
     const seen=new Set<string>();

@@ -4,6 +4,7 @@
 - [Billing integration Preview validation](2026-11-06-billing-integration-preview-validation.md)
 - [Payroll credential fields follow-up](2026-11-06-payroll-credential-fields-follow-up.md)
 - [Billing owner decisions and Phase 3 follow-up](2026-11-06-billing-owner-decisions-and-phase3-follow-up.md)
+- [Billing integration follow-up](2026-11-06-billing-integration-follow-up.md)
 - [Payroll credential access remediation](2026-11-06-payroll-credential-access-remediation.md)
 - [Billing Phase 3 planning and readiness](2026-11-06-billing-phase3-planning.md)
 - [Billing Phase 3 review resolution](2026-11-06-billing-phase3-review-resolution.md)
