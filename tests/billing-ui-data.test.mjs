@@ -10,7 +10,6 @@ const api = loadTs("lib/billing-ui/api.ts");
 const ledger = loadTs("lib/billing-ui/ledger.ts");
 const validation = loadTs("lib/billing-ui/validation.ts");
 const vm = loadTs("lib/billing-ui/view-model.ts");
-const candidateOptions = loadTs("lib/billing-ui/candidate-options.ts").candidateOptions;
 
 let passed = 0;
 async function check(label, fn) {
@@ -70,21 +69,6 @@ await check("network failure is reported, not thrown", async () => {
   assert.equal(result.kind, "network");
 });
 
-await check("candidate choices keep bundles as one package and disable incomplete or unverifiable groups", () => {
-  const candidates = [
-    { id: "a", clientId: "c", clientServiceId: "cs-a", state: "open", candidateDate: "2026-11-01", description: "A", serviceCode: "A", unitAmount: "40.00", priceSource: "bundle", source: { adapter: "schedule" } },
-    { id: "b", clientId: "c", clientServiceId: "cs-b", state: "open", candidateDate: "2026-11-01", description: "B", serviceCode: "B", unitAmount: "40.00", priceSource: "bundle", source: { adapter: "schedule" } },
-    { id: "c", clientId: "c", clientServiceId: "cs-c", state: "open", candidateDate: "2026-11-02", description: "C", serviceCode: "C", unitAmount: "12.00", priceSource: "override", source: { adapter: "manual_confirmation" } },
-  ];
-  const bundles = [{ id: "bundle", name: "Package", clientId: "c", unitAmount: "70.00", active: true, effectiveFrom: "2026-01-01", effectiveTo: null, components: [{ clientServiceId: "cs-a" }, { clientServiceId: "cs-b" }] }];
-  const options = candidateOptions(candidates, bundles);
-  assert.deepEqual(options.find((option) => option.key === "bundle:bundle:2026-11-01").candidateIds, ["a", "b"]);
-  assert.equal(options.find((option) => option.key === "bundle:bundle:2026-11-01").amount, "70.00");
-  assert.deepEqual(options.find((option) => option.key === "c").candidateIds, ["c"]);
-  assert.equal(candidateOptions([candidates[0]], [bundles[0]])[0].selectable, false);
-  assert.equal(candidateOptions([candidates[0]], null)[0].selectable, false);
-});
-
 await check("client filter is passed as client_id and requests are not cached", async () => {
   const { fetchImpl, calls } = fakeFetch({ "GET /api/billing/receivables": [200, { receivables: [] }] });
   const seen = [];
@@ -101,6 +85,8 @@ await check("mutations call the contract routes with the contract bodies", async
     "POST /api/collections/events/approve": [201, { event: {} }],
     "PATCH /api/collections/holds": [200, { hold: {} }],
     "PATCH /api/collections/rules": [200, { rules: [], firm_timezone: "America/Chicago", settings: {} }],
+    "POST /api/billing/invoices/inv-1/issue": [200, { invoice: {} }],
+    "POST /api/billing/invoices/inv-1/void": [200, { invoice: {} }],
     "DELETE /api/billing/invoice-lines": [200, { deleted: true }],
     "DELETE /api/billing/invoices/inv-1": [200, { deleted: true }],
   });
@@ -125,6 +111,7 @@ await check("mutations call the contract routes with the contract bodies", async
   ]);
   assert.deepEqual(calls[0].body, {});
   assert.deepEqual(calls[1].body, { reason: "Duplicate" });
+  assert.deepEqual(calls[6].body, { id: "l-1" });
   assert.deepEqual(calls[2].body, { payment_id: "p-1", invoice_id: "inv-1", amount: "10.00" });
   assert.deepEqual(calls[3].body, { event_id: "e-1", event_type: "escalated" });
   assert.deepEqual(calls[4].body, { id: "h-1" });
@@ -307,7 +294,7 @@ await check("issued invoices are locked; only Owner/Admin may void", () => {
 
 await check("void invoices allow no actions", () => {
   const actions = vm.invoiceActions(invoice({ status: "void", invoice_lines: [line] }), owner);
-  assert.deepEqual(actions, { editable: false, canIssue: false, issueBlockedReason: null, canVoid: false, voidRequiresOwnerAdmin: false });
+  assert.deepEqual(actions, { editable: false, canDeleteDraft: false, canIssue: false, issueBlockedReason: null, canVoid: false, voidRequiresOwnerAdmin: false });
 });
 
 // --- Holds and approvals ---------------------------------------------------

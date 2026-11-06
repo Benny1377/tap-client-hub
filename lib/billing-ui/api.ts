@@ -10,8 +10,8 @@ import type {
   CollectionsSettingsUpdate,
 } from "@/lib/collections-api";
 import type {
-  ClientOption,
   BillingBundle,
+  ClientOption,
   BillingCandidate,
   CollectionEvent,
   CollectionRuleSettings,
@@ -247,6 +247,9 @@ export function createBillingApi(fetchImpl: FetchLike) {
     issueInvoice: (id: string) => post<{ invoice: Invoice; refresh?: string[] }>(fetchImpl, `/api/billing/invoices/${encodeURIComponent(id)}/issue`, {}),
     voidInvoice: (id: string, reason: string) =>
       post<{ invoice: Invoice; returnedCandidateIds?: string[]; refresh?: string[] }>(fetchImpl, `/api/billing/invoices/${encodeURIComponent(id)}/void`, { reason }),
+    dismissCandidate: (id: string, reason: string) => post<{ candidate: BillingCandidate }>(fetchImpl, `/api/billing/candidates/${encodeURIComponent(id)}/dismiss`, { reason }),
+    reopenCandidate: (id: string, reason: string) => post<{ candidate: BillingCandidate }>(fetchImpl, `/api/billing/candidates/${encodeURIComponent(id)}/reopen`, { reason }),
+    repriceCandidate: (id: string, reason: string) => post<{ candidate: BillingCandidate }>(fetchImpl, `/api/billing/candidates/${encodeURIComponent(id)}/reprice`, { reason }),
 
     addLine: (input: { invoice_id: string; description: string; quantity: string; unit_amount: string; period?: string | null }) =>
       post<{ line: InvoiceLine }>(fetchImpl, "/api/billing/invoice-lines", input),

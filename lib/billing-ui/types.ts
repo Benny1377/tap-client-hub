@@ -72,6 +72,9 @@ export interface Invoice {
   invoice_lines: InvoiceLine[];
 }
 
+export type CandidateState = BillingCandidate["state"];
+export type Candidate = BillingCandidate;
+
 export interface PaymentAllocation {
   id: string;
   payment_id: string;

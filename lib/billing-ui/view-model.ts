@@ -79,21 +79,30 @@ export const STATUS_LABELS: Record<string, string> = { draft: "Draft", issued: "
 
 export interface InvoiceActions {
   editable: boolean;
+  canDeleteDraft: boolean;
   canIssue: boolean;
   issueBlockedReason: string | null;
   canVoid: boolean;
   voidRequiresOwnerAdmin: boolean;
 }
 
-export function invoiceActions(invoice: Invoice, viewer: Viewer | null, permissions?: string[]): InvoiceActions {
+/**
+ * Which controls to show. `granted` is the viewer's effective Billing actions from /api/billing/permissions; this
+ * only shapes the page, and the server still decides. Leaving it out keeps the role-only behaviour.
+ */
+export function invoiceActions(invoice: Invoice, viewer: Viewer | null, granted?: readonly string[]): InvoiceActions {
   const power = viewerIsPowerUser(viewer);
+  const has = (action: string) => !granted || granted.includes(action);
   const draft = invoice.status === "draft";
   const hasLines = (invoice.invoice_lines || []).length > 0;
+  const manage = has("invoices.draft.manage");
+  const mayIssue = has("invoices.issue");
   return {
-    editable: draft && (permissions === undefined || permissions.includes("invoices.draft.manage")),
-    canIssue: draft && hasLines && (permissions === undefined || permissions.includes("invoices.issue")),
-    issueBlockedReason: draft && !hasLines ? "Add at least one line before issuing." : draft && permissions && !permissions.includes("invoices.issue") ? "You do not have permission to issue invoices." : null,
-    canVoid: invoice.status === "issued" && (permissions ? permissions.includes("invoices.void") : power),
+    editable: draft && manage,
+    canDeleteDraft: draft && manage,
+    canIssue: draft && hasLines && mayIssue,
+    issueBlockedReason: !draft ? null : !hasLines ? "Add at least one line before issuing." : !mayIssue ? "You do not have permission to issue invoices." : null,
+    canVoid: invoice.status === "issued" && (granted ? granted.includes("invoices.void") : power),
     voidRequiresOwnerAdmin: invoice.status === "issued" && !power,
   };
 }

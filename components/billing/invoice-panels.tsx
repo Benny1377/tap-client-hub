@@ -91,6 +91,7 @@ export function InvoiceDetail({ invoice, receivable, viewer, permissions, handle
 }) {
   const actions = invoiceActions(invoice, viewer, permissions);
   const lines = [...(invoice.invoice_lines || [])].sort((a, b) => a.sort_order - b.sort_order);
+  const linkedLines = lines.filter((line) => (line.candidateIds || []).length > 0).length;
   return (
     <div data-invoice-detail={invoice.id} data-lifecycle={invoice.status}>
       <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
@@ -129,23 +130,30 @@ export function InvoiceDetail({ invoice, receivable, viewer, permissions, handle
                 <td>{String(line.quantity)}</td>
                 <td>{formatMoney(line.unit_amount)}</td>
                 <td>{formatMoney(line.amount)}</td>
-                {actions.editable && line.candidateIds?.length ? (
-                  <td><span style={hintStyle}>Locked · linked to {line.candidateIds.length} billable candidate{line.candidateIds.length === 1 ? "" : "s"}</span></td>
-                ) : actions.editable ? (
+                {actions.editable ? (
                   <td>
-                    <details>
-                      <summary style={{ cursor: "pointer", fontSize: 12.5 }}>Edit</summary>
-                      <LedgerForm
-                        key={`${line.id}-${line.description}-${line.period ?? ""}-${line.quantity}-${line.unit_amount}`}
-                        resetOnSuccess={false}
-                        fields={lineFields}
-                        initialValues={{ description: line.description, period: line.period || "", quantity: String(line.quantity), unit_amount: String(line.unit_amount) }}
-                        validate={validateLine}
-                        onSubmit={(values) => handlers.onUpdateLine(line.id, values)}
-                        submitLabel="Save line"
-                      />
-                    </details>
-                    <ActionButton quiet label="Remove" onAction={() => handlers.onDeleteLine(line.id)} />
+                    {(line.candidateIds || []).length > 0 ? (
+                      <>
+                        <div className="bc-small" data-line-locked>From a candidate, so it can&apos;t be edited.</div>
+                        <ActionButton quiet label={(line.candidateIds || []).length > 1 ? "Remove and return candidates" : "Remove and return candidate"} onAction={() => handlers.onDeleteLine(line.id)} />
+                      </>
+                    ) : (
+                      <>
+                        <details>
+                          <summary style={{ cursor: "pointer", fontSize: 12.5 }}>Edit</summary>
+                          <LedgerForm
+                            key={`${line.id}-${line.description}-${line.period ?? ""}-${line.quantity}-${line.unit_amount}`}
+                            resetOnSuccess={false}
+                            fields={lineFields}
+                            initialValues={{ description: line.description, period: line.period || "", quantity: String(line.quantity), unit_amount: String(line.unit_amount) }}
+                            validate={validateLine}
+                            onSubmit={(values) => handlers.onUpdateLine(line.id, values)}
+                            submitLabel="Save line"
+                          />
+                        </details>
+                        <ActionButton quiet label="Remove" onAction={() => handlers.onDeleteLine(line.id)} />
+                      </>
+                    )}
                   </td>
                 ) : null}
               </tr>
@@ -192,10 +200,10 @@ export function InvoiceDetail({ invoice, receivable, viewer, permissions, handle
               ? <span data-issue-blocked style={{ fontSize: 12.5, color: "var(--muted)" }}>{actions.issueBlockedReason}</span>
               : null
         ) : null}
-        {invoice.status === "draft" && (permissions === undefined || permissions.includes("invoices.draft.manage")) ? (
+        {actions.canDeleteDraft ? (
           <details data-delete-draft>
             <summary style={{ cursor: "pointer", fontSize: 13, color: "var(--red)", fontWeight: 600 }}>Delete draft</summary>
-            <p style={hintStyle}>This permanently removes the draft and its lines. Issued invoices cannot be deleted.</p>
+            <p style={hintStyle}>This permanently removes the draft and its lines. Issued invoices cannot be deleted.{linkedLines > 0 ? " Its candidates go back to Ready." : ""}</p>
             <ActionButton label="Delete this draft" onAction={handlers.onDeleteDraft} />
           </details>
         ) : null}
@@ -205,6 +213,7 @@ export function InvoiceDetail({ invoice, receivable, viewer, permissions, handle
             {receivable && Number(receivable.allocated) > 0 ? (
               <p data-void-blocked style={hintStyle}>Payments are applied to this invoice ({formatMoney(receivable.allocated)}). Reverse those allocations on the Payments tab first, or the server will refuse the void.</p>
             ) : null}
+            {linkedLines > 0 ? <p style={hintStyle}>Its candidates go back to Ready.</p> : null}
             <LedgerForm
               fields={[{ name: "reason", label: "Reason for voiding", type: "textarea" }]}
               initialValues={{ reason: "" }}

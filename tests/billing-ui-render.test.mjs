@@ -143,7 +143,7 @@ check("candidate-linked draft lines show provenance lock and cannot be edited or
   const linked = { ...line, candidateIds: ["candidate-1", "candidate-2"] };
   const html = detail(invoice({ invoice_lines: [linked] }), staff);
   assert.match(html, /data-candidate-linked="true"/);
-  assert.match(html, /Locked · linked to 2 billable candidates/);
+  assert.match(html, /Remove and return candidates/);
   assert.doesNotMatch(html, /data-line-row="l-1"[\s\S]*?>Edit<|data-line-row="l-1"[\s\S]*?>Remove</);
 });
 
