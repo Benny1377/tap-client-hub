@@ -41,8 +41,8 @@ const pdf = buildPdf([
   { y: 580, cells: [[250, "TAP Associates, LLC"]] }, { y: 568, cells: [[250, "A/R Aging QuickZoom"]] }, { y: 556, cells: [[250, "As of February 1, 2026"]] },
   { y: 530, cells: [[X.type, "Type"], [X.date, "Date"], [X.num, "Num"], [X.po, "P. O. #"], [X.name, "Name"], [X.terms, "Terms"], [X.due, "Due Date"], [X.aging, "Aging"], [X.bal, "Open Balance"]] },
   { y: 515, cells: [[30, heading]] },
-  row(500, "Invoice", n(1), short), row(488, "Invoice", n(2), fuzzy), row(476, "Payment", n(3), short, "-5.00"),
-  { y: 460, cells: [[30, `Total ${heading}`], [X.bal, "15.00"]] },
+  row(500, "Invoice", n(1), short), row(488, "Invoice", n(2), fuzzy), row(476, "Payment", n(3), short, "-5.00"), row(464, "Deposit", n(4), short, "1.00"),
+  { y: 450, cells: [[30, `Total ${heading}`], [X.bal, "15.00"]] },
 ]);
 const corrupt = Buffer.from("%PDF-1.4\nnot a real synthetic document\n");
 
@@ -70,7 +70,7 @@ const batch = async () => (await rest("GET", `collection_import_batches?select=s
 rec("P0", "first parse of a new report succeeds", parsed.status === 200, `${parsed.status} ${parsed.json?.code || ""}`);
 if (parsed.status !== 200) {
   // Keeps the remaining checks reachable: placeholder rows in the report's line shape, then the real refresh path fills them from the PDF.
-  await rest("POST", "collection_import_rows", Array.from({ length: 9 }, (_v, i) => ({ batch_id: batchId, page_number: 1, row_number: i + 1, raw_text: `synthetic line ${i + 1}`, parsed_fields: {}, review_disposition: "unreviewed" })), "return=minimal");
+  await rest("POST", "collection_import_rows", Array.from({ length: 10 }, (_v, i) => ({ batch_id: batchId, page_number: 1, row_number: i + 1, raw_text: `synthetic line ${i + 1}`, parsed_fields: {}, review_disposition: "unreviewed" })), "return=minimal");
   await rest("PATCH", `collection_import_batches?id=eq.${batchId}`, { status: "needs_review", report_type: "aging_detail", source_as_of: "2026-02-01", parsed_at: new Date().toISOString() }, "return=minimal");
   const seeded = await coll.call("POST", `/api/collections/imports/${batchId}/parse`, { refresh_suggestions: true });
   console.log(`INFO seeded through refresh: ${seeded.status} ${seeded.json?.code || ""}`);
@@ -80,7 +80,7 @@ let list = await rows(); let b = await batch();
 const invoices = list.filter((r) => r.parsed_fields?.auto_suggestion?.disposition === "invoice");
 rec("P1", "synthetic report reads as a detail report", b.status === "needs_review" && b.report_type === "aging_detail" && b.source_as_of === "2026-02-01", `${b.report_type} ${b.source_as_of} rows=${list.length}`);
 const names = invoices.map((r) => r.parsed_fields.auto_suggestion.fields.customer_name);
-rec("P2", "a cut-off name takes the customer heading; a payment stays for review", invoices.length === 2 && names.includes(heading) && list.some((r) => r.parsed_fields?.auto_suggestion?.disposition === "unreviewed"), JSON.stringify(list.map((r) => r.parsed_fields?.auto_suggestion?.disposition)));
+rec("P2", "a cut-off name takes the customer heading; a payment is kept as evidence; an unknown row stays for review", invoices.length === 2 && names.includes(heading) && list.some((r) => r.parsed_fields?.auto_suggestion?.disposition === "ignored") && list.some((r) => r.parsed_fields?.auto_suggestion?.disposition === "unreviewed"), JSON.stringify(list.map((r) => r.parsed_fields?.auto_suggestion?.disposition)));
 
 const { default: puppeteer } = await import(pathToFileURL(process.env.PUPPETEER_CORE).href);
 const browser = await puppeteer.launch({ executablePath: process.env.CHROME_PATH, headless: true });
