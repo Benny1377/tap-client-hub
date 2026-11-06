@@ -40,6 +40,11 @@ export function isPowerUser(role: unknown) {
   return ["owner", "admin"].includes(normalizeRole(role));
 }
 
+/** Payroll credentials are restricted to the Payroll module and Owner/Admin. */
+export function canAccessPayrollCredentials(identity: { role: unknown; modules: unknown }) {
+  return isPowerUser(identity.role) || effectiveModules(identity.role, identity.modules).includes("Payroll");
+}
+
 export function canManageUsers(role: unknown, explicitlyGranted = false) {
   return isPowerUser(role) || (normalizeRole(role) === "manager" && explicitlyGranted === true);
 }

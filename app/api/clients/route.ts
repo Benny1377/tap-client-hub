@@ -3,7 +3,7 @@ import type { ServiceKey } from "@/lib/types";
 import { SERVICE_META } from "@/lib/data";
 import { randomUUID } from "crypto";
 import { requireClientDataEditAccess, resolveAccessIdentity } from "@/lib/access-server";
-import { isPowerUser } from "@/lib/access-policy";
+import { canAccessPayrollCredentials, isPowerUser } from "@/lib/access-policy";
 import { calculatePayrollStartDate, normalizePayDay } from "@/lib/payroll-schedule";
 import { alreadyStored, commentAuthor, storedCommentAuthors } from "@/lib/comment-authors";
 
@@ -29,6 +29,7 @@ export async function GET(request: Request) {
   const identity = await resolveAccessIdentity();
   if (!identity) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   if (!isPowerUser(identity.role) && identity.modules.length === 0) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  const canReadPayrollCredentials = canAccessPayrollCredentials(identity);
   try {
     const supabase = await getSupabase();
 
@@ -293,8 +294,7 @@ export async function GET(request: Request) {
           expectedAnnual: cs.expected_annual ? Number(cs.expected_annual) || 0 : 0,
           financialsMonth: cs.financials_month ?? 0,
           paydate: cs.paydate || "",
-          payrollPassword: cs.payroll_password || "",
-          eftps: cs.eftps || "",
+          ...(canReadPayrollCredentials ? { payrollPassword: cs.payroll_password || "", eftps: cs.eftps || "" } : {}),
           biweeklyCode: cs.biweekly_code || "",
           payStartDate: cs.pay_start_date || "",
           payPeriodFrequency: cs.pay_period_frequency || "",
@@ -393,7 +393,14 @@ export async function GET(request: Request) {
         active: db.active !== false,  // default true for existing clients
         activeUpdatedAt: db.active_updated_at || null,
         activeUpdatedBy: db.active_updated_by || null,
-        services: mergedSvcs,
+        services: canReadPayrollCredentials ? mergedSvcs : mergedSvcs.map((service: Record<string, unknown>) => {
+          const visible = { ...service };
+          // Placeholders are assembled separately from database rows; apply
+          // the same omission rule to them before serializing any client.
+          delete visible.payrollPassword;
+          delete visible.eftps;
+          return visible;
+        }),
       };
     });
 
@@ -500,7 +507,17 @@ export async function PUT(request: Request) {
     };
 
     // Build unique codes we need
-    const safeServices = Array.isArray(services) ? services : [];
+    const canWritePayrollCredentials = canAccessPayrollCredentials(access.identity!);
+    const safeServices = Array.isArray(services) ? services.map((svc) => {
+      if (canWritePayrollCredentials || !svc || typeof svc !== "object") return svc;
+      // This endpoint accepts a broad client-service payload. Strip credential
+      // keys for non-Payroll callers so unrelated client edits remain usable,
+      // but an untrusted payload can never clear or replace either secret.
+      const safe = { ...svc };
+      delete safe.payrollPassword;
+      delete safe.eftps;
+      return safe;
+    }) : [];
     const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
     const assigneeNames = [...new Set(safeServices
       .map((svc: any) => svc.assignedTo)
@@ -907,6 +924,13 @@ export async function PATCH(request: Request) {
   try {
     const supabase = await getSupabase();
     const body = await request.json();
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
+    }
+    if (!canAccessPayrollCredentials(access.identity!) &&
+        (Object.prototype.hasOwnProperty.call(body, "payrollPassword") || Object.prototype.hasOwnProperty.call(body, "eftps"))) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
     const { csId, assignedTo, processor, frequency, financialsMonth, expectedAnnual, salesTaxLineItems, comments, filingState, filingMonth, filingType, serviceName, payrollPassword, eftps, paydate, payStartDate, payPeriodFrequency, reportingMethod, payrollCategory, qbLicense, reportingNotes, payEmails, biweeklyCode, stateRenewal, renewalState, renewalDueMonth, renewalDueDay, renewalIdentifiers, stateRenewalItems } = body;
 
     if (!csId) {

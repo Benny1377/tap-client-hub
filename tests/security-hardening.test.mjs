@@ -8,6 +8,7 @@ const twoFactor = await import("../lib/two-factor.ts");
 const { safeNextPath } = await import("../lib/safe-next.ts");
 const { commentAuthor, alreadyStored } = await import("../lib/comment-authors.ts");
 const { passwordProblem, MIN_PASSWORD_LENGTH } = await import("../lib/password-policy.ts");
+const { canAccessPayrollCredentials } = await import("../lib/access-policy.ts");
 
 const read = (path) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8").replace(/\r\n/g, "\n");
 const USER = "00000000-0000-4000-8000-000000000001";
@@ -79,6 +80,21 @@ test("worklist and workload routes check the caller before using the service rol
   const workload = read("app/api/workload/route.ts");
   assert.ok(workload.indexOf("resolveAccessIdentity()") < workload.indexOf("await createClient()"));
   assert.match(workload, /identity\.modules\.includes\("Workload"\)/);
+});
+
+test("payroll credentials are restricted to Payroll staff and Owner/Admin", () => {
+  assert.equal(canAccessPayrollCredentials({ role: "owner", modules: [] }), true);
+  assert.equal(canAccessPayrollCredentials({ role: "admin", modules: [] }), true);
+  assert.equal(canAccessPayrollCredentials({ role: "staff", modules: ["Payroll"] }), true);
+  assert.equal(canAccessPayrollCredentials({ role: "staff", modules: ["Billing"] }), false);
+  assert.equal(canAccessPayrollCredentials({ role: "staff", modules: ["Collections"] }), false);
+
+  const route = read("app/api/clients/route.ts");
+  assert.match(route, /\.\.\.\(canReadPayrollCredentials \? \{ payrollPassword:[^}]+eftps:[^}]+\} : \{\}\)/);
+  assert.match(route, /services: canReadPayrollCredentials \? mergedSvcs : mergedSvcs\.map/);
+  assert.match(route, /delete visible\.payrollPassword;\s*delete visible\.eftps;/);
+  assert.match(route, /const safe = \{ \.\.\.svc \};\s*delete safe\.payrollPassword;\s*delete safe\.eftps;/);
+  assert.match(route, /hasOwnProperty\.call\(body, "payrollPassword"\).*hasOwnProperty\.call\(body, "eftps"\)/s);
 });
 
 test("2FA is enforced on the server and codes are never logged", () => {
