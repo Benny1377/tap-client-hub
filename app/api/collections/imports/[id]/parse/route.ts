@@ -23,7 +23,16 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
   if (request.headers.get("content-type")?.includes("application/json")) {
     try { refreshSuggestions = (await request.json())?.refresh_suggestions === true; } catch { /* optional body */ }
   }
-  const refreshingReview = batch.status === "needs_review" && refreshSuggestions;
+  let failedBatchHasRows = false;
+  if (batch.status === "failed") {
+    const { data: savedRows, error: savedRowsError } = await db.from("collection_import_rows")
+      .select("id").eq("batch_id", id).limit(1);
+    if (savedRowsError || !savedRows) return NextResponse.json({ error: "Unable to safely retry this report", code: "IMPORT_RETRY_READ_FAILED" }, { status: 500, headers: NO_STORE });
+    failedBatchHasRows = savedRows.length > 0;
+  }
+  // A failed batch with saved rows may be a refresh that failed under an older build.
+  // Never let that retry take the destructive initial-parse path.
+  const refreshingReview = (batch.status === "needs_review" && refreshSuggestions) || (batch.status === "failed" && failedBatchHasRows);
   if (batch.status !== "uploaded" && batch.status !== "failed" && !refreshingReview) return NextResponse.json({ error: "Batch is not available for parsing", code: "BATCH_STATE_CONFLICT" }, { status: 409, headers: NO_STORE });
 
   const { data: file, error: downloadError } = await db.storage.from("collections-ar-pdfs").download(batch.storage_path);
@@ -31,7 +40,8 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
   let parsed;
   try { parsed = await parseCollectionsPdf(new Uint8Array(await file.arrayBuffer())); }
   catch {
-    await db.from("collection_import_batches").update({ status: "failed", updated_at: new Date().toISOString() }).eq("id", id);
+    const failureStatus = refreshingReview ? "needs_review" : "failed";
+    await db.from("collection_import_batches").update({ status: failureStatus, updated_at: new Date().toISOString() }).eq("id", id).eq("status", batch.status);
     try { await recordImportAudit({ batchId: id, actor: access.identity!.id, action: "pdf_parse_failed" }); } catch { /* the failing operation is reported below */ }
     return NextResponse.json({ error: "PDF text extraction failed; the stored report remains available for manual review", code: "PDF_EXTRACTION_FAILED" }, { status: 422, headers: NO_STORE });
   }

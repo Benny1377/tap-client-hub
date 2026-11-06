@@ -33,7 +33,7 @@ import {
 } from "@/lib/billing-ui/imports";
 import type { ClientOption, Receivable, Viewer } from "@/lib/billing-ui/types";
 import { formatMoney } from "@/lib/billing-ui/view-model";
-import { COLLECTIONS_PDF_SUGGESTION_PARSER_VERSION, normalizeImportedCustomerName } from "@/lib/collections-pdf-suggestions";
+import { COLLECTIONS_PDF_SUGGESTION_PARSER_VERSION, normalizeImportedCustomerName, suggestImportedClientMatches, type ImportedClientMatch } from "@/lib/collections-pdf-suggestions";
 
 type Failure = { kind: string; message: string; code?: string };
 type Load<T> = { status: "loading" } | { status: "ready"; data: T } | { status: "error"; error: Failure };
@@ -61,6 +61,11 @@ function exactClientMatch(customer: string, clients: ClientOption[]): ClientOpti
   if (!key) return null;
   const matches = clients.filter((client) => normalizeImportedCustomerName(client.name) === key);
   return matches.length === 1 ? matches[0] : null;
+}
+
+function recommendedClientId(matches: ImportedClientMatch[]): string | undefined {
+  const [first, second] = matches;
+  return first && first.similarity >= 55 && (!second || first.similarity - second.similarity >= 10) ? first.id : undefined;
 }
 
 const dateLabel = (iso: string | null) => (iso ? iso.slice(0, 10) : "—");
@@ -233,6 +238,12 @@ function BatchReview({ api, batchId, viewer, clients, billingInvoices, batches, 
     setDetail(result.ok ? { status: "ready", data: result.data } : { status: "error", error: failureOf(result)! });
   }, [api, batchId]);
 
+  const clientMatchesByRow = useMemo(() => new Map((detail.status === "ready" ? detail.data.rows : []).map((row) => {
+    const suggestion = row.parsed_fields.auto_suggestion;
+    const customerName = suggestion?.disposition === "invoice" ? suggestion.fields?.customer_name : null;
+    return [row.id, typeof customerName === "string" ? suggestImportedClientMatches(customerName, clients) : []] as const;
+  })), [clients, detail]);
+
   useEffect(() => {
     let current = true;
     api.importBatch(batchId).then((result) => {
@@ -350,6 +361,7 @@ function BatchReview({ api, batchId, viewer, clients, billingInvoices, batches, 
                   <LineRow
                     key={row.id}
                     row={row}
+                    clientMatches={clientMatchesByRow.get(row.id) || []}
                     invoice={row.source_invoice_id ? invoiceBySource.get(row.source_invoice_id) : undefined}
                     clientNames={clientNames}
                     editable={editable && Boolean(batch.source_as_of)}
@@ -359,6 +371,7 @@ function BatchReview({ api, batchId, viewer, clients, billingInvoices, batches, 
                     mappingForm={mapping === row.id ? (
                       <InvoiceMappingForm
                         row={row}
+                        suggestedClientId={recommendedClientId(clientMatchesByRow.get(row.id) || [])}
                         existing={row.source_invoice_id ? invoiceBySource.get(row.source_invoice_id) : undefined}
                         clients={clients}
                         billingInvoices={billingInvoices}
@@ -530,10 +543,11 @@ const CLASSIFY_ACTIONS: Array<{ disposition: ClassifyDisposition; label: string 
   { disposition: "ignored", label: "Ignore" },
 ];
 
-export function LineRow({ row, invoice, clientNames, editable, mappingOpen, onMap, onClassify, mappingForm }: {
+export function LineRow({ row, invoice, clientNames, clientMatches = [], editable, mappingOpen, onMap, onClassify, mappingForm }: {
   row: ImportRow;
   invoice?: ImportInvoice;
   clientNames: Record<string, string>;
+  clientMatches?: ImportedClientMatch[];
   editable: boolean;
   mappingOpen: boolean;
   onMap: () => void;
@@ -558,9 +572,18 @@ export function LineRow({ row, invoice, clientNames, editable, mappingOpen, onMa
             </div>
           ) : null}
           {suggestion?.disposition === "invoice" && suggestion.confidence === "high" ? (
-            <div className="bc-small" data-auto-suggestion="invoice" style={{ marginTop: 4 }}>
-              Suggested: {String(suggestion.fields?.customer_name || "customer unclear")} · invoice {String(suggestion.fields?.invoice_number || "—")} · {String(suggestion.fields?.open_balance || "balance unclear")}
-            </div>
+            <>
+              <div className="bc-small" data-auto-suggestion="invoice" style={{ marginTop: 4 }}>
+                Suggested fields: {String(suggestion.fields?.customer_name || "customer unclear")} · invoice {String(suggestion.fields?.invoice_number || "—")} · {String(suggestion.fields?.open_balance || "balance unclear")}
+              </div>
+              {clientMatches.length ? (
+                <div className="bc-small" data-client-match-suggestions={row.id} style={{ marginTop: 4 }}>
+                  Possible TAP Hub clients (ranked by name similarity; verify before saving): {clientMatches.map((match, index) => (
+                    <span key={match.id}>{index ? " · " : ""}{match.name} ({match.similarity}% similar)</span>
+                  ))}
+                </div>
+              ) : null}
+            </>
           ) : suggestion?.disposition === "unreviewed" ? (
             <div className="bc-small" data-auto-suggestion="uncertain" style={{ marginTop: 4 }}>Needs review: {suggestion.reason}</div>
           ) : null}
@@ -618,7 +641,7 @@ export function validateMapping(values: Record<string, string>) {
 }
 
 /** A correction starts from what the reviewer confirmed before (never from a guess); it must be re-confirmed. */
-function confirmedValues(existing: ImportInvoice | undefined, row: ImportRow, clients: ClientOption[]): Record<string, string> {
+function confirmedValues(existing: ImportInvoice | undefined, row: ImportRow, clients: ClientOption[], suggestedClientId?: string): Record<string, string> {
   const text = (value: string | number | null | undefined) => (value === null || value === undefined ? "" : String(value));
   if (existing) return {
     client_id: text(existing.identity?.client_id), customer_name: existing.customer_name, invoice_number: text(existing.invoice_number),
@@ -630,7 +653,7 @@ function confirmedValues(existing: ImportInvoice | undefined, row: ImportRow, cl
   if (suggestion?.disposition !== "invoice" || !suggestion.fields) return {};
   const fields = suggestion.fields;
   const customer = typeof fields.customer_name === "string" ? fields.customer_name : "";
-  const client = exactClientMatch(customer, clients);
+  const client = exactClientMatch(customer, clients) || clients.find((candidate) => candidate.id === suggestedClientId) || null;
   return {
     ...(client ? { client_id: client.id } : {}),
     customer_name: customer,
@@ -646,7 +669,7 @@ function confirmedValues(existing: ImportInvoice | undefined, row: ImportRow, cl
   };
 }
 
-export function InvoiceMappingForm({ row, existing, clients, billingInvoices, priorImports = [], onSubmit, onCancel }: {
+export function InvoiceMappingForm({ row, existing, clients, billingInvoices, priorImports = [], suggestedClientId, onSubmit, onCancel }: {
   row: ImportRow;
   /** The invoice this line was already confirmed as, when correcting it. */
   existing?: ImportInvoice;
@@ -654,12 +677,14 @@ export function InvoiceMappingForm({ row, existing, clients, billingInvoices, pr
   billingInvoices: Receivable[];
   /** Invoices from earlier approved reports this line could be a newer snapshot of. */
   priorImports?: PriorImport[];
+  /** Name-only candidate, prefilled for review but never applied until the reviewer confirms. */
+  suggestedClientId?: string;
   onSubmit: (input: Parameters<BillingApi["reviewImportInvoice"]>[1]) => Promise<ApiResult<unknown>>;
   onCancel: () => void;
 }) {
   const formId = useId();
   const cells = rowCells(row);
-  const [values, setValues] = useState<Record<string, string>>(() => confirmedValues(existing, row, clients));
+  const [values, setValues] = useState<Record<string, string>>(() => confirmedValues(existing, row, clients, suggestedClientId));
   const [mappedFrom, setMappedFrom] = useState<Record<string, number>>({});
   const [active, setActive] = useState<MappingField>("customer_name");
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -727,6 +752,11 @@ export function InvoiceMappingForm({ row, existing, clients, billingInvoices, pr
   return (
     <form onSubmit={submit} noValidate data-mapping-form={row.id} style={{ padding: "6px 2px" }}>
       <div className="bc-label">Cells read from this line — click one to fill <b style={{ color: "var(--navy)" }}>{MAPPING_FIELDS.find((item) => item.name === active)?.label}</b></div>
+      {suggestedClientId && !exactClientMatch(String(row.parsed_fields.auto_suggestion?.fields?.customer_name || ""), clients) ? (
+        <p className="bc-small" data-client-candidate-note style={{ margin: "0 0 8px" }}>
+          The parser preselected a possible client by name similarity. Verify the client and report details; this is not a client link until you confirm and save.
+        </p>
+      ) : null}
       <div className="bc-inline" style={{ gap: 6, marginBottom: 12 }}>
         {cells.map((cell, index) => (
           <button key={index} type="button" className="bc-btn quiet" data-cell={index} style={{ padding: "3px 9px", fontSize: 12, fontWeight: 500 }} onClick={() => fillFromCell(index)}>{cell}</button>
