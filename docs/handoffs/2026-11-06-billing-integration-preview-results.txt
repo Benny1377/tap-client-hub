@@ -88,3 +88,7 @@ PASS Z test accounts and client service restored ::
 PASS B1, B2, B3, B4, B6, Z
 FAIL B5 detail heading was blank for a draft
 6/7 passed
+
+## verify-billing-draft-ui.mjs on 3a3028d (after the heading fix)
+PASS B1, B2, B3, B4, B5, B6, Z
+7/7 passed

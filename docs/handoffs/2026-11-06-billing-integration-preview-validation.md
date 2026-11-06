@@ -7,10 +7,10 @@
 | To | Engineer B, project owner |
 | Branch | `codex/billing-dev-integration` |
 | Contains | `4ee043f`, `9053cbd`, `68c5fc0`, `dev` at `92efec1`, and the fixes in section 3 |
-| Tested on Preview | `6bba06b` at `https://tap-client-hub-test.vercel.app` |
+| Tested on Preview | `6bba06b`, then `3a3028d` for the heading fix, at `https://tap-client-hub-test.vercel.app` |
 | Database | TAB-HUB sandbox, `vuqgxotdccxivjmavsoj.supabase.co` |
 | Evidence | `2026-11-06-billing-integration-preview-results.txt` |
-| Outcome | **Payroll field access passes on the Preview.** One merge defect was found and fixed. Phase 3 contract is not acknowledged yet |
+| Outcome | **Payroll field access passes on the Preview, and the integration is merged to `dev`.** One merge defect was found, fixed and confirmed hosted. Phase 3 contract is not acknowledged yet |
 
 ## 1. Branch base
 
@@ -28,7 +28,7 @@ Deployment identity: Engineer A promoted this deployment in Vercel. From outside
 | Phase 3 reads, `verify-billing-phase3-reads.mjs` | 13/13 |
 | Collections-only refusals A3, A4, D8 | 4/4 |
 | Payroll fields in real browser sessions, `verify-payroll-fields-ui.mjs` | 13/13 |
-| Billing draft flow in a real browser, `verify-billing-draft-ui.mjs` | 6/7, section 3 |
+| Billing draft flow in a real browser, `verify-billing-draft-ui.mjs` | 6/7 on `6bba06b` (section 3), then 7/7 on `3a3028d` |
 
 Payroll field results by role:
 
@@ -82,6 +82,6 @@ Before production:
 
 ## 6. Integration decision
 
-Merge `codex/billing-dev-integration` into `dev` once the heading fix is confirmed on the Preview. The open items in section 4 do not touch `dev` behaviour, and no Phase 3 screen exists yet.
+Engineer A chose `codex/billing-dev-integration` as the integration point and merged it into `dev` after the heading fix was confirmed on the Preview. The merge is a fast-forward. The commit after `3a3028d` changes only this record and its results file. The open items in section 4 do not touch `dev` behaviour, and no Phase 3 screen exists yet.
 
 This does not authorize production, and it does not start Phase 3 screen work.
