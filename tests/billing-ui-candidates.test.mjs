@@ -137,4 +137,37 @@ check("drafts and voids say linked candidates go back to Ready", () => {
   assert.doesNotMatch(detail(invoice(), staff, granted), /go back to Ready/);
 });
 
+const work = loadTs("lib/billing-ui/workbench.ts");
+check("billing runs fall on month ends, across a year end", () => {
+  assert.deepEqual(work.nextRunDates("2026-11-06"), ["2026-11-30", "2026-12-31", "2027-01-31"]);
+  assert.deepEqual(work.nextRunDates("2028-01-15", 2), ["2028-01-31", "2028-02-29"]);
+});
+check("the firm date is Houston's, not the browser's", () => {
+  assert.equal(work.firmToday(new Date("2026-11-07T03:00:00Z")), "2026-11-06");
+  assert.equal(work.firmToday(new Date("2026-03-08T07:59:00Z")), "2026-03-08");
+});
+check("runs place work by month and show a package once", () => {
+  const runs = ["2026-11-30", "2026-12-31"];
+  const item = (id, date, amount = "300.00") => ({ clientServiceId: id, candidateDate: date, description: `Service ${id}`, unitAmount: amount });
+  const rows = work.runRows([item("s-1", "2026-11-30"), item("s-2", "2026-11-30"), item("s-9", "2026-12-05", null)], runs, [bundle()]);
+  assert.equal(rows.length, 2);
+  const pack = rows.find((row) => row.packaged);
+  assert.equal(pack.description, "Monthly package");
+  assert.equal(pack.cells["2026-11-30"].amount, "300.00");
+  const other = rows.find((row) => !row.packaged);
+  assert.equal(other.cells["2026-12-31"].amount, null);
+  assert.match(work.whyItMoves(other, runs), /No price yet/);
+  assert.match(work.whyItMoves(other, runs), /Bills in 31 Dec only/);
+});
+check("priced how follows the server's order", () => {
+  const override = { id: "o", clientServiceId: "s-1", unitAmount: "1.00", effectiveFrom: "2026-01-01" };
+  assert.equal(work.pricedHow("s-1", "2026-11-30", [override], [bundle()]), "Package");
+  assert.equal(work.pricedHow("s-1", "2026-11-30", [override], []), "Own price");
+  assert.equal(work.pricedHow("s-1", "2025-11-30", [override], []), "Rate card");
+});
+check("client rows count, and never add money", () => {
+  const [row] = work.clientRows([{ id: "c-1", name: "A" }], [{ client_id: "c-1", balance: "10.00", days_past_due: 4 }, { client_id: "c-1", balance: "0.00", days_past_due: 90 }], [candidate("a", "s-1")], []);
+  assert.deepEqual({ open: row.openInvoices, past: row.daysPastDue, ready: row.ready, none: row.noPrice }, { open: 1, past: 4, ready: 1, none: 0 });
+});
+
 console.log(`billing UI candidate checks passed (${passed})`);

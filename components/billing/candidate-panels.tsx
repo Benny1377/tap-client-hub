@@ -17,7 +17,7 @@ export interface CandidateHandlers {
   onDraft: (candidateIds: string[], memo: string) => Mutation;
 }
 
-function ReasonAction({ label, description, submitLabel, onSubmit }: { label: string; description?: string; submitLabel: string; onSubmit: (reason: string) => Mutation }) {
+export function ReasonAction({ label, description, submitLabel, onSubmit }: { label: string; description?: string; submitLabel: string; onSubmit: (reason: string) => Mutation }) {
   return (
     <details data-candidate-action={label}>
       <summary style={{ cursor: "pointer", fontSize: 12.5, fontWeight: 600 }}>{label}</summary>

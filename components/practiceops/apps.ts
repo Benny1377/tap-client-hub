@@ -78,7 +78,7 @@ export const PAGE_HEADS: Record<string, [string, string]> = {
   "/annual": ["Annual Reports", "State renewals — clients flagged for annual filings."],
   "/vault": ["Password Vault", "Portal logins grouped by client. Bank logins are deliberately not stored here."],
   "/users": ["Users & Access", "Who can sign in, what they can open, and who they report to. Owner-controlled."],
-  "/billing": ["Billing", "Invoices, payments and balances. Balances come from the server and refresh after every change."],
+  "/billing": ["Billing", "Price each client once, let the invoices assemble themselves from that price, and close them when the money lands. Recurring work bills on the calendar; one-off work bills the moment Operations marks it done. Nothing is ever sent without you."],
   "/collections": ["Collections", "The follow-up ladder that keeps the firm from falling behind on getting paid. Balances come from Billing and approved A/R reports; nothing is sent to clients yet."],
   "/support": ["Help & Support", "Raise a ticket from inside the system so it arrives with the context already attached — who you are, where you were, and what the system was doing."],
   "/support/inbox": ["Support Inbox", "Firm-wide support tickets, grouped by application."],

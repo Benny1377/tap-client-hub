@@ -56,7 +56,7 @@ check("pages render every section as loading before the API responds", () => {
   for (const label of ["invoices", "payments", "receivables"]) assert.match(billing, new RegExp(`Loading ${label}…`));
   for (const label of ["What bills next", "Clients & prices", "Settings"]) assert.match(billing, new RegExp(label.replaceAll("&", "&amp;")));
   assert.match(billing, /Your access does not include generating candidates/);
-  assert.match(billing, /Projected items/);
+  assert.match(billing, /The next three runs/);
   const collectionsHtml = render(h(CollectionsPage));
   for (const label of ["AR insights", "call list", "Collections activity", "holds"]) assert.match(collectionsHtml, new RegExp(`Loading ${label}…`));
 });
