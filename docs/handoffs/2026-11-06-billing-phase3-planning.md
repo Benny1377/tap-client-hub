@@ -7,7 +7,7 @@
 | Base | `codex/billing-phase2-prep` at `d9cd4a6` |
 | Status | Planning artifacts only; no Phase 3 UI or API implementation started |
 | Contract | Draft: `docs/contracts/billing-phase-3-workbench.md` |
-| Phase 2 gate | Preview hosted validation is recorded at `5735e7e`; the run passed 90 checks and skipped 3 because Collections staff credentials were rejected. Owner reset the Collections staff password; rerun of the three skipped checks is pending before Phase 2 closeout. |
+| Phase 2 gate | Preview hosted validation is recorded at `5735e7e`; the run passed 90 checks and skipped 3 because Collections staff credentials were rejected. Owner reset the Collections staff password and verified sign-in; rerun of the three skipped checks is pending before Phase 2 closeout. |
 
 ## Owner scope decision
 
@@ -50,7 +50,7 @@ Engineer A owns the Billing UI and UI tests. Engineer B owns backend/API changes
 
 ## Remaining gates and next actions
 
-1. Engineer A reruns only the three skipped hosted checks (A3, A4, D8) using the reset Collections staff account, then updates the Phase 2 validation record. No new synthetic client is needed for those checks.
+1. Engineer A reruns only the three skipped hosted checks (A3, A4, D8) using the owner-verified Collections staff account, then updates the Phase 2 validation record. No new synthetic client is needed for those checks.
 2. Rotate all test-account passwords after the rerun because credentials were shared in chat. Keep any replacement credentials in an ignored local secret file or a secure channel, never in repository documents.
 3. Record Phase 2 closeout after the three checks pass. The distinct Owner test is not a separate role requirement because the app models Owner/Admin as one role.
 4. Engineer A reviews this Phase 3 contract against the frozen Phase 2 shapes; both engineers and the owner record the freeze before UI implementation begins.
