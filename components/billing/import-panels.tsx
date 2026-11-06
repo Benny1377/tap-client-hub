@@ -309,7 +309,7 @@ function BatchReview({ api, batchId, viewer, clients, billingInvoices, batches, 
           <button type="button" className="bc-btn" onClick={async () => {
             setActionNotice(null);
             const result = await act(() => api.parseImport(batch.id, true));
-            if (result.ok) setActionNotice(`Suggestions refreshed on ${result.data.updated_suggestions ?? 0} lines. ${result.data.high_confidence_invoice_suggestions} high-confidence invoice suggestions are ready for exact client matching.`);
+            if (result.ok) setActionNotice(`Suggestions refreshed on ${result.data.updated_suggestions ?? 0} lines. ${result.data.high_confidence_invoice_suggestions} invoice suggestions are ready for exact client matching; ${result.data.summary_backed_customer_suggestions || 0} customer names were completed from the same-date summary and an exact detail subtotal.`);
           }}>Refresh automatic suggestions</button>
         </div>
       ) : null}
@@ -949,10 +949,10 @@ export function CrossCheckForm({ api, batch, batches, onDone }: { api: BillingAp
   return (
     <section className="bc-gatebox" aria-label="Cross-check against a detail report" data-cross-check style={{ marginTop: 18 }}>
       <h4 className="bc-sect">Cross-check against the detail report</h4>
-      <p className="bc-hint">A summary report doesn&rsquo;t add invoices. Type the total it prints and compare it with the confirmed invoices of the detail report for the same date ({dateLabel(batch.source_as_of)}).</p>
+          <p className="bc-hint">A summary report doesn&rsquo;t add invoices. Type the total it prints and compare it with the confirmed invoices plus recognized payment and adjustment rows in the detail report for the same date ({dateLabel(batch.source_as_of)}). The reconciliation shows each part of the math.</p>
       {last?.status ? (
         <div className="bc-source" data-cross-check-result={last.status}>
-          Last check: summary {formatMoney(last.summary_reported_total)} − detail {formatMoney(last.detail_invoice_total)} = <b>{formatMoney(last.difference)}</b>{" "}
+          Last check: summary {formatMoney(last.summary_reported_total)} − detail net A/R {formatMoney(last.detail_net_total || last.detail_invoice_total)}{"detail_invoice_subtotal" in last && last.detail_invoice_subtotal ? ` (invoices ${formatMoney(last.detail_invoice_subtotal)} + payments/adjustments ${formatMoney(last.detail_non_invoice_adjustments || "0")})` : ""} = <b>{formatMoney(last.difference)}</b>{" "}
           <span className={`bc-pill ${last.status === "matched" ? "green" : "red"}`}>{last.status === "matched" ? "Matches" : "Doesn't match"}</span>
         </div>
       ) : null}

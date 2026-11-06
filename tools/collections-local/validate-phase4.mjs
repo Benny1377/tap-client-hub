@@ -50,17 +50,25 @@ class Session {
   }
 }
 
-/** Minimal one-page PDF with positioned Helvetica text lines, built in memory. */
-function syntheticPdf(lines) {
+/** Minimal PDF with positioned Helvetica text lines, built in memory. */
+function syntheticPdf(inputPages) {
+  const pages = Array.isArray(inputPages[0]) ? inputPages : [inputPages];
   const esc = (t) => t.replace(/[\\()]/g, (c) => `\\${c}`);
-  const content = lines.map(({ x, y, text }) => `BT /F1 9 Tf ${x} ${y} Td (${esc(text)}) Tj ET`).join("\n");
   const objects = [
     "<< /Type /Catalog /Pages 2 0 R >>",
-    "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
-    "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>",
-    `<< /Length ${Buffer.byteLength(content)} >>\nstream\n${content}\nendstream`,
-    "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+    "",
   ];
+  const pageRefs = [];
+  for (const lines of pages) {
+    const pageRef = objects.length + 1;
+    const contentRef = objects.length + 2;
+    pageRefs.push(`${pageRef} 0 R`);
+    objects.push(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 ${pages.length * 2 + 3} 0 R >> >> /Contents ${contentRef} 0 R >>`);
+    const content = lines.map(({ x, y, text }) => `BT /F1 9 Tf ${x} ${y} Td (${esc(text)}) Tj ET`).join("\n");
+    objects.push(`<< /Length ${Buffer.byteLength(content)} >>\nstream\n${content}\nendstream`);
+  }
+  objects[1] = `<< /Type /Pages /Kids [${pageRefs.join(" ")}] /Count ${pages.length} >>`;
+  objects.push("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>");
   let pdf = "%PDF-1.4\n";
   const offsets = [];
   objects.forEach((body, i) => { offsets.push(Buffer.byteLength(pdf)); pdf += `${i + 1} 0 obj\n${body}\nendobj\n`; });
@@ -74,10 +82,25 @@ const PDF = syntheticPdf([
   { x: 40, y: 750, text: "Synthetic Test Firm" },
   { x: 40, y: 735, text: "A/R Aging QuickZoom" },
   { x: 40, y: 720, text: "As of August 28, 2026" },
+  { x: 40, y: 705, text: "Synthetic reviewer decision marker" },
   ...row(690, ["Date", "Transaction Type", "Num", "Due Date", "Open Balance"]),
   ...row(670, ["08/01/2026", "Invoice", "SYN-1001", "08/31/2026", "150.00"]),
   ...row(655, ["07/15/2026", "Invoice", "SYN-1002", "08/14/2026", "100.00"]),
 ]);
+const LARGE_PAGES = Array.from({ length: 15 }, (_, pageIndex) => {
+  const lines = [];
+  if (pageIndex === 0) {
+    lines.push({ x: 40, y: 770, text: "Synthetic Test Firm" }, { x: 40, y: 755, text: "A/R Aging QuickZoom" }, { x: 40, y: 740, text: "As of August 28, 2026" });
+  }
+  lines.push(...row(720, ["Date", "Transaction Type", "Num", "Due Date", "Open Balance"]));
+  for (let n = 0; n < 60; n += 1) {
+    const globalRow = pageIndex * 60 + n + 1;
+    const y = 700 - n * 11;
+    lines.push(...row(y, ["08/01/2026", "Invoice", `LOAD-${String(globalRow).padStart(4, "0")}`, "08/31/2026", "150.00"]));
+  }
+  return lines;
+});
+const LARGE_PDF = syntheticPdf(LARGE_PAGES);
 const upload = (session, bytes = PDF, name = "synthetic-ar-detail.pdf") => {
   const form = new FormData();
   form.append("file", new Blob([bytes], { type: "application/pdf" }), name);
@@ -119,6 +142,19 @@ record("AC4", "only Owner/Admin read or edit the permission policy", policyStaff
 // ---- Parse and review ------------------------------------------------------------
 const parse = await owner.call("POST", `/api/collections/imports/${batchId}/parse`, {});
 record("PA1", "parse recognizes the detail layout and as-of date", parse.status === 200 && parse.json?.report_type === "aging_detail" && parse.json?.source_as_of === "2026-08-28", `${parse.status} ${parse.json?.report_type} ${parse.json?.source_as_of} lines=${parse.json?.extracted_line_count}`);
+const firstRows = (await owner.call("GET", `/api/collections/imports/${batchId}`)).json?.rows || [];
+const retainedHeader = firstRows.find((r) => r.review_disposition === "unreviewed");
+const classifiedHeader = retainedHeader && await owner.call("PATCH", `/api/collections/imports/${batchId}`, { row_id: retainedHeader.id, disposition: "ignored", note: "Synthetic regression classification" });
+sql(`update tap_hub_project.collection_import_batches set status = 'failed' where id = '${batchId}'`);
+const failedRetry = await owner.call("POST", `/api/collections/imports/${batchId}/parse`, {});
+const retryState = sql(`select status || ' ' || (select review_disposition from tap_hub_project.collection_import_rows where batch_id = '${batchId}' and id = '${retainedHeader?.id}') from tap_hub_project.collection_import_batches where id = '${batchId}'`);
+record("PA4", "retrying a failed parsed batch restores review status and preserves decisions", classifiedHeader?.status === 200 && failedRetry.status === 200 && failedRetry.json?.status === "needs_review" && retryState === "needs_review ignored", `${failedRetry.status} response=${failedRetry.json?.status}; stored=${retryState}`);
+const largeUp = await upload(owner, LARGE_PDF, "synthetic-large-detail.pdf");
+const largeId = largeUp.json?.batch?.id;
+const largeParse = largeId ? await owner.call("POST", `/api/collections/imports/${largeId}/parse`, {}) : { status: 0, json: {} };
+const largeStored = largeId ? Number(sql(`select count(*) from tap_hub_project.collection_import_rows where batch_id = '${largeId}'`)) : 0;
+record("PA5", "first parse saves a 15-page, 900-row synthetic detail report", largeUp.status === 201 && largeParse.status === 200 && largeParse.json?.extracted_line_count >= 900 && largeStored === largeParse.json?.extracted_line_count,
+  `upload=${largeUp.status}; parse=${largeParse.status} rows=${largeParse.json?.extracted_line_count}; stored=${largeStored}`);
 const review = await owner.call("GET", `/api/collections/imports/${batchId}`);
 const rows = review.json?.rows || [];
 const rowA = rows.find((r) => /SYN-1001/.test(r.raw_text));
