@@ -2,6 +2,7 @@
 
 - [Billing project initialization](2026-10-19-billing-project-initialization.md)
 - [Billing Phase 3 contract acknowledgement](2026-11-06-billing-phase3-contract-acknowledgement.md)
+- [Collections A/R suggestions Preview validation](2026-11-06-collections-ar-suggestions-preview-validation.md)
 - [Billing integration Preview validation](2026-11-06-billing-integration-preview-validation.md)
 - [Payroll credential fields follow-up](2026-11-06-payroll-credential-fields-follow-up.md)
 - [Billing owner decisions and Phase 3 follow-up](2026-11-06-billing-owner-decisions-and-phase3-follow-up.md)
