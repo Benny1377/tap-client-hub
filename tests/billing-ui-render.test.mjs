@@ -155,6 +155,14 @@ check("issued for Owner/Admin: void control with balance from the API", () => {
   assert.match(html, /12 days past due/);
 });
 
+check("void control warns when payments are still applied", () => {
+  const applied = detail(invoice({ status: "issued", invoice_lines: [line] }), owner, { ...receivable, allocated: "100.00" });
+  assert.match(applied, /data-void-blocked[^>]*>Payments are applied to this invoice \(\$100\.00\)/);
+  const none = detail(invoice({ status: "issued", invoice_lines: [line] }), owner, { ...receivable, allocated: "0.00", balance: "250.00" });
+  assert.doesNotMatch(none, /data-void-blocked/);
+  assert.match(none, /data-void-control/);
+});
+
 check("void invoices show the reason and no actions", () => {
   const html = detail(invoice({ status: "void", voided_at: "2026-10-05T10:00:00Z", void_reason: "Duplicate", invoice_lines: [line] }), owner);
   assert.match(html, /data-lifecycle="void"/);

@@ -18,7 +18,7 @@ export interface ImportBatch {
   approved_by: string | null;
   approved_at: string | null;
   supersedes_batch_id: string | null;
-  metadata?: { page_count?: number; extracted_line_count?: number; detail_cross_check?: Partial<CrossCheckResult> } | null;
+  metadata?: { page_count?: number; extracted_line_count?: number; suggestion_parser?: string; auto_classified_count?: number; high_confidence_invoice_suggestions?: number; detail_cross_check?: Partial<CrossCheckResult> } | null;
   created_at: string;
   updated_at: string;
 }
@@ -29,7 +29,7 @@ export interface ImportRow {
   page_number: number;
   row_number: number;
   raw_text: string;
-  parsed_fields: { cells?: string[] } & Record<string, unknown>;
+  parsed_fields: { cells?: string[]; auto_suggestion?: { disposition: string; confidence: string; reason: string; fields?: Record<string, string | number | null> } } & Record<string, unknown>;
   duplicate_of: string | null;
   exact_duplicate: boolean;
   review_disposition: RowDisposition;

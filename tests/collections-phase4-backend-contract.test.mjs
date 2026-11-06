@@ -34,6 +34,29 @@ test("parse results remain staging data until every source line and invoice is r
   assert.match(migration, /corrector cannot approve/);
 });
 
+test("automatic A/R mapping is conservative, permission-checked, auditable, and still gated by a separate approval", () => {
+  const parse = source("app/api/collections/imports/[id]/parse/route.ts");
+  const autoMatch = source("app/api/collections/imports/[id]/auto-match/route.ts");
+  const suggestions = source("lib/collections-pdf-suggestions.ts");
+  const ui = source("components/billing/import-panels.tsx");
+  const lockMigration = source("supabase/migrations/20261104160000_collections_guard_auto_match_review_state.sql");
+  assert.match(parse, /suggestCollectionsPdfRows/);
+  assert.match(parse, /requires_human_confirmation: true/);
+  assert.match(autoMatch, /canUseCollectionsImport\(access\.identity!, "review"\)/);
+  assert.match(autoMatch, /auto_match_collection_import_rows/);
+  assert.match(lockMigration, /v_client_count <> 1/);
+  assert.match(lockMigration, /review_unreviewed_collection_import_invoice/);
+  assert.match(lockMigration, /p_linked_invoice_id/);
+  assert.match(autoMatch, /requires_separate_owner_approval: true/);
+  assert.match(suggestions, /confidence: "high"/);
+  assert.match(suggestions, /No safe row classification/);
+  assert.match(lockMigration, /v_disposition <> 'unreviewed'/);
+  assert.match(lockMigration, /cardinality\(p_source_row_ids\).*500/);
+  assert.match(lockMigration, /for update/);
+  assert.match(ui, /Apply exact client matches in one step/);
+  assert.match(ui, /A separate Owner\/Admin still has to approve/);
+});
+
 test("approved import source identities carry across actions and block stale or conflicting balances", () => {
   const migration = source("supabase/migrations/20261019100000_collections_pdf_intake.sql");
   const events = source("app/api/collections/events/route.ts");

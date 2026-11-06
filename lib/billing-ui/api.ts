@@ -218,8 +218,12 @@ export function createBillingApi(fetchImpl: FetchLike) {
       return request<{ batch: Pick<ImportBatch, "id" | "status" | "created_at"> & Partial<ImportBatch>; duplicate: boolean }>(fetchImpl, "/api/collections/imports", { method: "POST", body: form });
     },
     /** Extracts page/row text only. Parsing never confirms an invoice. */
-    parseImport: (id: string) =>
-      request<{ batch_id: string; status: string; report_type: string; source_as_of: string | null; page_count: number; extracted_line_count: number }>(fetchImpl, `/api/collections/imports/${encodeURIComponent(id)}/parse`, { method: "POST" }),
+    parseImport: (id: string, refreshSuggestions = false) =>
+      request<{ batch_id: string; status: string; report_type: string; source_as_of: string | null; page_count: number; extracted_line_count: number; auto_classified_count: number; high_confidence_invoice_suggestions: number; updated_suggestions?: number }>(fetchImpl, `/api/collections/imports/${encodeURIComponent(id)}/parse`, {
+        method: "POST", ...(refreshSuggestions ? { body: JSON.stringify({ refresh_suggestions: true }) } : {}),
+      }),
+    autoMatchImports: (batchId: string) =>
+      post<{ batch_id: string; matched: number; uncertain: number; unmatched_client: number; unprocessed?: number; requires_separate_owner_approval: true; message: string }>(fetchImpl, `/api/collections/imports/${encodeURIComponent(batchId)}/auto-match`, {}),
     classifyImportRow: (batchId: string, rowId: string, disposition: ClassifyDisposition, note?: string) =>
       patch<{ row: { id: string; review_disposition: string } }>(fetchImpl, `/api/collections/imports/${encodeURIComponent(batchId)}`, { row_id: rowId, disposition, ...(note ? { note } : {}) }),
     reviewImportInvoice: (batchId: string, input: ImportInvoiceInput) =>

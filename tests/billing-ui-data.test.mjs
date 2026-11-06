@@ -373,6 +373,29 @@ await check("preview posts only the supplied options and never sends anything it
   assert.equal(calls.length, 2, "one request per preview; no follow-up delivery calls");
 });
 
+await check("line validation follows the ledger columns: quantity to four decimals, money to two, and size limits", () => {
+  assert.deepEqual(validation.validateLine({ description: "x", quantity: "1.2345", unit_amount: "10.00" }), {});
+  assert.ok(validation.validateLine({ description: "x", quantity: "1.23456", unit_amount: "10" }).quantity, "five decimals are refused");
+  assert.ok(validation.validateLine({ description: "x", quantity: "0.0000", unit_amount: "10" }).quantity, "a zero quantity is refused");
+  assert.ok(validation.validateLine({ description: "x", quantity: "123456789", unit_amount: "10" }).quantity, "more than 8 whole digits is refused");
+  assert.ok(validation.validateLine({ description: "x", quantity: "1", unit_amount: "12345678901" }).unit_amount, "more than 10 whole digits is refused");
+  assert.deepEqual(validation.validateLine({ description: "x", quantity: "99999999.9999", unit_amount: "9999999999.99" }), {}, "the largest values the columns hold are accepted");
+});
+
+await check("Phase 1 backend codes have plain headlines", () => {
+  const cases = {
+    LINE_INVARIANT_VIOLATION: /can't be changed/,
+    ACTIVE_PAYMENT_ALLOCATION: /Reverse those allocations first/,
+    VOID_REASON_REQUIRED: /reason for voiding/,
+    AMOUNT_OUT_OF_RANGE: /too large/,
+  };
+  for (const [code, pattern] of Object.entries(cases)) {
+    const { headline } = vm.friendlyError(code === "VOID_REASON_REQUIRED" || code === "AMOUNT_OUT_OF_RANGE" ? "invalid" : "conflict", code, "x");
+    assert.match(headline, pattern, code);
+  }
+  assert.equal(validation.validateReason("   ").reason, "A reason is required.", "a blank void reason is refused before the request");
+});
+
 // --- Browser-test fixes (2026-10-10) ------------------------------------------
 await check("friendly errors: stable codes get plain headlines and internal prefixes are stripped", () => {
   const conflict = vm.friendlyError("conflict", "LEDGER_CONFLICT", "invariant_violation: payment would be over-allocated");

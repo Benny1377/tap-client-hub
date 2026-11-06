@@ -11,6 +11,7 @@ const { createElement: h } = require("react");
 const { renderToStaticMarkup: render } = require("react-dom/server");
 
 const imports = loadTs("lib/billing-ui/imports.ts");
+const pdfSuggestions = loadTs("lib/collections-pdf-suggestions.ts");
 const { createBillingApi } = loadTs("lib/billing-ui/api.ts");
 const panels = loadTs("components/billing/import-panels.tsx");
 const { SourceNote } = loadTs("components/billing/worklist-panels.tsx");
@@ -52,6 +53,27 @@ test("report dates convert from US format and reject impossible dates", () => {
 test("cells come from the parser, or from the joined text when missing", () => {
   assert.deepEqual(imports.rowCells(row("r1", "unreviewed", ["A", "B"])), ["A", "B"]);
   assert.deepEqual(imports.rowCells({ raw_text: "A | B | C", parsed_fields: {} }), ["A", "B", "C"]);
+});
+
+test("QuickBooks detail suggestions use column positions, require complete fields, and leave uncertainty for review", () => {
+  const lines = [
+    { page: 1, text: "Type | Date | Num | Name | Terms | Due Date | Aging | Open Balance", cells: ["Type", "Date", "Num", "Name", "Terms", "Due Date", "Aging", "Open Balance"], cell_positions: [10, 60, 100, 160, 220, 340, 400, 470] },
+    // The optional PO cell is absent; x-position mapping prevents every later value shifting left.
+    { page: 1, text: "Invoice | 08/01/2026 | INV-1001 | Example Orchard LLC | Net 15 | 08/16/2026 | 27 | $1,250.00", cells: ["Invoice", "08/01/2026", "INV-1001", "Example Orchard LLC", "Net 15", "08/16/2026", "27", "$1,250.00"], cell_positions: [12, 63, 105, 165, 226, 342, 407, 478] },
+    { page: 1, text: "Invoice | INV-1002", cells: ["Invoice", "INV-1002"] },
+    { page: 1, text: "Total Open Balance | $1,250.00", cells: ["Total Open Balance", "$1,250.00"] },
+  ];
+  const [header, invoice, uncertain, total] = pdfSuggestions.suggestCollectionsPdfRows(lines);
+  assert.equal(header.disposition, "header");
+  assert.equal(invoice.disposition, "invoice");
+  assert.deepEqual(invoice.fields, {
+    transaction_type: "Invoice", transaction_date: "2026-08-01", invoice_number: "INV-1001",
+    customer_name: "Example Orchard LLC", terms: "Net 15", po_number: null,
+    due_date: "2026-08-16", reported_aging: 27, open_balance: "1250.00",
+  });
+  assert.equal(uncertain.disposition, "unreviewed", "incomplete invoice values are not guessed");
+  assert.equal(total.disposition, "summary");
+  assert.equal(pdfSuggestions.normalizeImportedCustomerName("Example Orchard LLC"), pdfSuggestions.normalizeImportedCustomerName("Example Orchard"));
 });
 
 test("review progress counts every line exactly once", () => {
@@ -99,6 +121,7 @@ test("every import route the UI calls uses the contract's path, method and body"
   await api.importBatch("b-1");
   await api.uploadImport(new File([new Uint8Array([37, 80, 68, 70, 45])], "synthetic.pdf", { type: "application/pdf" }));
   await api.parseImport("b-1");
+  await api.autoMatchImports("b-1");
   await api.classifyImportRow("b-1", "r-1", "header");
   await api.reviewImportInvoice("b-1", { source_row_id: "r-1", client_id: "c-1", customer_name: "X", open_balance: 1, confirmed: true });
   await api.approveImport("b-1");
@@ -110,6 +133,7 @@ test("every import route the UI calls uses the contract's path, method and body"
     "GET /api/collections/imports/b-1",
     "POST /api/collections/imports",
     "POST /api/collections/imports/b-1/parse",
+    "POST /api/collections/imports/b-1/auto-match",
     "PATCH /api/collections/imports/b-1",
     "POST /api/collections/imports/b-1",
     "POST /api/collections/imports/b-1/approve",
@@ -120,8 +144,8 @@ test("every import route the UI calls uses the contract's path, method and body"
   const upload = calls[2];
   assert.ok(upload.body instanceof FormData && upload.body.get("file") instanceof File, "multipart upload");
   assert.equal(upload.headers, undefined, "no JSON content type on a multipart body");
-  assert.deepEqual(JSON.parse(calls[4].body), { row_id: "r-1", disposition: "header" });
-  assert.deepEqual(calls[4].headers, { "Content-Type": "application/json" });
+  assert.deepEqual(JSON.parse(calls[5].body), { row_id: "r-1", disposition: "header" });
+  assert.deepEqual(calls[5].headers, { "Content-Type": "application/json" });
 });
 
 test("mapping validation requires a client, the customer, a balance and the PDF check", () => {
@@ -141,6 +165,21 @@ test("an unreviewed line offers invoice mapping and the three classifications; a
   assert.doesNotMatch(repeated, /Heading|Invoice…/);
   const locked = render(h("table", null, h("tbody", null, h(panels.LineRow, { ...props, editable: false, row: row("r3", "unreviewed") }))));
   assert.doesNotMatch(locked, /Heading/, "an approved report is read-only");
+});
+
+test("an exact unique client suggestion pre-fills extracted values without marking the row reviewed", () => {
+  const suggested = row("r3", "unreviewed", ["08/01/2026", "Invoice", "INV-1003", "Example Orchard LLC", "08/16/2026", "27", "1250.00"]);
+  suggested.parsed_fields.auto_suggestion = { disposition: "invoice", confidence: "high", reason: "all required columns present", fields: {
+    transaction_type: "Invoice", invoice_number: "INV-1003", transaction_date: "2026-08-01", customer_name: "Example Orchard LLC",
+    due_date: "2026-08-16", terms: "Net 15", po_number: null, reported_aging: 27, open_balance: "1250.00",
+  } };
+  const html = render(h(panels.InvoiceMappingForm, {
+    row: suggested, clients, billingInvoices: [], onSubmit: ok, onCancel: () => {},
+  }));
+  assert.match(html, /value="c-1"/);
+  assert.match(html, /value="INV-1003"/);
+  assert.match(html, /value="1250\.00"/);
+  assert.equal(suggested.review_disposition, "unreviewed", "prefill is a suggestion, not review confirmation");
 });
 
 test("the mapping form shows the line's cells as click-to-fill buttons and never prefills values", () => {
