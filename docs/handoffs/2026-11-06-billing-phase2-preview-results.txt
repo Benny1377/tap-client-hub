@@ -97,3 +97,11 @@ PASS Z2 remittance settings match the pre-run snapshot exactly ::
 Added by this run: services=8 clientServices=8 workPeriods=1 periodCounts=1 rateCards=4 rateCardEntries=2 clientServiceOverrides=1 bundles=1 termsOverrides=1 completionSourceMaps=7 candidates=7 manualConfirmations=1 invoices=5 invoiceLines=3 payments=1 paymentAllocations=1 (ids in C:/Users/aanan/AppData/Local/Temp/claude/bc3d468011e261f1/64abffb1-91d4-40ce-8f8b-cfc4625ac732/scratchpad/preview-manifest.json)
 
 90/90 passed, 3 skipped (A3-Collections-only A4-Collections-only D8)
+
+===== Rerun of the skipped checks (A3, A4, D8), Collections-only, after the password reset =====
+PASS P-1 the deployment reads the pinned sandbox (remittance updatedAt matches) :: vuqgxotdccxivjmavsoj.supabase.co
+PASS A3-Collections-only Collections-only staff get 403 (no redacted body) on every Phase 2 read incl. /permissions :: 9 paths
+PASS A4-Collections-only Collections-only staff get 403 on Phase 2 writes :: 5 writes
+PASS D8 Collections-only staff cannot create a confirmation (403) :: 403
+
+4/4 passed
