@@ -4,6 +4,8 @@ import { useEffect, useRef, useState } from "react";
 import type { Client, ServiceKey } from "@/lib/types";
 import { SERVICE_META } from "@/lib/data";
 import { calculatePayrollStartDate } from "@/lib/payroll-schedule";
+import { useSession } from "@/components/practiceops/session";
+import { canViewPayrollCredentials } from "@/lib/payroll-credentials";
 
 interface ClientModalProps {
   open: boolean;
@@ -54,6 +56,8 @@ function isInvalidPhone(value: string): boolean {
 const FILING_TYPES = ["C Corp.", "S Corp.", "Partnership", "SMLLC", "Personal", "Trust", "Non Profit", "Retirem Plan"];
 
 export default function ClientModal({ open, client, onClose, onSave }: ClientModalProps) {
+  const session = useSession();
+  const mayViewPayrollCredentials = canViewPayrollCredentials(session);
   const staffNames = useStaffNames();
   const isEdit = !!client;
 
@@ -168,7 +172,7 @@ export default function ClientModal({ open, client, onClose, onSave }: ClientMod
       const finSvc = svcs.find(s => s.key === "financials");
       if (finSvc) { setFinFreq(finSvc.frequency || "Monthly"); setFinMonth(String(finSvc.financialsMonth || 1)); }
       const prSvc = svcs.find(s => s.key === "payroll");
-      if (prSvc) { setPrFreq(prSvc.frequency || "Bi-Weekly A"); setPrPaydate(prSvc.paydate || ""); setPrPin(prSvc.payrollPassword || ""); setPrEftps(prSvc.eftps || ""); setPrProcessor(prSvc.processor || ""); setPrProcessorOther(prSvc.processorOther || ""); setPrEmails(Array.isArray(prSvc.payEmails) ? prSvc.payEmails : []); setPrReportingNotes(prSvc.reportingNotes || ""); }
+      if (prSvc) { setPrFreq(prSvc.frequency || "Bi-Weekly A"); setPrPaydate(prSvc.paydate || ""); setPrPin(mayViewPayrollCredentials ? prSvc.payrollPassword || "" : ""); setPrEftps(mayViewPayrollCredentials ? prSvc.eftps || "" : ""); setPrProcessor(prSvc.processor || ""); setPrProcessorOther(prSvc.processorOther || ""); setPrEmails(Array.isArray(prSvc.payEmails) ? prSvc.payEmails : []); setPrReportingNotes(prSvc.reportingNotes || ""); }
       setClientEin(client.ein || "");
       const t9Svc = svcs.find(s => s.key === "1099s");
       if (t9Svc) setT9Count(String(t9Svc.expectedAnnual || ""));
@@ -197,7 +201,7 @@ export default function ClientModal({ open, client, onClose, onSave }: ClientMod
       setFinAssigned("Unassigned"); setPrAssigned("Unassigned");
       setT9Assigned("Unassigned"); setRendAssigned("Unassigned"); setTaxAssigned("Unassigned");
     }
-  }, [client, open]);
+  }, [client, open, mayViewPayrollCredentials]);
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) { if (e.key === "Escape") onClose(); }
@@ -235,8 +239,7 @@ export default function ClientModal({ open, client, onClose, onSave }: ClientMod
     });
     addSvc("payroll", pr, prFreq, prAssigned, {
       paydate: prPaydate || null,
-      payrollPassword: prPin || null,
-      eftps: prEftps || null,
+      ...(mayViewPayrollCredentials ? { payrollPassword: prPin || null, eftps: prEftps || null } : {}),
       processor: prProcessor || null,
       payEmails: prEmails.length > 0 ? prEmails : undefined,
       reportingNotes: prReportingNotes,
@@ -423,7 +426,7 @@ export default function ClientModal({ open, client, onClose, onSave }: ClientMod
                 </select>
               </div>
             </div>
-            <div className="two" style={{ display: "flex", gap: 12 }}>
+            {mayViewPayrollCredentials && <div className="two" style={{ display: "flex", gap: 12 }}>
               <div style={{ flex: 1 }}>
                 <label style={labelStyle}>Payroll PIN</label>
                 <div style={{ position: "relative" }}>
@@ -451,6 +454,7 @@ export default function ClientModal({ open, client, onClose, onSave }: ClientMod
                 </div>
               </div>
             </div>
+            }
             <div style={{ marginTop: 8 }}>
               <label style={labelStyle}>Processor</label>
               <select style={inputStyle} value={prProcessor} onChange={e => setPrProcessor(e.target.value)}>

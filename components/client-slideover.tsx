@@ -4,6 +4,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
 import type { Client, ServiceKey, CommentEntry, SalesTaxLineItem } from "@/lib/types";
 import { SERVICE_META } from "@/lib/data";
 import { useSession } from "@/components/practiceops/session";
+import { canViewPayrollCredentials, omitPayrollCredentialsFromClientUpdate } from "@/lib/payroll-credentials";
 import { PAY_DAY_OPTIONS, calculatePayrollStartDate, normalizePayDay, formatPayrollStartDate } from "@/lib/payroll-schedule";
 
 // ── Utility: display stored banking references in the authorized client view ──
@@ -95,6 +96,7 @@ interface ClientSlideoverProps {
 
 export default function ClientSlideover({ client, open, onClose, onSave, onDelete, onStageChange, moduleKey, currentUser, canEditClientData = true, stxLineItemFocus }: ClientSlideoverProps) {
   const session = useSession();
+  const mayViewPayrollCredentials = canViewPayrollCredentials(session);
   // Resolve virtual module keys to real service keys (annual_reports is now its own key)
   const resolvedKey = moduleKey === "annual_reports" ? "annual_reports" : moduleKey;
   const isWorklistTab = !!moduleKey;
@@ -120,7 +122,7 @@ export default function ClientSlideover({ client, open, onClose, onSave, onDelet
     if (!canEditClientData) return;
     // Guard: skip if client ID changed (prevents cross-client save)
     if (clientIdRef.current !== client.id) return;
-    pendingSaveRef.current = data;
+    pendingSaveRef.current = omitPayrollCredentialsFromClientUpdate(data, mayViewPayrollCredentials);
     pendingClientIdRef.current = client.id;
     dirtyRef.current = true;
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
@@ -133,7 +135,7 @@ export default function ClientSlideover({ client, open, onClose, onSave, onDelet
       pendingClientIdRef.current = null;
       dirtyRef.current = false;
     }, 800);
-  }, [client.id, canEditClientData]);
+  }, [client.id, canEditClientData, mayViewPayrollCredentials]);
 
   /** Flush any pending save immediately. Call before onClose. */
   const flushSave = useCallback(() => {
@@ -239,9 +241,9 @@ export default function ClientSlideover({ client, open, onClose, onSave, onDelet
   const prSvcInit = client.services.find((s: any) => s.key === "payroll");
   const [prPaydate, setPrPaydate] = useState(prSvcInit?.paydate || "");
   const [prStartDate, setPrStartDate] = useState(prSvcInit?.payStartDate || "");
-  const [prPin, setPrPin] = useState(prSvcInit?.payrollPassword || "");
+  const [prPin, setPrPin] = useState(mayViewPayrollCredentials ? prSvcInit?.payrollPassword || "" : "");
   const [showPrPin, setShowPrPin] = useState(false);
-  const [prEftps, setPrEftps] = useState(prSvcInit?.eftps || "");
+  const [prEftps, setPrEftps] = useState(mayViewPayrollCredentials ? prSvcInit?.eftps || "" : "");
   const [showPrEftps, setShowPrEftps] = useState(false);
   const prPinRef = useRef<HTMLInputElement>(null);
   const prEftpsRef = useRef<HTMLInputElement>(null);
@@ -412,7 +414,7 @@ export default function ClientSlideover({ client, open, onClose, onSave, onDelet
         })
         .catch(() => {});
     }
-  }, [client]);
+  }, [client, mayViewPayrollCredentials]);
   useEffect(() => {
     // Sync local state when switching clients OR when underlying data changes
     const currentId = clientRef.current;
@@ -452,8 +454,8 @@ export default function ClientSlideover({ client, open, onClose, onSave, onDelet
     const prSvc = client.services.find((s: any) => s.key === "payroll");
     setPrPaydate(normalizePayDay(prSvc?.paydate || ""));
     setPrStartDate(prSvc?.payStartDate || "");
-    setPrPin(prSvc?.payrollPassword || "");
-    setPrEftps(prSvc?.eftps || "");
+    setPrPin(mayViewPayrollCredentials ? prSvc?.payrollPassword || "" : "");
+    setPrEftps(mayViewPayrollCredentials ? prSvc?.eftps || "" : "");
     setPrEmails(prSvc?.payEmails || []);
     setPrPeriodFreq(prSvc?.frequency || prSvc?.payPeriodFrequency || "");
     // Auto-fill start date if cadence + pay day are set but start date is not
@@ -471,8 +473,8 @@ export default function ClientSlideover({ client, open, onClose, onSave, onDelet
     setPrQbLicense(prSvc?.qbLicense || "");
     setPrReportingNotes(prSvc?.reportingNotes || "");
     // Sync uncontrolled input refs when switching clients
-    if (prPinRef.current) prPinRef.current.value = prSvc?.payrollPassword || "";
-    if (prEftpsRef.current) prEftpsRef.current.value = prSvc?.eftps || "";
+    if (prPinRef.current) prPinRef.current.value = mayViewPayrollCredentials ? prSvc?.payrollPassword || "" : "";
+    if (prEftpsRef.current) prEftpsRef.current.value = mayViewPayrollCredentials ? prSvc?.eftps || "" : "";
     if (reportingRef.current) reportingRef.current.value = prSvc?.reportingNotes || "";
     // Sync client detail uncontrolled inputs
     if (eEmailRef.current) eEmailRef.current.value = (client.emails || [""])[0] || "";
@@ -1228,6 +1230,7 @@ export default function ClientSlideover({ client, open, onClose, onSave, onDelet
                     <input style={{ width: "100%", padding: "6px 8px", border: "1px solid var(--line)", borderRadius: 7, fontSize: 13, boxSizing: "border-box", background: "var(--paper)", color: "var(--ink)" }}
                       value={formatPayrollStartDate(prStartDate)} readOnly placeholder="mm/dd/yyyy" />
                   </div>
+                  {mayViewPayrollCredentials && <>
                   <div style={{ flex: "1 0 100px", minWidth: 100 }}>
                     <label style={{ fontSize: 10, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", display: "block", marginBottom: 3 }}>Payroll PIN</label>
                     <div style={{ position: "relative" }}>
@@ -1268,6 +1271,7 @@ export default function ClientSlideover({ client, open, onClose, onSave, onDelet
                       </button>
                     </div>
                   </div>
+                  </>}
                 </div>
                 {/* New payroll fields row */}
                 <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 6 }}>
@@ -2675,6 +2679,7 @@ export default function ClientSlideover({ client, open, onClose, onSave, onDelet
                     <option value="QBO">QBO</option>
                   </select>
                 </div>
+                {mayViewPayrollCredentials && <>
                 <div className="field" style={{ display: "flex", justifyContent: "flex-start", gap: 14, padding: "7px 0", fontSize: "13.5px", borderBottom: "1px dashed var(--line2)" }}>
                   <span className="k" style={{ color: "var(--muted)" }}>EFTPS Password</span>
                   <div style={{ flex: 1, position: "relative" }}>
@@ -2709,6 +2714,7 @@ export default function ClientSlideover({ client, open, onClose, onSave, onDelet
                     </button>
                   </div>
                 </div>
+                </>}
                 <div className="field" style={{ display: "flex", justifyContent: "flex-start", gap: 14, padding: "7px 0", fontSize: "13.5px", borderBottom: "1px dashed var(--line2)" }}>
                   <span className="k" style={{ color: "var(--muted)" }}>Payroll email</span>
                   <div style={{ flex: 1 }}>
