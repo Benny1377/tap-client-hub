@@ -38,3 +38,16 @@ sandbox validation handoff.
 `20261030010000_collections_ar_private_bucket.sql` is the first such migration.
 It creates the private Storage bucket required by the existing A/R Intake
 routes. It creates no report object, seed data, or browser-role policy.
+
+## Applied feature-migration mirror
+
+The migration directory also mirrors forward-only Collections and Billing
+promotions already recorded in the shared sandbox history. This includes the
+Collections A/R intake migrations `20261104100000` through `20261104150000`,
+the review-state guard `20261104160000`, and Billing migrations `20261105100000`,
+`20261105110000`, and `20261106100000`. These files exist to keep local
+migration history aligned with the hosted sandbox; they are not pending work
+and must not be applied a second time. Before any future sandbox migration,
+inspect `supabase migration list --workdir tools/sandbox --project-ref
+<sandbox-project-ref>` and the `db push --dry-run` plan. Stop if any remote
+version is missing locally or if the plan includes an already-applied version.

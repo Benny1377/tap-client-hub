@@ -5,6 +5,7 @@ declare
   v_client uuid; v_client_service uuid; v_service_code text; v_client_service_2 uuid; v_service_code_2 text; v_actor uuid;
   v_card uuid; v_bundle uuid; v_candidate uuid; v_candidate_2 uuid; v_invoice uuid; v_line uuid; v_number text; v_amount numeric; v_state text;
   v_billing_staff uuid; v_unassigned_staff uuid; v_candidate_mutation jsonb; v_audit_one text; v_audit_two text;
+  v_projection_service uuid; v_projection_cs uuid; v_projection_map uuid; v_projection jsonb;
   v_today date := tap_hub_project.billing_firm_today(now());
 begin
   if tap_hub_project.billing_firm_today(timestamptz '2026-03-08 05:59:00+00')<>'2026-03-07'
@@ -29,6 +30,30 @@ begin
   if v_client is null or v_client_service is null or v_service_code is null or v_actor is null or v_billing_staff is null or v_unassigned_staff is null then
     raise exception 'synthetic client-service, Owner/Admin, Billing staff and unassigned staff fixtures are required';
   end if;
+
+  update tap_hub_project.billing_presentation_settings
+  set tagline='Transactional API test',updated_by=v_actor,reason='Transactional presentation audit test'
+  where singleton;
+  if not exists(select 1 from tap_hub_project.audit_log where entity='billing_presentation_settings' and entity_id='singleton' and actor=v_actor and action='update') then
+    raise exception 'presentation settings update must create an actor-attributed audit row';
+  end if;
+
+  insert into tap_hub_project.services(code,name,tracking)
+  values('P3-'||substr(gen_random_uuid()::text,1,8),'Synthetic firm schedule service','manual') returning id into v_projection_service;
+  insert into tap_hub_project.client_services(client_id,service_id,active,frequency)
+  values(v_client,v_projection_service,true,'Monthly') returning id into v_projection_cs;
+  insert into tap_hub_project.billing_rate_cards(name,currency,active,effective_from,created_by,updated_by,reason)
+  values('Firm schedule SQL test '||gen_random_uuid(),'USD',true,v_today-1,v_actor,v_actor,'transactional firm-schedule test') returning id into v_card;
+  insert into tap_hub_project.billing_rate_card_entries(rate_card_id,service_code,unit,unit_amount,effective_from,created_by,updated_by,reason)
+  select v_card,code,'service',25.00,v_today-1,v_actor,v_actor,'transactional firm-schedule test'
+  from tap_hub_project.services where id=v_projection_service;
+  insert into tap_hub_project.billing_completion_source_maps(client_service_id,adapter,predicate,identity_fields,candidate_date_rule,effective_from,created_by,updated_by,reason)
+  values(v_projection_cs,'schedule','{}'::jsonb,array['client_service_id','period'],'period_end',v_today-1,v_actor,v_actor,'transactional firm-schedule test') returning id into v_projection_map;
+  v_projection:=tap_hub_project.project_billing_firm_schedule(date '2030-11-30',date '2030-11-30',100,null,null,null,null);
+  if not exists(select 1 from jsonb_array_elements(v_projection->'items') item where item->>'clientServiceId'=v_projection_cs::text and item->>'candidateDate'='2030-11-30' and item->>'unitAmount'='25.00') then
+    raise exception 'firm schedule must project the synthetic monthly assignment at its server-resolved price';
+  end if;
+  if v_projection->'summary'->>'projectedAmount' is null then raise exception 'firm schedule must return server-calculated decimal-string totals'; end if;
 
   insert into tap_hub_project.billing_completion_source_maps(client_service_id,adapter,predicate,identity_fields,candidate_date_rule,effective_from,created_by,updated_by,reason)
   values(v_client_service,'schedule','{}'::jsonb,array['client_service_id','period'],'period_end',v_today-1,v_actor,v_actor,'transactional schedule-map validation');
