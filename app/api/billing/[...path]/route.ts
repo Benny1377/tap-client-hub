@@ -435,17 +435,13 @@ async function handler(request:NextRequest,ctx:Ctx,method:string) {
       if(priceError)return apiError("Unable to resolve candidate price","PRICE_RESOLUTION_FAILED",500);
       const resolved=Array.isArray(price)?price[0]:price;
       if(!resolved)return apiError("Candidate has no active price","CANDIDATE_UNPRICED",409);
-      const changedAt=new Date().toISOString();
-      const {data,error}=await db.from("billing_candidates").update({state:"open",unit_amount:resolved.unit_amount,price_source:resolved.price_source,updated_by:access.identity?.id,updated_at:changedAt,dismissed_reason:null,last_reason:reason}).eq("id",id).in("state",["open","unpriced","dismissed"]).select("*").single();
-      if(error)return apiError("Candidate could not be repriced","CANDIDATE_NOT_OPEN",409);
-      const {data:audit}=await db.from("audit_log").select("id").eq("entity","billing_candidates").eq("entity_id",id).eq("actor",access.identity?.id).gte("at",changedAt).order("at",{ascending:false}).limit(1).maybeSingle();
-      return NextResponse.json({candidate:toPhase2Candidate(data),auditId:audit?.id??null});
+      const {data,error}=await db.rpc("mutate_billing_candidate",{p_id:id,p_action:"reprice",p_expected_state:state,p_reason:reason,p_actor:access.identity?.id,p_unit_amount:resolved.unit_amount,p_price_source:resolved.price_source});
+      if(error)return apiError("Candidate could not be repriced",error.code==="42501"?"FORBIDDEN":"CANDIDATE_NOT_OPEN",error.code==="42501"?403:409);
+      return NextResponse.json({candidate:toPhase2Candidate(data.candidate),auditId:data.auditId});
     }
-    const changedAt=new Date().toISOString();
-    const {data,error}=await db.from("billing_candidates").update({state,updated_by:access.identity?.id,updated_at:changedAt,dismissed_reason:path[2]==="dismiss"?reason:null,last_reason:reason}).eq("id",id).eq("state",candidate.state).select("*").single();
-    if(error)return apiError("Candidate update failed","CANDIDATE_NOT_OPEN",409);
-    const {data:audit}=await db.from("audit_log").select("id").eq("entity","billing_candidates").eq("entity_id",id).eq("actor",access.identity?.id).gte("at",changedAt).order("at",{ascending:false}).limit(1).maybeSingle();
-    return NextResponse.json({candidate:toPhase2Candidate(data),auditId:audit?.id??null});
+    const {data,error}=await db.rpc("mutate_billing_candidate",{p_id:id,p_action:path[2],p_expected_state:candidate.state,p_reason:reason,p_actor:access.identity?.id,p_unit_amount:null,p_price_source:null});
+    if(error)return apiError("Candidate update failed",error.code==="42501"?"FORBIDDEN":"CANDIDATE_NOT_OPEN",error.code==="42501"?403:409);
+    return NextResponse.json({candidate:toPhase2Candidate(data.candidate),auditId:data.auditId});
   }
   if(method==="GET")return listResource(request,path);
   return mutate(request,path,method);

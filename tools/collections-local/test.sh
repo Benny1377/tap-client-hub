@@ -11,6 +11,7 @@ fi
 
 for test_file in \
   collections_local_harness_schema.sql \
+  billing_phase2_core.sql \
   collections_phase1_security_and_audit.sql \
   collections_phase1_audit_actor.sql \
   collections_phase2_stage_regressions.sql \

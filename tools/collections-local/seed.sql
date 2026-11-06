@@ -49,6 +49,10 @@ values
   ('20000000-0000-4000-8000-000000000001', 'Example service', 1, 125, 125, '00000000-0000-4000-8000-000000000001'),
   ('20000000-0000-4000-8000-000000000002', 'Sample service', 1, 80, 80, '00000000-0000-4000-8000-000000000001');
 
+-- The invoice-transition guard requires an explicit active actor even for
+-- synthetic seed transitions. This seed runs in its own psql session.
+select set_config('tap_hub.actor_id', '00000000-0000-4000-8000-000000000001', false);
+
 update tap_hub_project.invoices
 set status = 'issued', invoice_number = 'LOCAL-001', issue_date = tap_hub_project.collections_firm_today() - 70, due_date = tap_hub_project.collections_firm_today() - 40
 where id = '20000000-0000-4000-8000-000000000001';

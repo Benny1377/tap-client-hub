@@ -4,6 +4,7 @@ do $$
 declare
   v_client uuid; v_client_service uuid; v_service_code text; v_client_service_2 uuid; v_service_code_2 text; v_actor uuid;
   v_card uuid; v_bundle uuid; v_candidate uuid; v_candidate_2 uuid; v_invoice uuid; v_line uuid; v_number text; v_amount numeric; v_state text;
+  v_billing_staff uuid; v_unassigned_staff uuid; v_candidate_mutation jsonb; v_audit_one text; v_audit_two text;
   v_today date := tap_hub_project.billing_firm_today(now());
 begin
   if tap_hub_project.billing_firm_today(timestamptz '2026-03-08 05:59:00+00')<>'2026-03-07'
@@ -23,8 +24,10 @@ begin
   from tap_hub_project.client_services cs join tap_hub_project.services s on s.id=cs.service_id
   where cs.active order by cs.id limit 1;
   select id into v_actor from tap_hub_project.profiles where role in ('owner','admin') and active limit 1;
-  if v_client is null or v_client_service is null or v_service_code is null or v_actor is null then
-    raise exception 'synthetic client-service and Owner/Admin fixtures are required';
+  select id into v_billing_staff from tap_hub_project.profiles where role='staff' and active and modules @> array['billing'] limit 1;
+  select id into v_unassigned_staff from tap_hub_project.profiles where role='staff' and active and not (modules @> array['billing']) limit 1;
+  if v_client is null or v_client_service is null or v_service_code is null or v_actor is null or v_billing_staff is null or v_unassigned_staff is null then
+    raise exception 'synthetic client-service, Owner/Admin, Billing staff and unassigned staff fixtures are required';
   end if;
 
   insert into tap_hub_project.billing_completion_source_maps(client_service_id,adapter,predicate,identity_fields,candidate_date_rule,effective_from,created_by,updated_by,reason)
@@ -59,6 +62,21 @@ begin
   insert into tap_hub_project.billing_candidates(client_id,client_service_id,candidate_type,source_adapter,source_identity,period,candidate_date,description,state,service_code,unit,unit_amount,price_source,created_by,updated_by)
   values(v_client,v_client_service,'recurring','schedule','phase2-test:'||gen_random_uuid(),to_char(v_today,'YYYY-MM'),v_today,'Phase 2 synthetic candidate','open',v_service_code,'service',10.00,'rate_card',v_actor,v_actor)
   returning id into v_candidate;
+  begin
+    perform tap_hub_project.mutate_billing_candidate(v_candidate,'dismiss','open','Denied actor test',v_unassigned_staff);
+    raise exception 'unassigned staff unexpectedly mutated a Billing candidate' using errcode='P0003';
+  exception when sqlstate '42501' then null;
+  end;
+  v_candidate_mutation:=tap_hub_project.mutate_billing_candidate(v_candidate,'dismiss','open','Synthetic audit id test',v_billing_staff);
+  v_audit_one:=v_candidate_mutation->>'auditId';
+  if v_candidate_mutation->'candidate'->>'state'<>'dismissed' or not exists(select 1 from tap_hub_project.audit_log where id::text=v_audit_one and entity='billing_candidates' and entity_id=v_candidate::text) then
+    raise exception 'candidate mutation did not return its exact audit row id';
+  end if;
+  v_candidate_mutation:=tap_hub_project.mutate_billing_candidate(v_candidate,'reopen','dismissed','Synthetic audit id test',v_billing_staff);
+  v_audit_two:=v_candidate_mutation->>'auditId';
+  if v_candidate_mutation->'candidate'->>'state'<>'open' or v_audit_two=v_audit_one or not exists(select 1 from tap_hub_project.audit_log where id::text=v_audit_two and entity='billing_candidates' and entity_id=v_candidate::text) then
+    raise exception 'candidate mutation audit id was not unique and exact';
+  end if;
   v_invoice:=tap_hub_project.create_draft_from_candidates(array[v_candidate],'Synthetic validation',v_actor);
   if exists(select 1 from tap_hub_project.invoices where id=v_invoice and (status<>'draft' or invoice_number is not null or issue_date is not null or due_date is not null)) then raise exception 'candidate draft must have null issue fields'; end if;
   select id,amount into v_line,v_amount from tap_hub_project.invoice_lines where invoice_id=v_invoice;
@@ -68,11 +86,21 @@ begin
     raise exception 'candidate-linked line edit unexpectedly succeeded' using errcode='P0003';
   exception when sqlstate 'P0001' then null;
   end;
-  perform tap_hub_project.issue_billing_invoice(v_invoice,v_actor);
+  begin
+    perform tap_hub_project.issue_billing_invoice(v_invoice,v_unassigned_staff);
+    raise exception 'unassigned staff unexpectedly issued a Billing invoice' using errcode='P0003';
+  exception when sqlstate '42501' then null;
+  end;
+  perform tap_hub_project.issue_billing_invoice(v_invoice,v_billing_staff);
   if not exists(select 1 from tap_hub_project.invoices where id=v_invoice and status='issued' and invoice_number ~ '^TAP-[0-9]{4}-[0-9]{4}$' and issue_date=v_today and due_date=issue_date+45 and remittance_snapshot->>'payeeName'='TAP Synthetic') then raise exception 'atomic issue fields, client-service terms, or remittance snapshot incorrect'; end if;
   select invoice_number into v_number from tap_hub_project.invoices where id=v_invoice;
   select state into v_state from tap_hub_project.billing_candidates where id=v_candidate;
   if v_state<>'invoiced' then raise exception 'issue did not transition candidate to invoiced'; end if;
+  begin
+    perform tap_hub_project.void_billing_invoice(v_invoice,'Unauthorized synthetic correction',v_billing_staff);
+    raise exception 'Billing staff unexpectedly voided an invoice' using errcode='P0003';
+  exception when sqlstate '42501' then null;
+  end;
   perform tap_hub_project.void_billing_invoice(v_invoice,'Synthetic correction',v_actor);
   select state into v_state from tap_hub_project.billing_candidates where id=v_candidate;
   if v_state<>'open' then raise exception 'void did not return candidate to open'; end if;
@@ -93,7 +121,8 @@ begin
   if v_state<>'open' then raise exception 'deleting draft with a line did not return candidate to open'; end if;
 
   select cs.id,s.code into v_client_service_2,v_service_code_2 from tap_hub_project.client_services cs
-  join tap_hub_project.services s on s.id=cs.service_id where cs.client_id=v_client and cs.active and cs.id<>v_client_service order by cs.id limit 1;
+  join tap_hub_project.services s on s.id=cs.service_id where cs.client_id=v_client and cs.active and cs.id<>v_client_service
+    and not exists(select 1 from tap_hub_project.billing_completion_source_maps m where m.client_service_id=cs.id) order by cs.id limit 1;
   if v_client_service_2 is not null then
     insert into tap_hub_project.billing_completion_source_maps(client_service_id,adapter,predicate,identity_fields,candidate_date_rule,effective_from,created_by,updated_by,reason)
     values(v_client_service_2,'manual_confirmation','{}'::jsonb,array['confirmation_id'],'confirmed_date',v_today-1,v_actor,v_actor,'manual-confirmation test map');
