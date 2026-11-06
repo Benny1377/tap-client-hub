@@ -1,6 +1,6 @@
 // Phase 4 A/R PDF intake: response shapes of /api/collections/imports and the pure
-// helpers the review screen uses. The parser never infers invoice fields, so every
-// value here is something a reviewer typed or picked from an extracted cell.
+// helpers the review screen uses. Parser output is a suggestion/evidence snapshot;
+// explicit reviewer confirmation is still required before an invoice is staged.
 
 export type ImportReportType = "aging_detail" | "aging_summary" | "unknown";
 export type ImportBatchStatus = "uploaded" | "parsing" | "needs_review" | "approved" | "rejected" | "superseded" | "failed";
@@ -18,7 +18,7 @@ export interface ImportBatch {
   approved_by: string | null;
   approved_at: string | null;
   supersedes_batch_id: string | null;
-  metadata?: { page_count?: number; extracted_line_count?: number; suggestion_parser?: string; auto_classified_count?: number; high_confidence_invoice_suggestions?: number; detail_cross_check?: Partial<CrossCheckResult> } | null;
+  metadata?: { page_count?: number; extracted_line_count?: number; suggestion_parser?: string; auto_classified_count?: number; high_confidence_invoice_suggestions?: number; summary_backed_customer_suggestions?: number; summary_context_batch_id?: string | null; detail_cross_check?: Partial<CrossCheckResult> } | null;
   created_at: string;
   updated_at: string;
 }
@@ -89,10 +89,14 @@ export interface CrossCheckResult {
   source_as_of: string;
   summary_reported_total: string;
   detail_invoice_total: string;
+  detail_net_total?: string;
+  detail_invoice_subtotal?: string;
+  detail_non_invoice_adjustments?: string;
   /** Summary minus detail. */
   difference: string;
   status: "matched" | "mismatch";
   invoice_count: number;
+  non_invoice_evidence_count?: number;
   note: string;
 }
 

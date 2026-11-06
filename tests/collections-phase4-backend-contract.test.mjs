@@ -118,3 +118,28 @@ test("same-date summary reports require a reviewer-confirmed, auditable detail-t
   assert.match(sqlTest, /Late link changed canonical identity or failed to share aliases/);
   assert.match(sqlTest, /post-report Billing change did not re-block/);
 });
+
+test("detail reconciliation includes recognized non-invoice evidence and fails closed on missing amounts", () => {
+  const migration = source("supabase/migrations/20261107120000_collections_reconcile_noninvoice_pdf_rows.sql");
+  const reset = source("tools/collections-local/reset.sh");
+  const parser = source("lib/collections-pdf-suggestions.ts");
+  assert.match(migration, /v_invoice_total \+ v_non_invoice_total/);
+  assert.match(migration, /v_expected_non_invoice_count <> v_evidence_count/);
+  assert.match(migration, /detail_invoice_subtotal/);
+  assert.match(migration, /detail_non_invoice_adjustments/);
+  assert.match(migration, /detail_net_total/);
+  assert.match(reset, /20261107120000_collections_reconcile_noninvoice_pdf_rows\.sql/);
+  assert.match(parser, /transaction retained as report evidence/);
+  assert.match(parser, /transaction_type: type,[\s\S]*open_balance: amount/);
+});
+
+test("detail parsing uses only one same-date summary as name evidence and audits that read", () => {
+  const route = source("app/api/collections/imports/[id]/parse/route.ts");
+  const parser = source("lib/collections-pdf-suggestions.ts");
+  assert.match(route, /eq\("report_type", "aging_summary"\)\.eq\("source_as_of", parsed\.source_as_of\)/);
+  assert.match(route, /summaryBatches\?\.length === 1/);
+  assert.match(route, /pdf_summary_matching_context_read/);
+  assert.match(route, /suggestCollectionsPdfRows\(parsed\.lines, summaryLines\)/);
+  assert.match(parser, /nameCandidates\.length !== 1/);
+  assert.match(parser, /total\.balance === nameCandidates\[0\]\.balance/);
+});

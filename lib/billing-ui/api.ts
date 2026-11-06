@@ -287,7 +287,7 @@ export function createBillingApi(fetchImpl: FetchLike) {
     },
     /** Extracts page/row text only. Parsing never confirms an invoice. */
     parseImport: (id: string, refreshSuggestions = false) =>
-      request<{ batch_id: string; status: string; report_type: string; source_as_of: string | null; page_count: number; extracted_line_count: number; auto_classified_count: number; high_confidence_invoice_suggestions: number; updated_suggestions?: number }>(fetchImpl, `/api/collections/imports/${encodeURIComponent(id)}/parse`, {
+      request<{ batch_id: string; status: string; report_type: string; source_as_of: string | null; page_count: number; extracted_line_count: number; auto_classified_count: number; high_confidence_invoice_suggestions: number; summary_backed_customer_suggestions?: number; updated_suggestions?: number }>(fetchImpl, `/api/collections/imports/${encodeURIComponent(id)}/parse`, {
         method: "POST", ...(refreshSuggestions ? { body: JSON.stringify({ refresh_suggestions: true }) } : {}),
       }),
     autoMatchImports: (batchId: string) =>

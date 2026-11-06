@@ -302,9 +302,11 @@ declare
   v_detail uuid := gen_random_uuid();
   v_source uuid := gen_random_uuid();
   v_row uuid := gen_random_uuid();
+  v_credit_row uuid := gen_random_uuid();
   v_as_of date := tap_hub_project.collections_firm_today();
   v_check jsonb;
   v_blocked boolean := false;
+  v_missing_evidence_blocked boolean := false;
 begin
   insert into tap_hub_project.collection_import_batches
     (id,file_sha256,storage_path,original_filename,content_type,file_size_bytes,report_type,source_as_of,status,uploaded_by)
@@ -315,17 +317,31 @@ begin
     values (v_source,'10000000-0000-4000-8000-000000000001');
   insert into tap_hub_project.collection_import_rows(id,batch_id,source_invoice_id,page_number,row_number,raw_text,review_disposition)
     values (v_row,v_detail,v_source,1,1,'synthetic cross-check row','invoice');
+  insert into tap_hub_project.collection_import_rows(id,batch_id,page_number,row_number,raw_text,parsed_fields,review_disposition)
+    values (v_credit_row,v_detail,1,2,'Payment | synthetic credit',
+      '{"cells":["Payment"],"auto_suggestion":{"disposition":"ignored","fields":{"transaction_type":"Payment"}}}'::jsonb,'ignored');
   insert into tap_hub_project.collection_import_invoices
     (source_invoice_id,batch_id,invoice_number,customer_name,open_balance,source_as_of,source_row_key,review_status)
     values (v_source,v_detail,'SYN-XCHECK','Synthetic Orchard',42,v_as_of,'1:1','ready');
-  v_check := tap_hub_project.cross_check_collection_import_reports(v_summary,v_detail,40,'Reviewed total differs; reconcile rows','00000000-0000-4000-8000-000000000003');
+  begin
+    perform tap_hub_project.cross_check_collection_import_reports(v_summary,v_detail,40,'Missing amount must block','00000000-0000-4000-8000-000000000003');
+  exception when sqlstate 'P0001' then v_missing_evidence_blocked := true;
+  end;
+  if not v_missing_evidence_blocked then raise exception 'Cross-check did not fail closed when a recognized payment lacked an amount'; end if;
+  update tap_hub_project.collection_import_rows set parsed_fields =
+    '{"cells":["Payment"],"auto_suggestion":{"disposition":"ignored","fields":{"transaction_type":"Payment","open_balance":"-2.00"}}}'::jsonb
+    where id=v_credit_row;
+  v_check := tap_hub_project.cross_check_collection_import_reports(v_summary,v_detail,38,'Reviewed total differs; reconcile rows','00000000-0000-4000-8000-000000000003');
   if v_check->>'status' <> 'mismatch' or v_check->>'difference' <> '-2.00' then raise exception 'Summary/detail mismatch math is incorrect'; end if;
+  if v_check->>'detail_invoice_subtotal' <> '42.00' or v_check->>'detail_non_invoice_adjustments' <> '-2.00' or v_check->>'detail_net_total' <> '40.00' then
+    raise exception 'Detail reconciliation did not show invoice and non-invoice math';
+  end if;
   begin
     perform tap_hub_project.approve_collection_import_batch(v_detail,'00000000-0000-4000-8000-000000000003');
   exception when sqlstate 'P0001' then v_blocked := true;
   end;
   if not v_blocked then raise exception 'Detail approval was not blocked by mismatched summary report'; end if;
-  v_check := tap_hub_project.cross_check_collection_import_reports(v_summary,v_detail,42,'Reviewed corrected total and confirmed','00000000-0000-4000-8000-000000000003');
+  v_check := tap_hub_project.cross_check_collection_import_reports(v_summary,v_detail,40,'Reviewed corrected total and confirmed','00000000-0000-4000-8000-000000000003');
   if v_check->>'status' <> 'matched' or v_check->>'difference' <> '0.00' then raise exception 'Corrected summary/detail match was not recorded'; end if;
   perform tap_hub_project.approve_collection_import_batch(v_detail,'00000000-0000-4000-8000-000000000003');
 end;
