@@ -1,6 +1,6 @@
 // LOCAL or SANDBOX PREVIEW. Real-browser pass of Phase 3 screen 1 against the real server rules, on a marked synthetic client.
 // Seeds tagged services, a rate card, packages and candidates through the product API, then drives the UI as Billing staff and Admin.
-// Issue and void leave permanent synthetic rows, so a hosted run needs BILLING_SCREEN1_ALLOW_PERMANENT=yes. Never prints credentials.
+// Issue and void leave permanent rows, so a hosted run skips them unless BILLING_SCREEN1_ALLOW_PERMANENT=yes. Never prints credentials.
 // Env: BILLING_PREVIEW_URL, BILLING_SANDBOX_HOST, BILLING_PREVIEW_CLIENT_ID, BILLING_PREVIEW_ENV_FILE, BILLING_PREVIEW_ALLOW_WRITES=yes,
 // PUPPETEER_CORE, CHROME_PATH.
 import { readFileSync } from "node:fs";
@@ -13,7 +13,8 @@ const API = env.NEXT_PUBLIC_SUPABASE_URL.replace(/\/$/, "");
 if (process.env.BILLING_PREVIEW_ALLOW_WRITES !== "yes") throw new Error("Refusing: BILLING_PREVIEW_ALLOW_WRITES=yes is required");
 if (new URL(API).host !== process.env.BILLING_SANDBOX_HOST) throw new Error("Refusing: the Supabase host in the env file is not BILLING_SANDBOX_HOST");
 const local = BASE.startsWith("http://localhost");
-if (!local && process.env.BILLING_SCREEN1_ALLOW_PERMANENT !== "yes") throw new Error("Refusing: a hosted run leaves issued and void rows; set BILLING_SCREEN1_ALLOW_PERMANENT=yes");
+// Issue and void are permanent, so a hosted run deletes the draft instead unless explicitly allowed.
+const permanentRows = local || process.env.BILLING_SCREEN1_ALLOW_PERMANENT === "yes";
 const H = { apikey: env.SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`, "Accept-Profile": "tap_hub_project", "Content-Profile": "tap_hub_project", "Content-Type": "application/json" };
 async function rest(method, path, body, prefer) { const r = await fetch(`${API}/rest/v1/${path}`, { method, headers: { ...H, ...(prefer ? { Prefer: prefer } : {}) }, body: body === undefined ? undefined : JSON.stringify(body) }); const t = await r.text(); if (!r.ok) throw new Error(`${method} ${path.split("?")[0]} ${r.status} ${t.slice(0, 160)}`); return t ? JSON.parse(t) : null; }
 const client = (await rest("GET", `clients?select=id,name&id=eq.${C1}`))[0];
@@ -117,6 +118,15 @@ try {
   await page.evaluate((id) => { [...document.querySelector(`[data-line-row="${id}"]`).querySelectorAll("button")].find((b) => /Remove and return/.test(b.textContent)).click(); }, recLine.id); await wait(3000);
   rec("S11", "removing a linked line returns its candidate to Ready", !!has(await rows(page), `REC ${tag}`) && (await page.$$("[data-line-row]")).length === 1);
 
+  if (!permanentRows) {
+    await page.evaluate(() => { document.querySelector("[data-delete-draft]").open = true; }); await wait(200);
+    await clickText(page, "[data-delete-draft]", "Delete this draft"); await wait(3500);
+    rec("S12", "deleting the draft removes it and returns the package to Ready", (await rest("GET", `invoices?select=id&id=eq.${inv.id}`)).length === 0 && !!has(await rows(page), `Package ${tag}`));
+    rec("S14", "no page errors as Billing staff", page.errors.length === 0, page.errors.join("; "));
+    const failedEarly = results.filter((x) => !x).length; await browser.close();
+    console.log(`
+${results.length - failedEarly}/${results.length} passed`); process.exit(failedEarly ? 1 : 0);
+  }
   page.calls.length = 0;
   await clickText(page, "[data-invoice-detail]", "Issue invoice"); await wait(3500);
   const issued = (await rest("GET", `invoices?select=status,invoice_number&id=eq.${inv.id}`))[0];

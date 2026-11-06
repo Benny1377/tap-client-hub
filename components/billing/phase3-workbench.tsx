@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import type { ApiResult, BillingApi } from "@/lib/billing-ui/api";
 import type { ClientOption } from "@/lib/billing-ui/types";
-import { ActionButton, hintStyle, OwnerAdminOnly } from "./ui";
+import { ActionButton, hintStyle } from "./ui";
 
 type Row = Record<string, unknown>;
 type Service = { id: string; active: boolean; frequency: string | null; serviceCode: string | null; serviceName: string | null };
@@ -53,7 +53,7 @@ export function BillingProjectionWorkbench({ api, clientId, clients, canGenerate
         <label style={{ display: "grid", gap: 4 }}>From (Houston date)<input type="date" style={inputStyle} value={from} onChange={(e) => setFrom(e.target.value)} /></label>
         <label style={{ display: "grid", gap: 4 }}>To (Houston date)<input type="date" style={inputStyle} value={to} onChange={(e) => setTo(e.target.value)} /></label>
         <button type="button" disabled={busy || !selectedClient} style={buttonStyle} onClick={() => void project()}>{busy ? "Loading…" : "Preview projection"}</button>
-        {canGenerate ? <button type="button" disabled={busy || !selectedClient} style={{ ...buttonStyle, opacity: busy || !selectedClient ? 0.55 : 1 }} onClick={() => void generate()}>Generate candidates</button> : <OwnerAdminOnly action="Candidate generation" />}
+        {canGenerate ? <button type="button" disabled={busy || !selectedClient} style={{ ...buttonStyle, opacity: busy || !selectedClient ? 0.55 : 1 }} onClick={() => void generate()}>Generate candidates</button> : <span style={hintStyle}>Your access does not include generating candidates.</span>}
       </div>
       {message ? <p role="status" style={hintStyle}>{message}</p> : null}
       {generated ? <div role="status" className="bc-source"><b>Created {value(generated, "created", "0")}</b> · Existing {value(generated, "existing", "0")} · Unpriced {value(generated, "unpriced", "0")} · Skipped {value(generated, "skipped", "0")}<br />Skip reasons: {Object.entries((generated.skippedByReason as Row) || {}).map(([key, count]) => `${key.replaceAll("_", " ")}: ${String(count)}`).join(" · ") || "none"}</div> : null}
