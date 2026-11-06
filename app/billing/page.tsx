@@ -1,11 +1,14 @@
 "use client";
 
-import { useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { readyData } from "@/lib/billing-ui/ledger";
-import type { Invoice, Payment, Receivable } from "@/lib/billing-ui/types";
+import type { ApiResult } from "@/lib/billing-ui/api";
+import type { CandidateState, Invoice, Payment, Receivable } from "@/lib/billing-ui/types";
 import { receivableFor } from "@/lib/billing-ui/view-model";
+import { useCandidates } from "@/components/billing/use-candidates";
 import { useLedger } from "@/components/billing/use-ledger";
 import { ClientPicker, hintStyle, SectionView, SegFilter, StatCard, StatRow } from "@/components/billing/ui";
+import { CandidateFilter, CandidateList } from "@/components/billing/candidate-panels";
 import { InvoiceDetail, InvoiceList, NewInvoiceForm } from "@/components/billing/invoice-panels";
 import { ClientAgingSummary, PaymentsPanel, ReceivablesTable } from "@/components/billing/payment-panels";
 
@@ -50,7 +53,27 @@ export default function BillingPage() {
   const [clientId, setClientId] = useState<string | null>(null);
   const [selectedInvoiceId, setSelectedInvoiceId] = useState<string | null>(null);
   const [filter, setFilter] = useState<InvoiceFilter>("all");
-  const { api, viewer, clients, state, mutate } = useLedger(clientId, ["invoices", "receivables", "payments"]);
+  const [candidateFilter, setCandidateFilter] = useState<CandidateState>("open");
+  const [candidateVersion, setCandidateVersion] = useState(0);
+  // Empty until the server answers, so no control shows ahead of the real permissions.
+  const [granted, setGranted] = useState<readonly string[]>([]);
+  const { api, viewer, clients, state, mutate: mutateLedger } = useLedger(clientId, ["invoices", "receivables", "payments"]);
+  useEffect(() => {
+    let current = true;
+    // A 403 here means this user has no Billing actions; it is not an error to show.
+    api.permissions().then((result) => { if (current && result.ok) setGranted(result.data.actions || []); });
+    return () => { current = false; };
+  }, [api]);
+  const canViewCandidates = granted.includes("candidates.view");
+  const canManageCandidates = granted.includes("candidates.manage");
+  const canManageDrafts = granted.includes("invoices.draft.manage");
+  const candidates = useCandidates(api, clientId, candidateFilter, canViewCandidates, candidateVersion);
+  // Any change can move candidates between states, so they are refetched rather than updated here.
+  const mutate = useCallback(async <T,>(mutation: () => Promise<ApiResult<T>>) => {
+    const result = await mutateLedger(mutation);
+    if (result.ok === true || result.kind === "conflict") setCandidateVersion((version) => version + 1);
+    return result;
+  }, [mutateLedger]);
   const clientNames = useMemo(() => Object.fromEntries(clients.map((client) => [client.id, client.name])), [clients]);
   const invoices = readyData(state.invoices, []);
   const payments: Payment[] = readyData(state.payments, []);
@@ -103,7 +126,7 @@ export default function BillingPage() {
           <SectionView state={state.invoices} label="invoices">
             {() => <InvoiceList invoices={visibleInvoices} receivables={receivables} clientNames={clientNames} selectedId={selectedInvoiceId} onSelect={setSelectedInvoiceId} />}
           </SectionView>
-          {state.invoices.status === "ready" ? (
+          {state.invoices.status === "ready" && canManageDrafts ? (
             clientId ? (
               <details className="card" style={{ marginTop: 16 }}>
                 <summary style={{ cursor: "pointer", fontWeight: 700, fontSize: 13.5 }}>New draft invoice</summary>
@@ -120,6 +143,42 @@ export default function BillingPage() {
           ) : null}
         </section>
 
+        {canViewCandidates ? (
+          <section className="card" style={{ marginTop: 16 }} aria-label="Billable candidates" data-candidates-panel>
+            <h3>Billable candidates<span>from services and completed work</span></h3>
+            {clientId ? (
+              <>
+                <div className="controls"><CandidateFilter value={candidateFilter} onChange={setCandidateFilter} /></div>
+                <SectionView state={candidates.section} label="candidates">
+                  {(page) => (
+                    <CandidateList
+                      key={`${clientId}-${candidateFilter}`}
+                      items={page.items}
+                      bundles={page.bundles}
+                      filter={candidateFilter}
+                      canManage={canManageCandidates}
+                      canDraft={canManageDrafts}
+                      hasMore={Boolean(page.nextCursor)}
+                      loadingMore={candidates.loadingMore}
+                      onMore={() => { void candidates.loadMore(); }}
+                      handlers={{
+                        onDismiss: (id, reason) => mutate(() => api.dismissCandidate(id, reason)),
+                        onReopen: (id, reason) => mutate(() => api.reopenCandidate(id, reason)),
+                        onReprice: (id, reason) => mutate(() => api.repriceCandidate(id, reason)),
+                        onDraft: async (candidateIds, memo) => {
+                          const result = await mutate(() => api.draftFromCandidates({ candidateIds, ...(memo ? { memo } : {}) }));
+                          if (result.ok) { setFilter("all"); setSelectedInvoiceId(result.data.invoice.id); }
+                          return result;
+                        },
+                      }}
+                    />
+                  )}
+                </SectionView>
+              </>
+            ) : <p style={hintStyle}>Choose a client to see what can be billed.</p>}
+          </section>
+        ) : null}
+
         <section className="card" style={{ marginTop: 16 }} aria-label="Invoice detail">
           <h3>Invoice detail<span>{selectedInvoice ? selectedInvoice.invoice_number ?? "Draft" : "select an invoice"}</span></h3>
           {selectedInvoice ? (
@@ -128,6 +187,7 @@ export default function BillingPage() {
               invoice={selectedInvoice}
               receivable={receivableFor(selectedInvoice.id, receivables)}
               viewer={viewer}
+              granted={granted}
               handlers={{
                 onUpdate: (values) => mutate(() => api.updateInvoice(selectedInvoice.id, { memo: values.memo.trim() || null })),
                 onAddLine: (values) => mutate(() => api.addLine({ invoice_id: selectedInvoice.id, description: values.description.trim(), quantity: values.quantity.trim() || "1", unit_amount: values.unit_amount.trim(), period: values.period || null })),

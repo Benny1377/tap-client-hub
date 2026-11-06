@@ -84,6 +84,8 @@ await check("mutations call the contract routes with the contract bodies", async
     "POST /api/collections/events/approve": [201, { event: {} }],
     "PATCH /api/collections/holds": [200, { hold: {} }],
     "PATCH /api/collections/rules": [200, { rules: [], firm_timezone: "America/Chicago", settings: {} }],
+    "POST /api/billing/invoices/inv-1/issue": [200, { invoice: {} }],
+    "POST /api/billing/invoices/inv-1/void": [200, { invoice: {} }],
     "DELETE /api/billing/invoice-lines": [200, { deleted: true }],
     "DELETE /api/billing/invoices/inv-1": [200, { deleted: true }],
   });
@@ -97,17 +99,18 @@ await check("mutations call the contract routes with the contract bodies", async
   await client.deleteLine("l-1");
   await client.deleteDraftInvoice("inv-1");
   assert.deepEqual(calls.map((c) => `${c.method} ${c.url}`), [
-    "POST /api/billing/invoices/inv-1",
-    "POST /api/billing/invoices/inv-1",
+    "POST /api/billing/invoices/inv-1/issue",
+    "POST /api/billing/invoices/inv-1/void",
     "POST /api/billing/allocations",
     "POST /api/collections/events/approve",
     "PATCH /api/collections/holds",
     "PATCH /api/collections/rules",
-    "DELETE /api/billing/invoice-lines?id=l-1",
+    "DELETE /api/billing/invoice-lines",
     "DELETE /api/billing/invoices/inv-1",
   ]);
-  assert.deepEqual(calls[0].body, { action: "issue" });
-  assert.deepEqual(calls[1].body, { action: "void", reason: "Duplicate" });
+  assert.deepEqual(calls[0].body, {});
+  assert.deepEqual(calls[1].body, { reason: "Duplicate" });
+  assert.deepEqual(calls[6].body, { id: "l-1" });
   assert.deepEqual(calls[2].body, { payment_id: "p-1", invoice_id: "inv-1", amount: "10.00" });
   assert.deepEqual(calls[3].body, { event_id: "e-1", event_type: "escalated" });
   assert.deepEqual(calls[4].body, { id: "h-1" });
@@ -232,7 +235,7 @@ await check("issued invoices are locked; only Owner/Admin may void", () => {
 
 await check("void invoices allow no actions", () => {
   const actions = vm.invoiceActions(invoice({ status: "void", invoice_lines: [line] }), owner);
-  assert.deepEqual(actions, { editable: false, canIssue: false, issueBlockedReason: null, canVoid: false, voidRequiresOwnerAdmin: false });
+  assert.deepEqual(actions, { editable: false, canDeleteDraft: false, canIssue: false, issueBlockedReason: null, canVoid: false, voidRequiresOwnerAdmin: false });
 });
 
 // --- Holds and approvals ---------------------------------------------------

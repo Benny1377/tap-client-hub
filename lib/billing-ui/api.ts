@@ -10,6 +10,9 @@ import type {
   CollectionsSettingsUpdate,
 } from "@/lib/collections-api";
 import type {
+  BillingBundle,
+  Candidate,
+  CandidateState,
   ClientOption,
   CollectionEvent,
   CollectionRuleSettings,
@@ -179,16 +182,31 @@ export function createBillingApi(fetchImpl: FetchLike) {
       patch<{ invoice: Invoice }>(fetchImpl, `/api/billing/invoices/${encodeURIComponent(id)}`, input),
     deleteDraftInvoice: (id: string) =>
       request<{ deleted: boolean }>(fetchImpl, `/api/billing/invoices/${encodeURIComponent(id)}`, { method: "DELETE" }),
-    issueInvoice: (id: string) => post<{ invoice: Invoice }>(fetchImpl, `/api/billing/invoices/${encodeURIComponent(id)}`, { action: "issue" }),
+    issueInvoice: (id: string) => post<{ invoice: { id: string } }>(fetchImpl, `/api/billing/invoices/${encodeURIComponent(id)}/issue`, {}),
     voidInvoice: (id: string, reason: string) =>
-      post<{ invoice: Invoice }>(fetchImpl, `/api/billing/invoices/${encodeURIComponent(id)}`, { action: "void", reason }),
+      post<{ invoice: { id: string } }>(fetchImpl, `/api/billing/invoices/${encodeURIComponent(id)}/void`, { reason }),
+
+    /** Effective Billing actions. Collections-only and unassigned users get 403, which means no Billing actions. */
+    permissions: () => request<{ role: string; modules: string[]; actions: string[] }>(fetchImpl, "/api/billing/permissions"),
+    candidates: (input: { clientId: string; state: CandidateState; cursor?: string | null }) => {
+      const query = new URLSearchParams({ clientId: input.clientId, state: input.state, limit: "100" });
+      if (input.cursor) query.set("cursor", input.cursor);
+      return request<{ items: Candidate[]; nextCursor?: string | null }>(fetchImpl, `/api/billing/candidates?${query}`);
+    },
+    clientPricing: (clientId: string) => request<{ bundles: BillingBundle[] }>(fetchImpl, `/api/billing/client-pricing?clientId=${encodeURIComponent(clientId)}`),
+    dismissCandidate: (id: string, reason: string) => post<{ candidate: Candidate }>(fetchImpl, `/api/billing/candidates/${encodeURIComponent(id)}/dismiss`, { reason }),
+    reopenCandidate: (id: string, reason: string) => post<{ candidate: Candidate }>(fetchImpl, `/api/billing/candidates/${encodeURIComponent(id)}/reopen`, { reason }),
+    repriceCandidate: (id: string, reason: string) => post<{ candidate: Candidate }>(fetchImpl, `/api/billing/candidates/${encodeURIComponent(id)}/reprice`, { reason }),
+    /** The server claims the candidates and sets every amount; the browser sends only ids and a memo. */
+    draftFromCandidates: (input: { candidateIds: string[]; memo?: string }) =>
+      post<{ invoice: { id: string } }>(fetchImpl, "/api/billing/invoices/from-candidates", input),
 
     addLine: (input: { invoice_id: string; description: string; quantity: string; unit_amount: string; period?: string | null }) =>
       post<{ line: InvoiceLine }>(fetchImpl, "/api/billing/invoice-lines", input),
     updateLine: (id: string, input: Partial<{ description: string; quantity: string; unit_amount: string; period: string | null }>) =>
       patch<{ line: InvoiceLine }>(fetchImpl, "/api/billing/invoice-lines", { id, ...input }),
     deleteLine: (id: string) =>
-      request<{ deleted: boolean }>(fetchImpl, `/api/billing/invoice-lines?id=${encodeURIComponent(id)}`, { method: "DELETE" }),
+      request<{ deleted: boolean; returnedCandidateIds?: string[] }>(fetchImpl, "/api/billing/invoice-lines", { method: "DELETE", body: JSON.stringify({ id }) }),
 
     recordPayment: (input: { client_id: string; received_on: string; amount: string; method: string; reference?: string | null }) =>
       post<{ payment: Payment }>(fetchImpl, "/api/billing/payments", input),

@@ -79,20 +79,29 @@ export const STATUS_LABELS: Record<string, string> = { draft: "Draft", issued: "
 
 export interface InvoiceActions {
   editable: boolean;
+  canDeleteDraft: boolean;
   canIssue: boolean;
   issueBlockedReason: string | null;
   canVoid: boolean;
   voidRequiresOwnerAdmin: boolean;
 }
 
-export function invoiceActions(invoice: Invoice, viewer: Viewer | null): InvoiceActions {
+/**
+ * Which controls to show. `granted` is the viewer's effective Billing actions from /api/billing/permissions; this
+ * only shapes the page, and the server still decides. Leaving it out keeps the role-only behaviour.
+ */
+export function invoiceActions(invoice: Invoice, viewer: Viewer | null, granted?: readonly string[]): InvoiceActions {
   const power = viewerIsPowerUser(viewer);
+  const has = (action: string) => !granted || granted.includes(action);
   const draft = invoice.status === "draft";
   const hasLines = (invoice.invoice_lines || []).length > 0;
+  const manage = has("invoices.draft.manage");
+  const mayIssue = has("invoices.issue");
   return {
-    editable: draft,
-    canIssue: draft && hasLines,
-    issueBlockedReason: draft && !hasLines ? "Add at least one line before issuing." : null,
+    editable: draft && manage,
+    canDeleteDraft: draft && manage,
+    canIssue: draft && hasLines && mayIssue,
+    issueBlockedReason: !draft ? null : !hasLines ? "Add at least one line before issuing." : !mayIssue ? "Your access does not include issuing invoices." : null,
     canVoid: invoice.status === "issued" && power,
     voidRequiresOwnerAdmin: invoice.status === "issued" && !power,
   };

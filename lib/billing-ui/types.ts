@@ -22,6 +22,8 @@ export interface InvoiceLine {
   unit_amount: Numeric;
   amount: Numeric;
   sort_order: number;
+  /** Active candidate links. A non-empty list means the line is locked against edits. */
+  candidateIds?: string[];
 }
 
 export interface Invoice {
@@ -39,6 +41,33 @@ export interface Invoice {
   voided_at: string | null;
   void_reason: string | null;
   invoice_lines: InvoiceLine[];
+}
+
+export type CandidateState = "unpriced" | "open" | "drafted" | "invoiced" | "dismissed";
+
+/** Phase 2 candidate, camelCase. unitAmount is a server decimal string, or null when no price resolved. */
+export interface Candidate {
+  id: string;
+  clientId: string;
+  clientServiceId: string;
+  state: CandidateState;
+  candidateType: string;
+  candidateDate: string;
+  period?: string | null;
+  description: string;
+  unitAmount: string | null;
+  priceSource?: string | null;
+}
+
+/** A client package. Components identify client services; the price is one amount for the whole package. */
+export interface BillingBundle {
+  id: string;
+  name: string;
+  active?: boolean;
+  effectiveFrom: string;
+  effectiveTo?: string | null;
+  unitAmount?: string;
+  components: Array<{ clientServiceId: string }>;
 }
 
 export interface PaymentAllocation {
