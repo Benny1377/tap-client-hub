@@ -76,6 +76,17 @@ test("QuickBooks detail suggestions use column positions, require complete field
   assert.equal(pdfSuggestions.normalizeImportedCustomerName("Example Orchard LLC"), pdfSuggestions.normalizeImportedCustomerName("Example Orchard"));
 });
 
+test("client names are ranked as candidates only", () => {
+  const matches = pdfSuggestions.suggestImportedClientMatches("Agrawal Saurabh and Mittal", [
+    { id: "c-1", name: "Saurabh Agrawal & Mittal LLC" },
+    { id: "c-2", name: "Saurabh Agrawal" },
+    { id: "c-3", name: "Synthetic Dairy" },
+  ]);
+  assert.equal(matches[0].id, "c-1");
+  assert.ok(matches[0].similarity > matches[1].similarity);
+  assert.equal(matches.some((match) => match.id === "c-3"), false);
+});
+
 test("review progress counts every line exactly once", () => {
   const progress = imports.reviewProgress([row("r1", "invoice"), row("r2", "header"), row("r3", "summary"), row("r4", "ignored"), row("r5", "duplicate"), row("r6", "unreviewed")]);
   assert.deepEqual({ ...progress }, { total: 6, invoices: 1, classified: 3, duplicates: 1, unreviewed: 1 });
@@ -180,6 +191,26 @@ test("an exact unique client suggestion pre-fills extracted values without marki
   assert.match(html, /value="INV-1003"/);
   assert.match(html, /value="1250\.00"/);
   assert.equal(suggested.review_disposition, "unreviewed", "prefill is a suggestion, not review confirmation");
+});
+
+test("a fuzzy client candidate is shown and prefilled for review but still needs confirmation", () => {
+  const suggested = row("r8", "unreviewed");
+  suggested.parsed_fields.auto_suggestion = { disposition: "invoice", confidence: "high", reason: "all required columns present", fields: {
+    transaction_type: "Invoice", invoice_number: "INV-88", transaction_date: "2026-08-01", customer_name: "Example Orchad",
+    due_date: "2026-08-16", terms: null, po_number: null, reported_aging: 27, open_balance: "1250.00",
+  } };
+  const candidate = { id: "c-1", name: "Example Orchard LLC", similarity: 92 };
+  const line = render(h("table", null, h("tbody", null, h(panels.LineRow, {
+    row: suggested, clientNames: {}, clientMatches: [candidate], editable: true, mappingOpen: false,
+    onMap: () => {}, onClassify: ok, mappingForm: null,
+  }))));
+  assert.match(line, /Possible TAP Hub clients \(ranked by name similarity; verify before saving\)/);
+  assert.match(line, /Example Orchard LLC \(92% similar\)/);
+  const form = render(h(panels.InvoiceMappingForm, { row: suggested, clients, billingInvoices: [], suggestedClientId: "c-1", onSubmit: ok, onCancel: () => {} }));
+  assert.match(form, /<option value="c-1" selected="">Example Orchard LLC<\/option>/);
+  assert.match(form, /data-client-candidate-note/);
+  assert.doesNotMatch(form, /data-field="confirmed" checked/);
+  assert.equal(suggested.review_disposition, "unreviewed", "candidate display never reviews or links the row");
 });
 
 test("the mapping form shows the line's cells as click-to-fill buttons and never prefills values", () => {

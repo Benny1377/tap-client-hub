@@ -1,6 +1,6 @@
 import type { PdfTextLine } from "@/lib/collections-pdf-parser";
 
-export const COLLECTIONS_PDF_SUGGESTION_PARSER_VERSION = "quickbooks-aging-detail-v1";
+export const COLLECTIONS_PDF_SUGGESTION_PARSER_VERSION = "quickbooks-aging-detail-v2";
 
 export type SuggestedInvoiceFields = {
   transaction_type: string;
@@ -64,12 +64,36 @@ function amountValue(value: string): string | null {
 
 const read = (cells: string[], index: number | undefined) => index === undefined || index < 0 ? "" : (cells[index] || "").trim();
 
-/** Conservative QuickBooks A/R Aging QuickZoom classifier. It only labels explicit headers/totals and
- * proposes invoice rows when every key field is present in the recognized report's own columns. */
+function customerGroupLabel(text: string): boolean {
+  const value = text.trim();
+  if (!value || /\b(aging|quickzoom|tap associates|page|as of|invoice|payment|total|current|over 90)\b/i.test(value)) return false;
+  if (/\d{1,2}:\d{2}\s*(am|pm)|\b\d{1,2}\/\d{1,2}\/\d{2,4}\b/i.test(value)) return false;
+  return /[\p{L}]/u.test(value) && !/[\d$]/.test(value);
+}
+
+function isTruncatedCustomerName(value: string): boolean {
+  return /(?:\.\.\.|…)$/.test(value.trim());
+}
+
+function isKnownReportHeading(text: string): boolean {
+  return /\b(?:tap associates|a\/r aging quickzoom|page\s+\d+)\b/i.test(text)
+    || /^\s*\d{1,2}:\d{2}\s*(?:am|pm)\b/i.test(text)
+    || /^\s*as of\s+(?:\w+\s+)?\d{1,2},?\s+\d{4}\s*$/i.test(text);
+}
+
+/** QuickBooks A/R Aging QuickZoom classifier. It uses the report's column positions and adjacent
+ * customer-group labels to complete abbreviated customer names. Payment rows stay unresolved because
+ * this report does not identify which invoice(s) those credits should reduce. */
 export function suggestCollectionsPdfRows(lines: PdfTextLine[]): PdfRowSuggestion[] {
   let columns: HeaderMap | null = null;
   let headerPositions: number[] | null = null;
+  let currentPage: number | null = null;
+  let customerGroup = "";
   return lines.map((line) => {
+    if (currentPage !== line.page) {
+      currentPage = line.page;
+      customerGroup = "";
+    }
     const cells = line.cells.map((cell) => cell.trim());
     const text = norm(line.text);
     const foundHeader = headerMap(cells);
@@ -80,6 +104,16 @@ export function suggestCollectionsPdfRows(lines: PdfTextLine[]): PdfRowSuggestio
     }
     if (/^(total|grand total|total open balance|report total)(\b|\s)/i.test(text)) {
       return { disposition: "summary", confidence: "high", reason: "Explicit report total label" };
+    }
+    if (isKnownReportHeading(line.text)) {
+      return { disposition: "header", confidence: "high", reason: "Recognized page or report heading" };
+    }
+    if (columns && cells.length === 1) {
+      const label = cells[0];
+      if (customerGroupLabel(label)) {
+        customerGroup = label;
+        return { disposition: "header", confidence: "high", reason: "Standalone customer group heading in the recognized detail report" };
+      }
     }
     if (columns) {
       const atColumn = (key: keyof SuggestedInvoiceFields) => {
@@ -103,18 +137,19 @@ export function suggestCollectionsPdfRows(lines: PdfTextLine[]): PdfRowSuggestio
       if (/^invoice$/.test(kind)) {
         const agingText = atColumn("reported_aging").replace(/\s*(days?)$/i, "").trim();
         const agingValue = /^\d{1,4}$/.test(agingText) ? Number(agingText) : null;
+        const rawCustomerName = atColumn("customer_name");
         const fields: SuggestedInvoiceFields = {
           transaction_type: type,
           transaction_date: dateValue(atColumn("transaction_date")) || "",
           invoice_number: atColumn("invoice_number"),
-          customer_name: atColumn("customer_name"),
+          customer_name: isTruncatedCustomerName(rawCustomerName) && customerGroup ? customerGroup : rawCustomerName,
           terms: atColumn("terms") || null,
           po_number: atColumn("po_number") || null,
           due_date: dateValue(atColumn("due_date")) || "",
           reported_aging: agingValue ?? -1,
           open_balance: amountValue(atColumn("open_balance")) || "",
         };
-        if (fields.transaction_date && fields.invoice_number && fields.customer_name && fields.due_date
+        if (fields.transaction_date && fields.invoice_number && fields.customer_name && !isTruncatedCustomerName(fields.customer_name) && fields.due_date
           && agingValue !== null && fields.open_balance) {
           return { disposition: "invoice", confidence: "high", reason: "Invoice row matches all required report columns", fields };
         }
@@ -127,4 +162,50 @@ export function suggestCollectionsPdfRows(lines: PdfTextLine[]): PdfRowSuggestio
 
 export function normalizeImportedCustomerName(value: string): string {
   return norm(value).replace(/\b(llc|incorporated|inc|ltd|limited|corp|corporation)\b/g, " ").replace(/\s+/g, " ").trim();
+}
+
+export type ImportedClientMatch = { id: string; name: string; similarity: number };
+
+function editSimilarity(left: string, right: string): number {
+  if (!left || !right) return 0;
+  let previous = Array.from({ length: right.length + 1 }, (_unused, index) => index);
+  for (let leftIndex = 1; leftIndex <= left.length; leftIndex += 1) {
+    const current = [leftIndex];
+    for (let rightIndex = 1; rightIndex <= right.length; rightIndex += 1) {
+      current[rightIndex] = Math.min(
+        current[rightIndex - 1] + 1,
+        previous[rightIndex] + 1,
+        previous[rightIndex - 1] + (left[leftIndex - 1] === right[rightIndex - 1] ? 0 : 1),
+      );
+    }
+    previous = current;
+  }
+  return 1 - previous[right.length] / Math.max(left.length, right.length);
+}
+
+/** Ranked name-only candidates for a reviewer to inspect; this never links an invoice or changes data. */
+export function suggestImportedClientMatches(
+  customerName: string,
+  clients: Array<{ id: string; name: string }>,
+  limit = 3,
+): ImportedClientMatch[] {
+  const normalized = normalizeImportedCustomerName(customerName);
+  if (normalized.length < 3) return [];
+  const customerTokens = new Set(normalized.split(/\s+/).filter(Boolean));
+  return clients.map((client) => {
+    const candidate = normalizeImportedCustomerName(client.name);
+    if (candidate.length < 3) return { id: client.id, name: client.name, similarity: 0 };
+    const candidateTokens = new Set(candidate.split(/\s+/).filter(Boolean));
+    const overlap = [...customerTokens].filter((token) => candidateTokens.has(token)).length;
+    const tokenSimilarity = (2 * overlap) / Math.max(1, customerTokens.size + candidateTokens.size);
+    const characterSimilarity = editSimilarity(normalized, candidate);
+    return {
+      id: client.id,
+      name: client.name,
+      similarity: normalized === candidate ? 1 : Math.max(tokenSimilarity, characterSimilarity),
+    };
+  }).filter((match) => match.similarity >= 0.35)
+    .sort((left, right) => right.similarity - left.similarity || left.name.localeCompare(right.name))
+    .slice(0, Math.max(0, limit))
+    .map((match) => ({ ...match, similarity: Math.round(match.similarity * 100) }));
 }
