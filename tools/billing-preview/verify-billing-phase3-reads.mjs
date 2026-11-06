@@ -1,4 +1,5 @@
-// Read-only checks of the Phase 3 read endpoints. Never prints credentials.
+// Checks of the Phase 3 read endpoints. Reads only, plus one policy save of the unchanged GET response (Q1d), which the current
+// server refuses. If that save ever succeeds it writes the effective rows, so restore policy afterwards. Never prints credentials.
 // Env: BILLING_PREVIEW_URL, BILLING_PREVIEW_CLIENT_ID, BILLING_PREVIEW_ENV_FILE (default .env.preview.local).
 import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
@@ -15,6 +16,11 @@ class Session {
     const text = await r.text(); let json = null; try { json = JSON.parse(text); } catch {}
     return { status: r.status, json, text };
   }
+  async callJson(method, path, body) {
+    const r = await fetch(BASE + path, { method, redirect: "manual", headers: { "Content-Type": "application/json", Cookie: [...this.jar].map(([k, v]) => `${k}=${v}`).join("; ") }, body: JSON.stringify(body) });
+    const text = await r.text(); let json = null; try { json = JSON.parse(text); } catch {}
+    return { status: r.status, json, text };
+  }
   async signIn(name) {
     const r = await fetch(BASE + "/api/auth/sign-in", { method: "POST", redirect: "manual", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ identifier: env[`TEST_${name}_EMAIL`], password: env[`TEST_${name}_PASSWORD`] }) });
     if (r.status !== 200) throw new Error(`sign-in ${name} ${r.status}`);
@@ -28,7 +34,16 @@ const admin = await new Session().signIn("ADMIN"), billing = await new Session()
 
 const before = await db("billing_action_policy?select=action_key,allowed_roles,enabled&order=action_key");
 const pol = await admin.call("GET", "/api/billing/permissions/policy");
-rec("Q1", "policy: Admin 200, shape exact, matches stored rows", pol.status === 200 && pol.json.policies.every((p) => Object.keys(p).sort().join() === "actionKey,allowedRoles,enabled") && pol.json.policies.length === before.length, `${pol.status} rows=${pol.json?.policies?.length}: ${pol.json?.policies?.map((p) => p.actionKey)}`);
+const DELEGABLE = ["billing.view","pricing.view","pricing.manage","candidates.view","candidates.manage","invoices.draft.manage","invoices.issue","payments.record","payments.allocate","settings.terms.manage","settings.remittance.manage"];
+rec("Q1", "policy: Admin 200, all 11 delegable actions, no fixed action, exact shape", pol.status === 200 && pol.json.policies.length === 11 && DELEGABLE.every((k) => pol.json.policies.some((p) => p.actionKey === k)) && pol.json.policies.every((p) => Object.keys(p).sort().join() === "actionKey,allowedRoles,enabled"), `${pol.status} rows=${pol.json?.policies?.length} stored=${before.length}`);
+rec("Q1b", "policy: stored rows are returned as stored", before.filter((r) => DELEGABLE.includes(r.action_key)).every((r) => { const p = pol.json.policies.find((x) => x.actionKey === r.action_key); return JSON.stringify(p.allowedRoles) === JSON.stringify(r.allowed_roles) && p.enabled === r.enabled; }), `stored=${before.length}`);
+const mine = await billing.call("GET", "/api/billing/permissions");
+const predicted = pol.json.policies.filter((p) => p.enabled && p.allowedRoles.includes("staff")).map((p) => p.actionKey).sort().join();
+rec("Q1c", "policy: effective values predict what Billing staff actually get", predicted === [...mine.json.actions].sort().join(), `${mine.json?.actions?.length} actions`);
+const roundTrip = await admin.callJson("PATCH", "/api/billing/permissions/policy", { policies: pol.json.policies, reason: "Synthetic read-back check, expected to be refused" });
+console.log(`INFO Q1d saving the GET response unchanged returns ${roundTrip.status} ${roundTrip.json?.code || ""} ${String(roundTrip.json?.error || "").slice(0, 90)}`);
+const delegable = pol.json.policies.map((p) => ({ ...p, allowedRoles: p.allowedRoles.filter((r) => ["manager", "staff", "offshore"].includes(r)) }));
+console.log(`INFO Q1e ${delegable.filter((p, i) => p.allowedRoles.length !== pol.json.policies[i].allowedRoles.length).length} action(s) carry roles the save endpoint refuses`);
 const st = [];
 for (const s of [billing, collections, unassigned, anon]) st.push((await s.call("GET", "/api/billing/permissions/policy")).status);
 rec("Q2", "policy: Billing, Collections, unassigned 403, anon 401", st.join() === "403,403,403,401", st.join());

@@ -9,9 +9,7 @@ test("policy read is explicit, Owner/Admin-gated, and returns only policy fields
   const policy = route.slice(route.indexOf("async function policyGet()"), route.indexOf("async function clientServicesGet"));
   assert.match(policy, /requireBillingAction\("policy\.manage"\)/);
   assert.match(policy, /select\("action_key,allowed_roles,enabled"\)/);
-  assert.match(policy, /actionKey: row\.action_key/);
-  assert.match(policy, /allowedRoles: row\.allowed_roles/);
-  assert.match(policy, /enabled: row\.enabled/);
+  assert.match(policy, /effectiveBillingPolicy\(/);
   assert.doesNotMatch(policy, /select\("\*"\)/);
 });
 
