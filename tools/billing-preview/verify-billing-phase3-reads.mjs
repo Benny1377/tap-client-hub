@@ -1,5 +1,5 @@
-// Checks of the Phase 3 read endpoints. Reads only, plus one policy save of the unchanged GET response (Q1d), which the current
-// server refuses. If that save ever succeeds it writes the effective rows, so restore policy afterwards. Never prints credentials.
+// Checks of the Phase 3 read endpoints. Read-only unless BILLING_POLICY_ROUNDTRIP=yes, which saves the unchanged GET response and
+// writes policy rows. Use that flag only on a disposable local database. Never prints credentials.
 // Env: BILLING_PREVIEW_URL, BILLING_PREVIEW_CLIENT_ID, BILLING_PREVIEW_ENV_FILE (default .env.preview.local).
 import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
@@ -36,14 +36,23 @@ const before = await db("billing_action_policy?select=action_key,allowed_roles,e
 const pol = await admin.call("GET", "/api/billing/permissions/policy");
 const DELEGABLE = ["billing.view","pricing.view","pricing.manage","candidates.view","candidates.manage","invoices.draft.manage","invoices.issue","payments.record","payments.allocate","settings.terms.manage","settings.remittance.manage"];
 rec("Q1", "policy: Admin 200, all 11 delegable actions, no fixed action, exact shape", pol.status === 200 && pol.json.policies.length === 11 && DELEGABLE.every((k) => pol.json.policies.some((p) => p.actionKey === k)) && pol.json.policies.every((p) => Object.keys(p).sort().join() === "actionKey,allowedRoles,enabled"), `${pol.status} rows=${pol.json?.policies?.length} stored=${before.length}`);
-rec("Q1b", "policy: stored rows are returned as stored", before.filter((r) => DELEGABLE.includes(r.action_key)).every((r) => { const p = pol.json.policies.find((x) => x.actionKey === r.action_key); return JSON.stringify(p.allowedRoles) === JSON.stringify(r.allowed_roles) && p.enabled === r.enabled; }), `stored=${before.length}`);
+rec("Q1b", "policy: stored rows are returned, limited to delegable roles", before.filter((r) => DELEGABLE.includes(r.action_key)).every((r) => { const p = pol.json.policies.find((x) => x.actionKey === r.action_key); return JSON.stringify(p.allowedRoles) === JSON.stringify(r.allowed_roles.filter((x) => ["manager", "staff", "offshore"].includes(x))) && p.enabled === r.enabled; }), `stored=${before.length}`);
 const mine = await billing.call("GET", "/api/billing/permissions");
 const predicted = pol.json.policies.filter((p) => p.enabled && p.allowedRoles.includes("staff")).map((p) => p.actionKey).sort().join();
 rec("Q1c", "policy: effective values predict what Billing staff actually get", predicted === [...mine.json.actions].sort().join(), `${mine.json?.actions?.length} actions`);
-const roundTrip = await admin.callJson("PATCH", "/api/billing/permissions/policy", { policies: pol.json.policies, reason: "Synthetic read-back check, expected to be refused" });
-console.log(`INFO Q1d saving the GET response unchanged returns ${roundTrip.status} ${roundTrip.json?.code || ""} ${String(roundTrip.json?.error || "").slice(0, 90)}`);
-const delegable = pol.json.policies.map((p) => ({ ...p, allowedRoles: p.allowedRoles.filter((r) => ["manager", "staff", "offshore"].includes(r)) }));
-console.log(`INFO Q1e ${delegable.filter((p, i) => p.allowedRoles.length !== pol.json.policies[i].allowedRoles.length).length} action(s) carry roles the save endpoint refuses`);
+rec("Q1d", "policy: only delegable roles are returned", pol.json.policies.every((p) => p.allowedRoles.every((r) => ["manager", "staff", "offshore"].includes(r))));
+if (process.env.BILLING_POLICY_ROUNDTRIP === "yes") {
+  if (!BASE.startsWith("http://localhost")) throw new Error("Refusing: the policy save runs on local only");
+  const save = await admin.callJson("PATCH", "/api/billing/permissions/policy", { policies: pol.json.policies, reason: "Synthetic unchanged save" });
+  const again = await admin.call("GET", "/api/billing/permissions/policy");
+  const sorted = (x) => JSON.stringify([...x].sort((m, n) => m.actionKey.localeCompare(n.actionKey)));
+  rec("Q1e", "policy: saving the GET response unchanged succeeds and reads back the same", save.status === 200 && sorted(again.json.policies) === sorted(pol.json.policies), save.status);
+  const mineAfter = await billing.call("GET", "/api/billing/permissions");
+  rec("Q1f", "policy: the save changes no one's effective actions", [...mineAfter.json.actions].sort().join() === [...mine.json.actions].sort().join(), `${mineAfter.json?.actions?.length} actions`);
+  const adminWrite = await admin.callJson("POST", "/api/billing/rate-cards", { name: `Synthetic round trip ${Date.now()}`, effectiveFrom: "2026-12-01", reason: "Synthetic check" });
+  const staffWrite = await billing.callJson("POST", "/api/billing/rate-cards", { name: "Synthetic refused", effectiveFrom: "2026-12-01", reason: "Synthetic check" });
+  rec("Q1g", "policy: Admin keeps pricing.manage with an empty role list, staff stay refused", adminWrite.status >= 200 && adminWrite.status < 300 && staffWrite.status === 403, `${adminWrite.status}/${staffWrite.status}`);
+}
 const st = [];
 for (const s of [billing, collections, unassigned, anon]) st.push((await s.call("GET", "/api/billing/permissions/policy")).status);
 rec("Q2", "policy: Billing, Collections, unassigned 403, anon 401", st.join() === "403,403,403,401", st.join());
@@ -71,7 +80,7 @@ rec("Q8", "invoices: candidateIds equal the active links, inactive links exclude
 const legacy = "id,amount,period,quantity,created_by,invoice_id,sort_order,updated_by,description,unit_amount,client_service_id".split(",");
 rec("Q9", "invoices: legacy line fields retained", lines.every((l) => legacy.every((k) => k in l)), `lines=${lines.length}`);
 const after = await db("billing_action_policy?select=action_key,allowed_roles,enabled&order=action_key");
-rec("Q10", "reads changed nothing in policy", JSON.stringify(before) === JSON.stringify(after));
+if (process.env.BILLING_POLICY_ROUNDTRIP !== "yes") rec("Q10", "reads changed nothing in policy", JSON.stringify(before) === JSON.stringify(after));
 
 const failed = results.filter((x) => !x).length;
 console.log(`\n${results.length - failed}/${results.length} passed`);
