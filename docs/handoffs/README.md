@@ -1,6 +1,7 @@
 # TAP Client Hub Handoffs
 
 - [Billing project initialization](2026-10-19-billing-project-initialization.md)
+- [Billing integration Preview validation](2026-11-06-billing-integration-preview-validation.md)
 - [Payroll credential fields follow-up](2026-11-06-payroll-credential-fields-follow-up.md)
 - [Billing owner decisions and Phase 3 follow-up](2026-11-06-billing-owner-decisions-and-phase3-follow-up.md)
 - [Payroll credential access remediation](2026-11-06-payroll-credential-access-remediation.md)

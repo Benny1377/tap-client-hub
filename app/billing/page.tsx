@@ -121,7 +121,7 @@ export default function BillingPage() {
         </section>
 
         <section className="card" style={{ marginTop: 16 }} aria-label="Invoice detail">
-          <h3>Invoice detail<span>{selectedInvoice ? selectedInvoice.invoice_number : "select an invoice"}</span></h3>
+          <h3>Invoice detail<span>{selectedInvoice ? selectedInvoice.invoice_number ?? "Draft" : "select an invoice"}</span></h3>
           {selectedInvoice ? (
             <InvoiceDetail
               key={selectedInvoice.id}

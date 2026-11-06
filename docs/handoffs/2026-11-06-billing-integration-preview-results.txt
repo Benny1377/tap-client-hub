@@ -1,0 +1,90 @@
+# Hosted checks on https://tap-client-hub-test.vercel.app, integrated commit 6bba06b, TAB-HUB sandbox, 2026-11-06
+
+## verify-payroll-credential-access.mjs
+PASS P-1 the deployment reads the pinned sandbox :: vuqgxotdccxivjmavsoj.supabase.co
+PASS R-Billing Billing-only: /api/clients has neither field and no sentinel :: 200, 5776 bytes
+PASS R-Billing-lite Billing-only: /api/clients?fields=lite has neither field and no sentinel :: 200, 2073 bytes
+PASS W0-Billing Billing-only default account: PATCH and PUT refused :: 403/403
+PASS R-Collections Collections-only: /api/clients has neither field and no sentinel :: 200, 5776 bytes
+PASS R-Collections-lite Collections-only: /api/clients?fields=lite has neither field and no sentinel :: 200, 2073 bytes
+PASS W0-Collections Collections-only default account: PATCH and PUT refused :: 403/403
+PASS R-anon-unassigned anon 401, unassigned 403 :: 401/403
+PASS W1-Billing-payrollPassword-set Billing with client edit: PATCH payrollPassword refused, stored values unchanged :: 403
+PASS W1-Billing-eftps-set Billing with client edit: PATCH eftps refused, stored values unchanged :: 403
+PASS W1-Billing-payrollPassword-clear Billing with client edit: PATCH payrollPassword refused, stored values unchanged :: 403
+PASS W1-Billing-eftps-clear Billing with client edit: PATCH eftps refused, stored values unchanged :: 403
+PASS W2-Billing Billing with client edit: PATCH mixing a credential with another field changes nothing :: 403
+PASS W3-Billing-set Billing with client edit: PUT keeps stored values :: 200
+PASS W3-Billing-clear Billing with client edit: PUT keeps stored values :: 200
+PASS W3-Billing-null Billing with client edit: PUT keeps stored values :: 200
+PASS W4-Billing Billing with client edit: an unrelated edit still saves :: 200
+PASS W5-Billing Billing with client edit: unrelated PUT edit saves, credential ignored :: 200
+PASS W1-Collections-payrollPassword-set Collections with client edit: PATCH payrollPassword refused, stored values unchanged :: 403
+PASS W1-Collections-eftps-set Collections with client edit: PATCH eftps refused, stored values unchanged :: 403
+PASS W1-Collections-payrollPassword-clear Collections with client edit: PATCH payrollPassword refused, stored values unchanged :: 403
+PASS W1-Collections-eftps-clear Collections with client edit: PATCH eftps refused, stored values unchanged :: 403
+PASS W2-Collections Collections with client edit: PATCH mixing a credential with another field changes nothing :: 403
+PASS W3-Collections-set Collections with client edit: PUT keeps stored values :: 200
+PASS W3-Collections-clear Collections with client edit: PUT keeps stored values :: 200
+PASS W3-Collections-null Collections with client edit: PUT keeps stored values :: 200
+PASS W4-Collections Collections with client edit: an unrelated edit still saves :: 200
+PASS W5-Collections Collections with client edit: unrelated PUT edit saves, credential ignored :: 200
+PASS A-Payroll-read Payroll staff read both fields :: 200
+PASS A-Payroll-patch Payroll staff change both fields with PATCH :: 200
+PASS A-Payroll-put Payroll staff change both fields with PUT :: 200
+PASS A-Payroll-no-edit Payroll staff without client edit: can still read, cannot write :: 403
+PASS A-Admin-read Owner/Admin read both fields :: 200
+PASS A-Admin-patch Owner/Admin change both fields :: 200
+PASS O-workload /api/workload carries neither value :: 500
+PASS Z test accounts and the client service are restored exactly :: synthetic service row removed
+
+36/36 passed
+
+## verify-billing-phase3-reads.mjs
+PASS Q1 policy: Admin 200, all 11 delegable actions, no fixed action, exact shape :: 200 rows=11 stored=3
+PASS Q1b policy: stored rows are returned as stored :: stored=3
+PASS Q1c policy: effective values predict what Billing staff actually get :: 8 actions
+INFO Q1d saving the GET response unchanged returns 422 INVALID_INPUT Policy contains an unsupported action or role
+INFO Q1e 1 action(s) carry roles the save endpoint refuses
+PASS Q2 policy: Billing, Collections, unassigned 403, anon 401 :: 403,403,403,401
+PASS Q4 client-services: Billing 200, exactly the five fields :: 200 items=8 keys=id,active,frequency,serviceCode,serviceName
+PASS Q5 client-services: Collections, unassigned 403, anon 401 :: 403,403,401
+PASS Q6 client-services: bad and missing id 422, unknown client empty :: 422/422/200
+PASS Q7-Admin invoices: 200, every line has candidateIds, no link payload :: 200 invoices=6 lines=3 linked=2
+PASS Q7-Billing invoices: 200, every line has candidateIds, no link payload :: 200 invoices=6 lines=3 linked=2
+PASS Q7-Collections invoices: 200, every line has candidateIds, no link payload :: 200 invoices=6 lines=3 linked=2
+PASS Q8 invoices: candidateIds equal the active links, inactive links excluded :: links=6 active=3 mismatched=0
+PASS Q9 invoices: legacy line fields retained :: lines=3
+PASS Q10 reads changed nothing in policy :: 
+
+13/13 passed
+
+## verify-billing-phase2-collections-only.mjs
+PASS P-1 the deployment reads the pinned sandbox (remittance updatedAt matches) :: vuqgxotdccxivjmavsoj.supabase.co
+PASS A3-Collections-only Collections-only staff get 403 (no redacted body) on every Phase 2 read incl. /permissions :: 9 paths
+PASS A4-Collections-only Collections-only staff get 403 on Phase 2 writes :: 5 writes
+PASS D8 Collections-only staff cannot create a confirmation (403) :: 403
+
+4/4 passed
+
+## verify-payroll-fields-ui.mjs
+PASS U-Billing-only Billing-only: client panels unreachable, no field, no sentinel in pages or API responses :: /clients->/billing /pr->/billing writes=0
+PASS U-Collections-only Collections-only: client panels unreachable, no field, no sentinel in pages or API responses :: /clients->/collections /pr->/collections writes=0
+PASS U-Billing+Clients editor-hidden Billing+Clients editor: PIN and EFTPS controls absent, sentinel absent :: {"labels":false,"values":0,"html":false}
+PASS U-Billing+Clients editor-payload Billing+Clients editor: a real edit saves and no request carries either field :: edited=true writes=PUT,PUT carrying=0
+PASS U-Billing+Clients editor-modal Billing+Clients editor: the add-client form shows no PIN or EFTPS control (not submitted) :: false
+PASS U-Collections+Clients editor-hidden Collections+Clients editor: PIN and EFTPS controls absent, sentinel absent :: {"labels":false,"values":0,"html":false}
+PASS U-Collections+Clients editor-payload Collections+Clients editor: a real edit saves and no request carries either field :: edited=true writes=PUT,PUT carrying=0
+PASS U-Collections+Clients editor-modal Collections+Clients editor: the add-client form shows no PIN or EFTPS control (not submitted) :: false
+PASS U-Payroll-visible Payroll staff: PIN and EFTPS controls present with stored values :: {"labels":true,"values":2,"html":true}
+PASS U-Admin-visible Owner/Admin: PIN and EFTPS controls present with stored values :: {"labels":true,"values":2,"html":true}
+PASS U-Admin-keeps Owner/Admin: a normal edit keeps stored values :: edited=true
+PASS U-Admin-modal Owner/Admin: the add-client form does show the controls (control for the hidden check, not submitted) :: 
+PASS Z test accounts and client service restored :: 
+
+13/13 passed
+
+## verify-billing-draft-ui.mjs on 6bba06b (before the heading fix; B5 is the defect)
+PASS B1, B2, B3, B4, B6, Z
+FAIL B5 detail heading was blank for a draft
+6/7 passed
