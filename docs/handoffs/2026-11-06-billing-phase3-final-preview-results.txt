@@ -1,0 +1,181 @@
+# Hosted checks on https://tap-client-hub-test.vercel.app, commit b0607fb, TAB-HUB sandbox, 2026-11-06
+
+## verify-payroll-credential-access.mjs
+PASS P-1 the deployment reads the pinned sandbox :: vuqgxotdccxivjmavsoj.supabase.co
+PASS R-Billing Billing-only: /api/clients has neither field and no sentinel :: 200, 5776 bytes
+PASS R-Billing-lite Billing-only: /api/clients?fields=lite has neither field and no sentinel :: 200, 2073 bytes
+PASS W0-Billing Billing-only default account: PATCH and PUT refused :: 403/403
+PASS R-Collections Collections-only: /api/clients has neither field and no sentinel :: 200, 5776 bytes
+PASS R-Collections-lite Collections-only: /api/clients?fields=lite has neither field and no sentinel :: 200, 2073 bytes
+PASS W0-Collections Collections-only default account: PATCH and PUT refused :: 403/403
+PASS R-anon-unassigned anon 401, unassigned 403 :: 401/403
+PASS W1-Billing-payrollPassword-set Billing with client edit: PATCH payrollPassword refused, stored values unchanged :: 403
+PASS W1-Billing-eftps-set Billing with client edit: PATCH eftps refused, stored values unchanged :: 403
+PASS W1-Billing-payrollPassword-clear Billing with client edit: PATCH payrollPassword refused, stored values unchanged :: 403
+PASS W1-Billing-eftps-clear Billing with client edit: PATCH eftps refused, stored values unchanged :: 403
+PASS W2-Billing Billing with client edit: PATCH mixing a credential with another field changes nothing :: 403
+PASS W3-Billing-set Billing with client edit: PUT keeps stored values :: 200
+PASS W3-Billing-clear Billing with client edit: PUT keeps stored values :: 200
+PASS W3-Billing-null Billing with client edit: PUT keeps stored values :: 200
+PASS W4-Billing Billing with client edit: an unrelated edit still saves :: 200
+PASS W5-Billing Billing with client edit: unrelated PUT edit saves, credential ignored :: 200
+PASS W1-Collections-payrollPassword-set Collections with client edit: PATCH payrollPassword refused, stored values unchanged :: 403
+PASS W1-Collections-eftps-set Collections with client edit: PATCH eftps refused, stored values unchanged :: 403
+PASS W1-Collections-payrollPassword-clear Collections with client edit: PATCH payrollPassword refused, stored values unchanged :: 403
+PASS W1-Collections-eftps-clear Collections with client edit: PATCH eftps refused, stored values unchanged :: 403
+PASS W2-Collections Collections with client edit: PATCH mixing a credential with another field changes nothing :: 403
+PASS W3-Collections-set Collections with client edit: PUT keeps stored values :: 200
+PASS W3-Collections-clear Collections with client edit: PUT keeps stored values :: 200
+PASS W3-Collections-null Collections with client edit: PUT keeps stored values :: 200
+PASS W4-Collections Collections with client edit: an unrelated edit still saves :: 200
+PASS W5-Collections Collections with client edit: unrelated PUT edit saves, credential ignored :: 200
+PASS A-Payroll-read Payroll staff read both fields :: 200
+PASS A-Payroll-patch Payroll staff change both fields with PATCH :: 200
+PASS A-Payroll-put Payroll staff change both fields with PUT :: 200
+PASS A-Payroll-no-edit Payroll staff without client edit: can still read, cannot write :: 403
+PASS A-Admin-read Owner/Admin read both fields :: 200
+PASS A-Admin-patch Owner/Admin change both fields :: 200
+PASS O-workload /api/workload carries neither value :: 500
+PASS Z test accounts and the client service are restored exactly :: synthetic service row removed
+
+36/36 passed
+
+## verify-billing-phase3-reads.mjs
+PASS Q1 policy: Admin 200, all 11 delegable actions, no fixed action, exact shape :: 200 rows=11 stored=3
+PASS Q1b policy: stored allowed roles are filtered to delegable roles :: stored=3
+PASS Q1c policy: response roles are limited to manager, staff, offshore :: read-only save-shape validation
+PASS Q1d policy: effective values predict what Billing staff actually get :: 8 actions
+PASS Q2 policy: Billing, Collections, unassigned 403, anon 401 :: 403,403,403,401
+PASS Q4 client-services: Billing 200, exactly the five fields :: 200 items=8 keys=id,active,frequency,serviceCode,serviceName
+PASS Q5 client-services: Collections, unassigned 403, anon 401 :: 403,403,401
+PASS Q6 client-services: bad and missing id 422, unknown client empty :: 422/422/200
+PASS Q7-Admin invoices: 200, every line has candidateIds, no link payload :: 200 invoices=6 lines=3 linked=2
+PASS Q7-Billing invoices: 200, every line has candidateIds, no link payload :: 200 invoices=6 lines=3 linked=2
+PASS Q7-Collections invoices: 200, every line has candidateIds, no link payload :: 200 invoices=6 lines=3 linked=2
+PASS Q8 invoices: candidateIds equal the active links, inactive links excluded :: links=6 active=3 mismatched=0
+PASS Q9 invoices: legacy line fields retained :: lines=3
+PASS Q10 read checks changed nothing in policy :: 
+
+14/14 passed
+
+## verify-payroll-fields-ui.mjs
+PASS U-Billing-only Billing-only: client panels unreachable, no field, no sentinel in pages or API responses :: /clients->/billing /pr->/billing writes=0
+PASS U-Collections-only Collections-only: client panels unreachable, no field, no sentinel in pages or API responses :: /clients->/collections /pr->/collections writes=0
+PASS U-Billing+Clients editor-hidden Billing+Clients editor: PIN and EFTPS controls absent, sentinel absent :: {"labels":false,"values":0,"html":false}
+PASS U-Billing+Clients editor-payload Billing+Clients editor: a real edit saves and no request carries either field :: edited=true writes=PUT,PUT carrying=0
+PASS U-Billing+Clients editor-modal Billing+Clients editor: the add-client form shows no PIN or EFTPS control (not submitted) :: false
+PASS U-Collections+Clients editor-hidden Collections+Clients editor: PIN and EFTPS controls absent, sentinel absent :: {"labels":false,"values":0,"html":false}
+PASS U-Collections+Clients editor-payload Collections+Clients editor: a real edit saves and no request carries either field :: edited=true writes=PUT,PUT carrying=0
+PASS U-Collections+Clients editor-modal Collections+Clients editor: the add-client form shows no PIN or EFTPS control (not submitted) :: false
+PASS U-Payroll-visible Payroll staff: PIN and EFTPS controls present with stored values :: {"labels":true,"values":2,"html":true}
+PASS U-Admin-visible Owner/Admin: PIN and EFTPS controls present with stored values :: {"labels":true,"values":2,"html":true}
+PASS U-Admin-keeps Owner/Admin: a normal edit keeps stored values :: edited=true
+PASS U-Admin-modal Owner/Admin: the add-client form does show the controls (control for the hidden check, not submitted) :: 
+PASS Z test accounts and client service restored :: 
+
+13/13 passed
+
+## verify-billing-draft-ui.mjs
+PASS B1 /billing loads in the PracticeOps shell :: /billing
+PASS B2 new-draft form asks for a memo only :: Memo (optional)
+PASS B3 the form created a draft with no number or dates :: draft
+PASS B4 list row shows Draft and a dash for each date, never a blank :: ["Draft","—","SYNTHETIC Billing Matrix 2026-11-06","—","—","—","Draft"]
+PASS B5 detail names the draft and explains number and dates :: "Invoice detail\nDRAFT"
+PASS B6 no page errors :: 
+PASS Z the draft is deleted :: 200
+
+7/7 passed
+
+## verify-billing-screen1-ui.mjs
+PASS S1 ordinary candidates appear and can be selected ::  2026-11-30 Synthetic REC MW54YZ20 Recurring 2026-11 $125.00 Ready Reprice Dismiss
+PASS S2 a package is one row at one price, listing its services ::  2026-11-30 Package MW54YZ20 Synthetic B1 MW54YZ20 · Synthetic B2 MW54YZ20 Package 2026-11 $300.00 Ready 2 services
+PASS S3 an incomplete package cannot be selected and says why ::  2026-11-30 Partial MW54YZ20 Synthetic INC1 MW54YZ20 This package needs all 2 services on this date; 1 is ready. Package 2026-11 $300.00 Ready 1 service
+PASS S4 an unpriced candidate shows No price and cannot be selected :: 2026-11-30 Synthetic UNP MW54YZ20 Recurring 2026-11 No price No price Reprice Dismiss
+PASS S5 repricing moves it to Ready at the server's price ::  2026-11-30 Synthetic UNP MW54YZ20 Recurring 2026-11 $50.00 Ready Reprice Dismiss
+PASS S6 dismiss and reopen move a candidate between lists :: 
+PASS S7 selecting shows a count, with no browser-calculated total :: Create draft from 2 selected items
+PASS S8 the server builds the draft: two lines, one package line at the package price :: lines=2 package=300
+PASS S9 the new draft opens and its linked lines are locked :: {"locked":2,"edit":false,"rows":2}
+PASS S10 drafted candidates leave Ready :: 
+PASS S11 removing a linked line returns its candidate to Ready :: 
+PASS S12 deleting the draft removes it and returns the package to Ready :: 
+PASS S14 no page errors as Billing staff :: 
+
+13/13 passed
+
+## verify-billing-workbench-ui.mjs
+PASS P1 client services list shows the client's services :: 3850 chars
+PASS P2 a rate card can be created :: 318a1541
+PASS P3 a rate entry can be added :: 
+PASS P4 an overlapping entry shows the server's error and saves nothing :: Effective date range overlaps an existing record
+PASS P5 a client price override can be saved :: 
+PASS P6 a package can be created :: 8bdf68f7
+PASS P7 package components can be set :: 
+PASS T1 settings show terms, remittance, policy and completion maps :: 
+PASS T2 the policy editor lists all 11 delegable actions and no fixed one :: 11
+PASS T6 completion maps can be created :: 
+PASS T7 a manual confirmation creates a candidate :: 
+PASS W1 projection shows expected work, labelled projected, and writes nothing :: true candidates 14
+PASS W2 generate is explicit and reports its totals :: Created 3 · Existing 10 · Unpriced 0 · Skipped 5
+PASS W3 generating again creates nothing new :: Created 0 · Existing 13 · Unpriced 0 · Skipped 5
+PASS W4 generated work reaches the Invoices tab, the package as one row :: 
+PASS W5 no page errors as Admin :: 
+PASS R1 Billing staff see prices read-only :: manage controls 0
+PASS R2 Billing staff get no policy editor or terms and remittance saves :: 
+PASS R3 Billing staff keep the default generate action :: 
+PASS R4 no page errors as Billing staff :: 
+PASS R5 STAFF_COLLECTIONS cannot open Billing :: /collections
+PASS R6 STAFF_UNASSIGNED cannot open Billing :: /time
+FAIL L1 no page-wide horizontal scroll at phone width on any Phase 3 tab :: Invoices=383 What bills next=383 Clients & prices=383 Settings=383
+
+22/23 passed
+
+## verify-ar-synthetic-flow.mjs
+PASS D0 delivery is disabled before the run :: {"mode":"disabled","automation":false}
+FAIL P0 first parse of a new report succeeds :: 500 IMPORT_ROWS_WRITE_FAILED
+INFO seeded through refresh: 200 
+PASS P1 synthetic report reads as a detail report :: aging_detail 2026-02-01 rows=9
+FAIL P2 a cut-off name takes the customer heading; a payment stays for review :: ["header","header","header","header","unreviewed","unreviewed","invoice","unreviewed","summary"]
+FAIL P3 synthetic customers show ranked client candidates labelled for verification :: Possible TAP Hub clients (ranked by name similarity; verify before saving): SYNTHETIC Billing Matrix 2026-11-06 (97% similar)
+FAIL R1 a failed refresh leaves the batch in needs_review with decisions intact :: 200 undefined needs_review
+FAIL R2 retrying a failed batch that fails again keeps rows and returns to needs_review :: 200 failed
+PASS R3 a successful retry keeps saved rows and decisions, not a delete and rebuild :: 200 rows kept=true
+FAIL R4 a successful retry returns the batch to needs_review :: response=needs_review stored=failed
+INFO batch stuck after retry; moving it on so the rest of the flow can run
+PASS A1 confirmed invoices stay out of the worklist before approval :: 200
+PASS A2 the uploader and reviewer cannot approve :: 403 IMPORT_APPROVE_FORBIDDEN
+FAIL A3 a separate Admin approves :: 409 needs_review {"error":"Batch is not ready for approval","code":"IMPORT_APPROVAL_BLOCKED"}
+FAIL A4 approved report invoices are in the Collections worklist :: 200 2098 bytes
+PASS D1 delivery stayed disabled and nothing was sent :: {"attempts":0,"events":0}
+BATCH f580c368 approved synthetic, as of 2026-02-01
+
+6/14 passed
+
+## verify-billing-phase2-collections-only.mjs
+PASS P-1 the deployment reads the pinned sandbox (remittance updatedAt matches) :: vuqgxotdccxivjmavsoj.supabase.co
+PASS A3-Collections-only Collections-only staff get 403 (no redacted body) on every Phase 2 read incl. /permissions :: 9 paths
+PASS A4-Collections-only Collections-only staff get 403 on Phase 2 writes :: 5 writes
+PASS D8 Collections-only staff cannot create a confirmation (403) :: 403
+
+4/4 passed
+
+## verify-ar-synthetic-flow.mjs, final run. The run above failed P2, P3, R1, R2, A3 and A4 for test reasons: the client name has digits, which the parser refuses in a heading, and hosted storage kept serving the old PDF after an overwrite. The script was corrected; no app code changed.
+PASS D0 delivery is disabled before the run :: {"mode":"disabled","automation":false}
+FAIL P0 first parse of a new report succeeds :: 500 IMPORT_ROWS_WRITE_FAILED
+INFO seeded through refresh: 200 
+PASS P1 synthetic report reads as a detail report :: aging_detail 2026-02-01 rows=9
+PASS P2 a cut-off name takes the customer heading; a payment stays for review :: ["header","header","header","header","header","invoice","invoice","unreviewed","summary"]
+PASS P3 synthetic customers show ranked client candidates labelled for verification :: Possible TAP Hub clients (ranked by name similarity; verify before saving): SYNTHETIC Billing Matrix 2026-11-06 (69% similar)
+PASS R1 a failed refresh leaves the batch in needs_review with decisions intact :: 422 PDF_EXTRACTION_FAILED needs_review
+PASS R2 retrying a failed batch that fails again keeps rows and returns to needs_review :: 422 needs_review
+PASS R3 a successful retry keeps saved rows and decisions, not a delete and rebuild :: 200 rows kept=true
+FAIL R4 a successful retry returns the batch to needs_review :: response=needs_review stored=failed
+INFO batch stuck after retry; moving it on so the rest of the flow can run
+PASS A1 confirmed invoices stay out of the worklist before approval :: 200
+PASS A2 the uploader and reviewer cannot approve :: 403 IMPORT_APPROVE_FORBIDDEN
+PASS A3 a separate Admin approves :: 200 approved {"batch":{"status":"approved","batch_id":"d9cfed0c-3fdf-456b-ab8b-3bce9567cfbd","invoice_count":2}}
+PASS A4 approved report invoices are in the Collections worklist :: 200 3603 bytes
+PASS D1 delivery stayed disabled and nothing was sent :: {"attempts":0,"events":0}
+BATCH d9cfed0c approved, synthetic, as of 2026-02-01
+
+12/14 passed

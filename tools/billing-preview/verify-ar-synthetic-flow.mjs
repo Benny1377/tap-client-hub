@@ -32,15 +32,17 @@ function buildPdf(lines) {
 }
 const X = { type: 30, date: 90, num: 150, po: 215, name: 260, terms: 480, due: 530, aging: 600, bal: 660 };
 const row = (y, type, num, name, bal = "10.00") => ({ y, cells: [[X.type, type], [X.date, "01/02/2026"], [X.num, num], [X.name, name], [X.terms, "Net 15"], [X.due, "01/17/2026"], [X.aging, "14"], [X.bal, bal]] });
+// The parser takes a heading only if it has no digits, so the customer heading drops any in the client name.
+const heading = client.name.replace(/[0-9-]+/g, " ").replace(/ +/g, " ").trim();
 const fuzzy = client.name.replace(/[aeiou]/i, "");
-const short = `${client.name.slice(0, 9)}...`;
+const short = `${heading.slice(0, 9)}...`;
 const n = (k) => `SYN-${tag}-${k}`;
 const pdf = buildPdf([
   { y: 580, cells: [[250, "TAP Associates, LLC"]] }, { y: 568, cells: [[250, "A/R Aging QuickZoom"]] }, { y: 556, cells: [[250, "As of February 1, 2026"]] },
   { y: 530, cells: [[X.type, "Type"], [X.date, "Date"], [X.num, "Num"], [X.po, "P. O. #"], [X.name, "Name"], [X.terms, "Terms"], [X.due, "Due Date"], [X.aging, "Aging"], [X.bal, "Open Balance"]] },
-  { y: 515, cells: [[30, client.name]] },
+  { y: 515, cells: [[30, heading]] },
   row(500, "Invoice", n(1), short), row(488, "Invoice", n(2), fuzzy), row(476, "Payment", n(3), short, "-5.00"),
-  { y: 460, cells: [[30, `Total ${client.name}`], [X.bal, "15.00"]] },
+  { y: 460, cells: [[30, `Total ${heading}`], [X.bal, "15.00"]] },
 ]);
 const corrupt = Buffer.from("%PDF-1.4\nnot a real synthetic document\n");
 
@@ -78,7 +80,7 @@ let list = await rows(); let b = await batch();
 const invoices = list.filter((r) => r.parsed_fields?.auto_suggestion?.disposition === "invoice");
 rec("P1", "synthetic report reads as a detail report", b.status === "needs_review" && b.report_type === "aging_detail" && b.source_as_of === "2026-02-01", `${b.report_type} ${b.source_as_of} rows=${list.length}`);
 const names = invoices.map((r) => r.parsed_fields.auto_suggestion.fields.customer_name);
-rec("P2", "a cut-off name takes the customer heading; a payment stays for review", invoices.length === 2 && names.includes(client.name) && list.some((r) => r.parsed_fields?.auto_suggestion?.disposition === "unreviewed"), JSON.stringify(list.map((r) => r.parsed_fields?.auto_suggestion?.disposition)));
+rec("P2", "a cut-off name takes the customer heading; a payment stays for review", invoices.length === 2 && names.includes(heading) && list.some((r) => r.parsed_fields?.auto_suggestion?.disposition === "unreviewed"), JSON.stringify(list.map((r) => r.parsed_fields?.auto_suggestion?.disposition)));
 
 const { default: puppeteer } = await import(pathToFileURL(process.env.PUPPETEER_CORE).href);
 const browser = await puppeteer.launch({ executablePath: process.env.CHROME_PATH, headless: true });
@@ -100,9 +102,12 @@ const payment = list.find((r) => r.parsed_fields?.auto_suggestion?.disposition =
 const cl = await coll.call("PATCH", `/api/collections/imports/${batchId}`, { row_id: payment.id, disposition: "ignored" });
 const snapshot = async () => JSON.stringify((await rows()).map((r) => [r.id, r.review_disposition, r.source_invoice_id]));
 const reviewed = await snapshot();
-const store = (bytes) => fetch(`${API}/storage/v1/object/collections-ar-pdfs/${b.storage_path}`, { method: "POST", headers: { apikey: env.SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`, "Content-Type": "application/pdf", "x-upsert": "true" }, body: bytes }).then((r) => { if (!r.ok) throw new Error(`storage ${r.status}`); });
+const originalPath = b.storage_path;
+// A separate object, because hosted storage can keep serving the old bytes after an overwrite of the same path.
+const store = (bytes, path) => fetch(`${API}/storage/v1/object/collections-ar-pdfs/${path}`, { method: "POST", headers: { apikey: env.SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`, "Content-Type": "application/pdf", "x-upsert": "true" }, body: bytes }).then((r) => { if (!r.ok) throw new Error(`storage ${r.status}`); });
 
-await store(corrupt);
+await store(corrupt, `${originalPath}.corrupt.pdf`);
+await rest("PATCH", `collection_import_batches?id=eq.${batchId}`, { storage_path: `${originalPath}.corrupt.pdf` }, "return=minimal");
 const failedRefresh = await coll.call("POST", `/api/collections/imports/${batchId}/parse`, { refresh_suggestions: true });
 b = await batch();
 rec("R1", "a failed refresh leaves the batch in needs_review with decisions intact", cl.status === 200 && failedRefresh.status === 422 && b.status === "needs_review" && (await snapshot()) === reviewed, `${failedRefresh.status} ${failedRefresh.json?.code} ${b.status}`);
@@ -112,8 +117,7 @@ const failedRetry = await coll.call("POST", `/api/collections/imports/${batchId}
 b = await batch();
 rec("R2", "retrying a failed batch that fails again keeps rows and returns to needs_review", failedRetry.status === 422 && b.status === "needs_review" && (await snapshot()) === reviewed, `${failedRetry.status} ${b.status}`);
 
-await store(pdf);
-await rest("PATCH", `collection_import_batches?id=eq.${batchId}`, { status: "failed" }, "return=minimal");
+await rest("PATCH", `collection_import_batches?id=eq.${batchId}`, { status: "failed", storage_path: originalPath }, "return=minimal");
 const goodRetry = await coll.call("POST", `/api/collections/imports/${batchId}/parse`);
 b = await batch();
 rec("R3", "a successful retry keeps saved rows and decisions, not a delete and rebuild", goodRetry.status === 200 && (await snapshot()) === reviewed, `${goodRetry.status} rows kept=${(await snapshot()) === reviewed}`);
@@ -138,7 +142,7 @@ rec("A4", "approved report invoices are in the Collections worklist", work.statu
 const after = { attempts: await count("collection_delivery_attempts"), events: await count("collection_events") };
 const ds2 = await admin.call("GET", "/api/collections/delivery-status");
 rec("D1", "delivery stayed disabled and nothing was sent", ds2.json?.mode === "disabled" && ds2.json?.automation_enabled === false && after.attempts === before.attempts && after.events === before.events, JSON.stringify(after));
-console.log(`BATCH ${batchId.slice(0, 8)} approved synthetic, as of 2026-02-01`);
+console.log(`BATCH ${batchId.slice(0, 8)} ${b.status}, synthetic, as of 2026-02-01`);
 const failed = results.filter((x) => !x).length;
 console.log(`\n${results.length - failed}/${results.length} passed`);
 process.exit(failed ? 1 : 0);

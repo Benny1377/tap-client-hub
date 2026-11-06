@@ -211,7 +211,7 @@ export function ClientPicker({ clients, value, onChange }: { clients: Array<{ id
   return (
     <label className="bc-picker">
       <span>Client</span>
-      <select value={value || ""} onChange={(event) => onChange(event.target.value || null)} style={{ ...inputStyle, background: "var(--card)", width: "auto", minWidth: 220, maxWidth: "100%" }}>
+      <select value={value || ""} onChange={(event) => onChange(event.target.value || null)} style={{ ...inputStyle, background: "var(--card)", width: "auto", minWidth: 0, maxWidth: "calc(100vw - 96px)" }}>
         <option value="">All clients</option>
         {clients.map((client) => <option key={client.id} value={client.id}>{client.name}</option>)}
       </select>
