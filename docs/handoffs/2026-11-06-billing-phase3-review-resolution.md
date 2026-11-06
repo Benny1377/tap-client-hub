@@ -1,6 +1,6 @@
 # Billing Phase 3 review resolution
 
-Status: owner-approved contract revision and producer implementation are local on `codex/billing-phase3-contract-apis`; awaiting Engineer A acknowledgement. No UI has been started, and nothing is deployed.
+Status: owner-approved contract revision and producer implementation are on the follow-up branch; awaiting Engineer A review/acknowledgement. No Phase 3 UI has been started by this work, and nothing is deployed by this work. See [owner decisions and Phase 3 follow-up](2026-11-06-billing-owner-decisions-and-phase3-follow-up.md) for current Operations evidence, security boundaries, and ownership.
 
 ## Accepted API decisions
 
@@ -17,13 +17,13 @@ Status: owner-approved contract revision and producer implementation are local o
 - Manual-confirmation `200 created:false` is an idempotent replay; `409 DUPLICATE_RESOURCE` is a conflicting confirmation.
 - A bundle candidate amount is the full package price on each component candidate; the UI groups by client bundle and candidate date and selects the group as a unit.
 - Collections-only continues to read invoices but receives no Billing candidate/pricing panes or `/permissions` response. Invoice-list access remains even when `billing.view` is disabled.
-- Houston business dates use `America/Chicago`; acceptance is synthetic until the real Operations source is identified, with a real-shaped compatibility check required before production.
+- Houston business dates use `America/Chicago`; owner-supplied Operations metadata identifies the source project and confirms text `YYYYMM` periods with aggregate counts. A real-shaped compatibility check is still required before production.
 - No manual payment, reconciliation, A/R import, production rollout, or live integration scope is added.
 
 ## Local implementation and validation
 
 - API implementation is in `app/api/billing/[...path]/route.ts` and `app/api/billing/invoices/route.ts`.
-- The four focused contract tests pass with `node --test tests/billing-phase3-api-contracts.test.mjs`.
-- Targeted ESLint passes for the changed Billing route files and test.
+- The focused policy serialization tests pass with `node --test tests/billing-phase2-serialization.test.mjs` (9/9).
+- Targeted ESLint passes for the changed Billing route, access helper, and contract test.
 - Full typecheck reaches only the existing unrelated `lib/collections-pdf-parser.ts` `pdfjs-dist/legacy/build/pdf.mjs` resolution error.
-- Engineer A should review these exact shapes, acknowledge the amended contract, and add them to the Preview matrix before Phase 3 UI work starts.
+- Engineer A should review these exact shapes and acknowledge the amended contract. He owns the eventual `dev` integration decision after end-to-end checks. Hosted Payroll UI verification and a database-level sensitive-column access review remain open.

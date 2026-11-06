@@ -3,6 +3,7 @@
 - [Billing project initialization](2026-10-19-billing-project-initialization.md)
 - [Billing Phase 3 planning and readiness](2026-11-06-billing-phase3-planning.md)
 - [Billing Phase 3 review resolution](2026-11-06-billing-phase3-review-resolution.md)
+- [Billing owner decisions and Phase 3 follow-up](2026-11-06-billing-owner-decisions-and-phase3-follow-up.md)
 - [Billing Phase 1 invariants and fixtures](2026-10-24-billing-phase1-invariants-and-fixtures.md)
 - [Collections Phase 4 backend handoff](2026-10-18-collections-phase4-backend.md)
 

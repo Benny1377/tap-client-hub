@@ -15,6 +15,31 @@ test("public Billing serializers omit internal audit actor and reason fields", (
   assert.deepEqual(api.toCamel({ id: "rate-1", created_by: "user-1", updated_by: "user-2", reason: "internal" }), { id: "rate-1" });
 });
 
+test("policy projection includes all delegable actions and effective defaults", () => {
+  const policies = access.effectiveBillingPolicy([
+    { action_key: "pricing.manage", allowed_roles: ["owner", "admin"], enabled: true },
+    { action_key: "settings.terms.manage", allowed_roles: [], enabled: true },
+  ]);
+  assert.equal(policies.length, 11);
+  assert.deepEqual(policies.find((policy) => policy.actionKey === "billing.view"), {
+    actionKey: "billing.view", allowedRoles: ["manager", "staff", "offshore"], enabled: true,
+  });
+  assert.deepEqual(policies.find((policy) => policy.actionKey === "pricing.manage"), {
+    actionKey: "pricing.manage", allowedRoles: ["owner", "admin"], enabled: true,
+  });
+  assert.deepEqual(policies.find((policy) => policy.actionKey === "settings.remittance.manage"), {
+    actionKey: "settings.remittance.manage", allowedRoles: [], enabled: false,
+  });
+  assert.equal(policies.some((policy) => ["policy.manage", "invoices.void", "payments.reverse"].includes(policy.actionKey)), false);
+});
+
+test("policy projection preserves an explicit revocation of a default action", () => {
+  const policy = access.effectiveBillingPolicy([
+    { action_key: "billing.view", allowed_roles: [], enabled: false },
+  ]).find((item) => item.actionKey === "billing.view");
+  assert.deepEqual(policy, { actionKey: "billing.view", allowedRoles: [], enabled: false });
+});
+
 test("bundle serializers expose components under the contracted key", () => {
   assert.deepEqual(api.toPhase2Bundle({
     id: "bundle-1", unit_amount: "300", billing_bundle_components: [{ client_service_id: "service-1" }],

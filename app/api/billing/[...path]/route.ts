@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireBillingAccess, requireBillingAction, resolveBillingActions } from "@/lib/billing-access";
+import { effectiveBillingPolicy, requireBillingAccess, requireBillingAction, resolveBillingActions, type BillingPolicyRow } from "@/lib/billing-access";
 import { apiError, boundedLimit, cursorDecode, cursorEncode, firmDateISO, isDateOnly, moneyString, mutationResponse, permissionActionFor, toCamel, toPhase2Bundle, toPhase2Candidate } from "@/lib/billing-phase2";
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -242,11 +242,7 @@ async function policyGet() {
     .select("action_key,allowed_roles,enabled")
     .order("action_key", { ascending: true });
   if (error) return apiError("Unable to load Billing permission policy", "BILLING_READ_FAILED", 500);
-  return NextResponse.json({ policies: (data || []).map((row: Row) => ({
-    actionKey: row.action_key,
-    allowedRoles: row.allowed_roles,
-    enabled: row.enabled,
-  })) }, { headers: { "Cache-Control": "no-store" } });
+  return NextResponse.json({ policies: effectiveBillingPolicy((data || []) as BillingPolicyRow[]) }, { headers: { "Cache-Control": "no-store" } });
 }
 async function clientServicesGet(request: NextRequest) {
   const pricingAccess = await requireBillingAction("pricing.view");

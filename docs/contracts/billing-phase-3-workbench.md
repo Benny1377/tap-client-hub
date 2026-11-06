@@ -33,6 +33,7 @@ Extend the current invoice list/detail view. Keep manual draft creation availabl
 - Show draft invoice number, issue date, and due date as unset until the issue RPC returns them.
 - Candidate selection must include only `open`, priced candidates. `unpriced`, `dismissed`, `drafted`, and `invoiced` candidates are not draftable. Bundle components remain provenance; a bundle is one package invoice line and must never be summed as several billable lines.
 - Candidate-backed draft creation calls `POST /api/billing/invoices/from-candidates`; empty/manual draft creation calls `POST /api/billing/invoices`. Do not create a draft from a browser-calculated amount.
+- `PATCH /api/billing/invoices/[id]` is memo-only (`{"memo":"Updated note"}`); it cannot change status, invoice number, issue date, or due date. Issue and void use their dedicated endpoints.
 - Candidate-linked lines are immutable. Explain the conflict and refresh when the server returns `CANDIDATE_LINKED_LINE_IMMUTABLE`; deleting such a line uses the contracted endpoint and reports returned candidate IDs.
 - Issue, delete, and void use the explicit Phase 2 endpoints. Require a non-empty void reason; show the server's conflict when an active payment allocation prevents voiding. Never optimistically mark an invoice issued or voided before server success.
 - After mutations, refresh the resource groups named by the API response (or the documented Phase 2 refresh target); do not locally infer candidate state.
@@ -51,7 +52,7 @@ Present a date-window projection of expected recurring and configured completion
 - Support client and Houston-date-window filters within the Phase 2 maximum window. Preserve server ordering and decimal-string values.
 - Provide a separate, clearly named user action to generate candidates using `POST /api/billing/candidates/generate`. This is a write, requires `candidates.manage`, and must never be triggered by loading, filtering, or refreshing the projection.
 - Show generated/existing/unpriced/skipped totals and the server-provided skip reasons. Explain that an unpriced candidate was captured but cannot be drafted until priced.
-- A successful generation refreshes the candidate/invoice views using the returned IDs and refresh targets. A repeated request is safe under the endpoint's source-identity idempotency contract.
+- After generation, refetch candidates and invoices. `candidateIds` identifies newly created rows; it is not a refresh instruction. A repeated request is safe under the endpoint's source-identity idempotency contract.
 
 ### 3. Clients and prices
 
@@ -72,11 +73,11 @@ The workbench also uses read-only `GET /api/billing/client-services?clientId=<UU
 Group firm defaults, effective-dated terms overrides, remittance instructions, action policy, and completion-source maps under Settings. Keep unrelated Collections settings out of this area.
 
 - Load effective actions from `GET /api/billing/permissions`. Gate each read/write control by its documented action. Owner/Admin-only actions remain non-delegable even if the UI is manipulated.
-- Load current values before showing the policy editor with `GET /api/billing/permissions/policy`. This read is Owner/Admin-only (`policy.manage`) and returns `{"policies":[{"actionKey":"billing.view","allowedRoles":["staff"],"enabled":true}]}`. It is a read-only projection of the fixed-key policy table. Billing staff, Collections-only, and unassigned users receive `403 FORBIDDEN`; save remains `PATCH /api/billing/permissions/policy`.
+- Load current values before showing the policy editor with `GET /api/billing/permissions/policy`. This read is Owner/Admin-only (`policy.manage`) and returns all 11 delegable actions, including effective defaults when no row is stored, for example `{"policies":[{"actionKey":"billing.view","allowedRoles":["manager","staff","offshore"],"enabled":true},{"actionKey":"pricing.manage","allowedRoles":["owner","admin"],"enabled":true}]}`. Owner/Admin-only `policy.manage`, `invoices.void`, and `payments.reverse` are excluded from this delegation list. Missing rows use the same default role set as the server-side policy resolver; this response is read-only, and save remains `PATCH /api/billing/permissions/policy`. Billing staff, Collections-only, and unassigned users receive `403 FORBIDDEN`.
 - Terms UI reads/writes `GET/PATCH /api/billing/settings/terms` and `POST/PATCH /api/billing/settings/terms/overrides[/id]`. Display Net 15 and the configured service-period billing day; make clear that a service-level override takes precedence over a client override, then the firm default.
 - Remittance UI reads/writes `GET/PATCH /api/billing/settings/remittance`. Show a save confirmation, but never log or include remittance values in analytics, errors, or telemetry. Issued invoice remittance is the immutable server snapshot, not a live view of the current settings.
 - Completion rules are dynamic per client service and effective date. Use `GET/POST/PATCH /api/billing/completion-source-maps`; offer only the bounded adapters and predicate/date-rule combinations the server accepts. Do not hard-code a client or service mapping from the demo. Explain that a rule change applies to future not-yet-generated occurrences and does not rewrite existing candidates or invoices.
-- Manual confirmation is available only to users with `candidates.manage`; it requires the contract's idempotency key, service, date, source note, and reason. Treat a duplicate response as an existing confirmation, not a new one.
+- Manual confirmation is available only to users with `candidates.manage`; it requires the contract's idempotency key, service, date, source note, and reason. A replay with the same idempotency key returns the existing confirmation (`200`, `created:false`); a conflicting duplicate returns `409 DUPLICATE_RESOURCE` and is not a new confirmation.
 - Policy editing uses `PATCH /api/billing/permissions/policy` and is Owner/Admin-only. Clearly distinguish delegated staff actions from the fixed Owner/Admin-only actions `policy.manage`, `invoices.void`, and `payments.reverse`.
 
 ### Endpoint behavior clarifications from Engineer A review
@@ -93,9 +94,9 @@ Group firm defaults, effective-dated terms overrides, remittance instructions, a
 ## Shared interaction and error behavior
 
 - Support loading, empty, stale, and retryable error states for every screen; errors use the Phase 2 `{error, code}` shape.
-- Keep user-entered form state when a non-destructive validation or network error occurs. On `403`, refresh permissions and show that access changed; on `404`, return to the relevant list; on `409`, explain the conflict and refetch affected resources; on `422`, identify the invalid field using the stable code. Do not expose raw database messages.
+- Keep user-entered form state when a non-destructive validation or network error occurs. On `403`, explain that access is unavailable and preserve the current form state; on `404`, return to the relevant list; on `409`, explain the conflict and refetch affected resources; on `422 INVALID_INPUT`, show the server validation message and field-level client validation where the field is known. Error codes are stable categories, not field identifiers. Do not expose raw database messages.
 - Preserve keyboard operation, visible focus, labels for inputs, table headers, status text that is not color-only, and confirmation for destructive invoice/rule actions.
-- Use server-returned refresh targets and opaque cursors. Do not optimistically advance candidate/invoice state or fabricate a success when a request times out.
+- Use opaque cursors and server-returned IDs or refresh targets where the response includes them. Do not optimistically advance candidate/invoice state or fabricate a success when a request times out.
 - Keep the current A/R PDF intake in Collections. It is not a Billing candidate source, and Phase 3 must not import or write back A/R report rows.
 
 ## Acceptance evidence

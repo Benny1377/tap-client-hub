@@ -13,7 +13,22 @@ export const BILLING_ACTIONS = [
 export type BillingAction = typeof BILLING_ACTIONS[number];
 const OWNER_ONLY = new Set<BillingAction>(["policy.manage", "invoices.void", "payments.reverse"]);
 const STAFF_DEFAULTS: BillingAction[] = ["billing.view", "pricing.view", "candidates.view", "candidates.manage", "invoices.draft.manage", "invoices.issue", "payments.record", "payments.allocate"];
-type BillingPolicyRow = { action_key: BillingAction; allowed_roles: string[]; enabled: boolean };
+const DEFAULT_DELEGABLE_ROLES = ["manager", "staff", "offshore"];
+export const DELEGABLE_BILLING_ACTIONS = BILLING_ACTIONS.filter((action) => !OWNER_ONLY.has(action));
+export type BillingPolicyRow = { action_key: BillingAction; allowed_roles: string[]; enabled: boolean };
+
+export function effectiveBillingPolicy(policyRows: BillingPolicyRow[]) {
+  const stored = new Map(policyRows.map((row) => [row.action_key, row]));
+  return DELEGABLE_BILLING_ACTIONS.map((actionKey) => {
+    const row = stored.get(actionKey);
+    const defaultEnabled = STAFF_DEFAULTS.includes(actionKey);
+    return {
+      actionKey,
+      allowedRoles: row ? row.allowed_roles : defaultEnabled ? [...DEFAULT_DELEGABLE_ROLES] : [],
+      enabled: row ? row.enabled : defaultEnabled,
+    };
+  });
+}
 
 export function billingActionsForIdentity(identity: { role: string; modules: string[] }, policyRows: BillingPolicyRow[]) {
   if (isPowerUser(identity.role)) return [...BILLING_ACTIONS];
