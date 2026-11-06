@@ -71,6 +71,14 @@ const panel = (page) => page.evaluate((pin, eft) => ({
   html: document.documentElement.outerHTML.includes(pin) || document.documentElement.outerHTML.includes(eft),
 }), PIN, EFT);
 const openPayrollSection = (page) => page.evaluate(() => { const t = [...document.querySelectorAll("button,[role=tab],summary,div,span")].filter((e) => e.textContent.trim() === "Payroll" && e.offsetParent); if (t.length) t[t.length - 1].click(); return t.length; });
+// Opens the add-client form and turns on Payroll. Throws unless the form really opened, so a hidden-fields check cannot pass by accident.
+async function openAddClientPayroll(page) {
+  await page.waitForFunction(() => [...document.querySelectorAll("button")].some((b) => /Add client/.test(b.textContent)), { timeout: 30000 });
+  await page.evaluate(() => { [...document.querySelectorAll("button")].find((b) => /Add client/.test(b.textContent)).click(); });
+  await page.waitForFunction(() => [...document.querySelectorAll("label,span,div")].some((e) => e.textContent.trim() === "Payroll" && e.offsetParent && e.closest("[role=dialog],.modal,.overlay")), { timeout: 15000 });
+  await page.evaluate(() => { const l = [...document.querySelectorAll("label,span,div")].filter((e) => e.textContent.trim() === "Payroll" && e.offsetParent && e.closest("[role=dialog],.modal,.overlay")); l[l.length - 1].click(); });
+  await wait(600);
+}
 const leaks = (log) => log.writes.filter((w) => /payrollPassword|eftps|payroll_password/.test(w.body)).length;
 
 // Change one client text field, leave it, and close the panel, so autosave and flush both run.
@@ -121,8 +129,7 @@ try {
     const after = await stored();
     rec(`U-${n}-payload`, `${n}: a real edit saves and no request carries either field`, saved && log.writes.length > 0 && leaks(log) === 0 && after.payroll_password === PIN && after.eftps === EFT, `edited=${saved} writes=${log.writes.map((w) => w.method).join(",")} carrying=${leaks(log)}`);
     await page.goto(BASE + "/clients", { waitUntil: "networkidle2", timeout: 60000 });
-    await page.evaluate(() => { [...document.querySelectorAll("button")].find((b) => /Add client/.test(b.textContent))?.click(); }); await wait(800);
-    await page.evaluate(() => { const l = [...document.querySelectorAll("label,span,div")].filter((e) => e.textContent.trim() === "Payroll" && e.offsetParent); l[l.length - 1]?.click(); }); await wait(600);
+    await openAddClientPayroll(page);
     const m = await page.evaluate(() => /Payroll PIN|EFTPS/i.test(document.body.innerText));
     rec(`U-${n}-modal`, `${n}: the add-client form shows no PIN or EFTPS control (not submitted)`, !m, m);
     await ctx.close();
@@ -149,8 +156,7 @@ try {
     const a = await stored();
     rec("U-Admin-keeps", "Owner/Admin: a normal edit keeps stored values", saved && a.payroll_password === before.payroll_password && a.eftps === before.eftps, `edited=${saved}`);
     await page.goto(BASE + "/clients", { waitUntil: "networkidle2", timeout: 60000 });
-    await page.evaluate(() => { [...document.querySelectorAll("button")].find((b) => /Add client/.test(b.textContent))?.click(); }); await wait(800);
-    await page.evaluate(() => { const l = [...document.querySelectorAll("label,span,div")].filter((e) => e.textContent.trim() === "Payroll" && e.offsetParent); l[l.length - 1]?.click(); }); await wait(600);
+    await openAddClientPayroll(page);
     rec("U-Admin-modal", "Owner/Admin: the add-client form does show the controls (control for the hidden check, not submitted)", await page.evaluate(() => /Payroll PIN|EFTPS/i.test(document.body.innerText)));
     await ctx.close();
   }

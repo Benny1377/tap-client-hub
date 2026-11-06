@@ -7,7 +7,7 @@
 | To | Engineer B, project owner |
 | Reviews | `codex/billing-phase3-post-integration-fixes` at `fcc2196`, based on `dev` at `166eb6e` |
 | Follows | `2026-11-06-billing-phase3-engineer-a-contract-rereview.md`, `2026-11-06-billing-integration-preview-validation.md` |
-| Outcome | **Contract accepted at `fcc2196`, with one word to correct in an example (section 2).** `fcc2196` is not merged or deployed. The sandbox migration mirror is not reconciled, because remote history could not be read (section 4) |
+| Outcome | **Contract accepted at `fcc2196`, with one word to correct in an example (section 2).** `fcc2196` passed on the Preview and is merged to `dev`. The sandbox migration mirror is not reconciled, because remote history could not be read (section 4) |
 
 ## 1. Tested locally on `fcc2196`
 
@@ -37,9 +37,23 @@ Also accepted: the `client-slideover.tsx` cleanup. The access dependency is now 
 
 ## 3. Hosted status
 
-The Preview runs `3a3028d`. The hosted evidence in the integration record stands, and a recheck today confirms Billing staff still do not receive the payroll fields and the policy read returns 11 rows.
+The Preview was promoted to `b01cfcc`, which is `fcc2196` plus this record and a check script update. Deployment identity: Engineer A promoted it in Vercel, and from outside `pricing.manage` changed to return an empty role list. Evidence: `2026-11-06-billing-phase3-preview-results.txt`.
 
-**`fcc2196` has not been deployed**, so the policy round trip and the delegable-only response are proven locally only. On `3a3028d` the Preview still returns `owner` and `admin` on `pricing.manage`.
+| Hosted check on `b01cfcc` | Result |
+| --- | --- |
+| Payroll API rules | 36/36 |
+| Phase 3 reads, including delegable-only roles | 14/14 |
+| Collections-only refusals A3, A4, D8 | 4/4 |
+| Payroll fields in real browser sessions | 13/13 on rerun |
+| Billing draft flow in a real browser | 7/7 |
+
+The first browser run was 12/13. The failure was the Admin add-client control, caused by a timing bug in the check: it clicked Add client before the button rendered. The same bug could have let the hidden-field form checks pass without the form opening, including on `6bba06b`. The check now waits, and fails unless the form really opened. The rerun passed 13/13. The app code did not change between the runs.
+
+The policy save itself was **not** run on the Preview, because it writes rows to the sandbox. It is proven locally (section 1). Hosted evidence covers the response shape only.
+
+Sandbox after the runs: 8 `client_services` rows with no credential values, no `PR` service, test accounts as they were, and the 3 original policy rows. Smoke drafts were deleted; audit rows remain.
+
+The merge to `dev` is a fast-forward. The commit after `b01cfcc` changes only this record, its results file and the check script.
 
 ## 4. Sandbox migration history
 
