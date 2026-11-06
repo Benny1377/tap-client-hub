@@ -1,0 +1,99 @@
+PASS P-1 before any write: Phase 2 routes are served and the deployment reads the pinned sandbox (remittance updatedAt matches) :: vuqgxotdccxivjmavsoj.supabase.co 2026-11-04T20:04:24.268841+00:00
+INFO P-INFO Preview :: https://tap-client-hub-test.vercel.app commit(declared)=27217c1 vercel-id=present
+PASS A1 anonymous gets 401 on every Phase 2 read :: 9 paths
+PASS A2 anonymous gets 401 on Phase 2 writes :: 
+SKIP A3-Collections-only Collections-only staff get 403 on every Phase 2 read :: account could not sign in
+SKIP A4-Collections-only Collections-only staff get 403 on Phase 2 writes :: account could not sign in
+PASS A3-unassigned unassigned staff get 403 (no redacted body) on every Phase 2 read incl. /permissions :: 9 paths
+PASS A4-unassigned unassigned staff get 403 on Phase 2 writes :: 
+PASS A5-Owner Owner resolves all 14 fixed actions :: status 200 actions=14
+PASS A5-Admin Admin resolves all 14 fixed actions :: status 200 actions=14
+PASS A6 Billing staff default to the 8 contract actions; no pricing.manage, settings, void, reverse or policy :: status 200 ["billing.view","pricing.view","candidates.view","candidates.manage","invoices.draft.manage","invoices.issue","payments.record","payments.allocate"]
+PASS A7 Billing staff cannot manage pricing, terms, remittance or policy (403) :: 
+PASS A8 Billing staff can read pricing (pricing.view) :: status 200
+PASS B1 POST /rate-cards with the contract's literal example body (includes reason, b630f2a) returns 201 :: status 201 
+PASS B1b POST /rate-cards without a reason is 422 INVALID_INPUT :: status 422 INVALID_INPUT
+PASS B2 rate card created with camelCase shape :: status 201 (first attempt 201)
+PASS P0 the Preview wrote to the sandbox database named in the env file (a rate card created over HTTP is visible there) :: rows 1
+PASS B3 POST entries with the contract's literal example body (includes reason, b630f2a) returns 201 :: status 201 
+PASS B4 entry unitAmount is a decimal string :: status 201 amount 125.00 (first attempt 201)
+PASS B5 overlapping rate entry is 409 EFFECTIVE_DATE_OVERLAP :: 409 EFFECTIVE_DATE_OVERLAP
+PASS B6 money with three decimals is 422 INVALID_INPUT :: 422 INVALID_INPUT
+PASS B7 PATCH without a reason is 422 :: 422 INVALID_INPUT
+PASS B8 PATCH entry returns decimal string :: 200 125.00
+PASS B9 GET rate card returns entries with decimal strings :: 200
+PASS B10 rate-card paging: limit 2 returns a cursor and the next page has different rows :: p1 2 cursor=true p2 1
+PASS B11 malformed cursor and wrong-shape cursor are 422 INVALID_CURSOR; limit 0 is 422 :: 422/422/422
+PASS B12 client override create/patch and client-pricing read use decimal strings :: 201/200/200
+PASS B13 bundle create, components PUT and read :: 201/200/200
+PASS B14 overlapping bundle is 409 EFFECTIVE_DATE_OVERLAP :: 409 EFFECTIVE_DATE_OVERLAP
+PASS B15 terms read: Net 15, service_period_end, America/Chicago :: 200 {"defaultNetDays":15,"billingDay":"service_period_end","timezone":"America/Chicago","updatedAt":"2026-11-04T20:04:24.268
+PASS B16 unsupported billingDay is 422 :: 422
+PASS B17 remittance PATCH and GET return {remittance, updatedAt} :: 200/200
+PASS C1 unmapped service is skipped as no_map and creates nothing :: {"created":0,"unpriced":0,"existing":0,"skipped":1,"skippedByReason":{"no_map":1,"map_disabled":0,"source_incomplete":0,"outside_window":0},"candidateIds":[]}
+PASS C2 invalid adapter is 422 INVALID_COMPLETION_SOURCE_MAP :: 422 INVALID_COMPLETION_SOURCE_MAP
+PASS C3 Billing staff may configure maps via candidates.manage (201) :: 201 
+PASS C4 overlapping map for one client service is 409 EFFECTIVE_DATE_OVERLAP :: 409 EFFECTIVE_DATE_OVERLAP
+PASS C5 schedule projection is marked projected, has decimal strings and persists nothing :: 200 items=4 persisted=0
+PASS C6 generate: 1 priced + 1 unpriced candidate, both counted as created; unpriced counted separately :: {"created":2,"unpriced":1,"existing":0,"skipped":0,"skippedByReason":{"no_map":0,"map_disabled":0,"source_incomplete":0,"outside_window":0},"candidateIds":["b2ad9647-aec1-4f32-9721-eb707dae24ae","16eb
+PASS C7 re-running generation is idempotent (created 0, existing 2, same identities) :: {"created":0,"unpriced":0,"existing":2,"skipped":0,"skippedByReason":{"no_map":0,"map_disabled":0,"source_incomplete":0,"outside_window":0},"candidateIds":[]}
+PASS C8 window over 365 days and an impossible date are 422 GENERATION_WINDOW_INVALID :: 422/422
+PASS C9 candidate list: camelCase, decimal strings, source object, cursor paging :: 200 rec=125.00 unp=unpriced
+PASS C10 an unpriced candidate cannot become a draft (409 CANDIDATE_UNPRICED) :: 409 CANDIDATE_UNPRICED
+PASS C11 dismiss without a reason is 422 CANDIDATE_DISMISS_REASON_REQUIRED :: 422 CANDIDATE_DISMISS_REASON_REQUIRED
+PASS C12 dismiss returns state dismissed and an audit id :: 200 audit=29
+PASS C13 dismissing a dismissed candidate is 409 CANDIDATE_NOT_OPEN :: 409 CANDIDATE_NOT_OPEN
+PASS C14 reopen without a reason is 422 CANDIDATE_REOPEN_REASON_REQUIRED :: 422 CANDIDATE_REOPEN_REASON_REQUIRED
+PASS C15 reopen of an unpriced candidate returns it to unpriced with an audit id :: 200 unpriced
+PASS C16 reprice with no price available is 409 CANDIDATE_UNPRICED :: 409 CANDIDATE_UNPRICED
+PASS C17 reprice after a price exists opens the candidate at the new decimal price :: 200 120.00
+PASS C18 work_period_done adapter creates a candidate for a done 2026-10 work period (Operations stores text YYYYMM = 202610) :: map 201 {"created":1,"unpriced":1,"existing":0,"skipped":0,"skippedByReason":{"no_map":0,"map_disabled":0,"source_incomplete":0,"outside_window":0},"candidateIds":["20826ed2-91ec-4b20-b5b3-100bc13554c
+PASS C19 period_count_threshold adapter creates a candidate when processed (3) meets the threshold (2) for 202610 :: map 201 {"created":1,"unpriced":1,"existing":0,"skipped":0,"skippedByReason":{"no_map":0,"map_disabled":0,"source_incomplete":0,"outside_window":0},"candidateIds":["a86bf352-4278-491b-9a26-ceabed7b68d
+PASS D1 manual confirmation without a covering map is 409 COMPLETION_SOURCE_MAP_REQUIRED :: 409 COMPLETION_SOURCE_MAP_REQUIRED
+PASS D2 missing note, non-UUID key and impossible date are each 422 :: 422/422/422
+PASS D3 manual confirmation creates a candidate (201, created true, source manual_confirmation, refresh targets) :: map 201 201 "unpriced"
+PASS D4 same key and body replays as 200 created:false with the same candidate :: 200 created=false
+PASS D5 same key with different data is 409 DUPLICATE_RESOURCE :: 409 DUPLICATE_RESOURCE
+PASS D6 a second confirmation for the same service and date with a new key must not create a duplicate candidate (contract: 'cannot create a duplicate candidate') :: status 409 created=undefined candidates=1
+PASS D7 a confirmation dated in the future is 422 CONFIRMATION_DATE_FUTURE :: status 422 CONFIRMATION_DATE_FUTURE
+SKIP D8 Collections-only staff cannot create a confirmation (403) :: account could not sign in
+PASS D9 confirmation is audited with the Billing actor :: before 0
+PASS E1 POST /invoices {clientId, memo} creates a draft with null number and dates and no lines :: 201
+PASS E2 supplying number or dates is 422 :: 422 INVALID_INPUT
+PASS E3 issuing an empty draft is 409 ISSUE_PRECONDITION_FAILED :: 409 ISSUE_PRECONDITION_FAILED
+PASS E4 legacy PATCH of a draft with number/dates is rejected as a client error (422), not a server error :: status 422 INVALID_INPUT
+PASS E5 a malformed candidate id is a 4xx, not a 500 :: status 422 INVALID_INPUT
+PASS E6 draft from a candidate: null number/dates, one line, quantity 1.0000, decimal amounts, candidateIds, refresh targets :: 201 {"id":"0f4e80b6-afd3-47ce-b7d3-ae27e872e47c","amount":"125.00","period":"2026-11","quantity":"1.0000","invoiceId":"bc5c5d77-b577-4f65-b0b3-d94e370f7eab","sortOrder":0,"description":"Synthetic REC 
+PASS E7 the claimed candidate is drafted :: drafted
+PASS E8 claiming a drafted candidate again is 409 CANDIDATE_NOT_OPEN :: 409 CANDIDATE_NOT_OPEN
+PASS E9 PATCH of a candidate-linked line is 409 CANDIDATE_LINKED_LINE_IMMUTABLE :: 409 CANDIDATE_LINKED_LINE_IMMUTABLE
+PASS E10 the database itself rejects editing a candidate-linked line :: rejected
+PASS E11 removing a linked line returns its candidate to open and reports returnedCandidateIds and refresh :: 200 state=open
+PASS E12 deleting a draft built from a candidate returns it to open (returnedCandidateIds, refresh) :: 200 {"deleted":true,"returnedCandidateIds":["b2ad9647-aec1-4f32-9721-eb707dae24ae"],"refresh":["candidates","receivables"]}
+PASS E13 issue assigns TAP-YYYY-####, the firm date, Net 15 due date and the remittance snapshot :: 200 TAP-2026-0001 2026-11-06 2026-11-21
+PASS E14 issue moves the linked candidate to invoiced :: 
+PASS E15 an issued invoice cannot be deleted (409) :: 409 INVOICE_NOT_DRAFT
+PASS E16 void with an active allocation is 409 ACTIVE_PAYMENT_ALLOCATION :: 201/201/409 ACTIVE_PAYMENT_ALLOCATION
+PASS E17 Billing staff cannot void through /void or the legacy adapter (403) :: 403/403
+PASS E18 void without a reason is 422 VOID_REASON_REQUIRED :: 422 VOID_REASON_REQUIRED
+PASS E19 void returns candidates to open: returnedCandidateIds, refresh, link deactivated, void reason stored :: 200 ["b2ad9647-aec1-4f32-9721-eb707dae24ae"] active links 0
+PASS E20 terms override create and patch return {override} with camelCase netDays :: 201/200
+PASS E21 legacy adapter issue keeps the Phase 1 snake_case response and applies the client Net 30 override :: 200 TAP-2026-0002 issue 2026-11-06 due 2026-12-06
+PASS E22 the two numbers issued in this run are unique and consecutive (TAP-YYYY-####) :: TAP-2026-0001,TAP-2026-0002
+PASS F1 bundle components must be drafted together (one alone is 409) :: 2 components, partial 409 CANDIDATE_NOT_OPEN
+PASS F2 a bundle becomes ONE package line (quantity 1.0000, package price) linked to every component :: 201 lines=1 300.00
+INFO F3 each bundle component candidate's own unitAmount (a UI summing candidates would overstate the package) :: 300.00,300.00
+PASS G1 policy edit refuses fixed actions, non-delegable roles, a missing reason and duplicate roles (all 422) :: 422/422/422/422/422
+PASS G2 Owner delegates pricing.manage and disables candidates.manage; Billing staff permissions and access change accordingly :: before 403, grant 200, rate card 201, dismiss 403
+PASS G3 a delegated pricing.manage does not let staff edit the policy (still 403) :: 403
+PASS G4 policy restored: staff defaults return :: 200 8
+PASS G5 policy changes are audited with the Owner actor and reason :: 
+PASS H1 audit rows exist with the real actor for rate cards, candidates and the invoice lifecycle :: counts increased over the pre-run baseline
+PASS H2 the anon key cannot read any Phase 2 table :: 6 tables
+PASS H3 no invoice number is shared by two invoices (voided numbers are never reused) :: 2 numbered invoices
+PASS Z1 Billing action policy rows match the pre-run snapshot exactly :: 3 rows
+PASS Z2 remittance settings match the pre-run snapshot exactly :: 
+
+Added by this run: services=8 clientServices=8 workPeriods=1 periodCounts=1 rateCards=4 rateCardEntries=2 clientServiceOverrides=1 bundles=1 termsOverrides=1 completionSourceMaps=7 candidates=7 manualConfirmations=1 invoices=5 invoiceLines=3 payments=1 paymentAllocations=1 (ids in C:/Users/aanan/AppData/Local/Temp/claude/bc3d468011e261f1/64abffb1-91d4-40ce-8f8b-cfc4625ac732/scratchpad/preview-manifest.json)
+
+90/90 passed, 3 skipped (A3-Collections-only A4-Collections-only D8)

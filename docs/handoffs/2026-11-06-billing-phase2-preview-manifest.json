@@ -1,0 +1,91 @@
+{
+  "tag": "P2MW4PWV1N",
+  "client": "c11dd6b4-8026-4ef1-a0aa-8d07c7ea36a2",
+  "services": [
+    "P2MW4PWV1N-REC",
+    "P2MW4PWV1N-UNP",
+    "P2MW4PWV1N-WP",
+    "P2MW4PWV1N-CNT",
+    "P2MW4PWV1N-MAN",
+    "P2MW4PWV1N-NOMAP",
+    "P2MW4PWV1N-B1",
+    "P2MW4PWV1N-B2"
+  ],
+  "clientServices": [
+    "78168da8-16d4-4695-97a0-2f3848827e4b",
+    "0026a190-e8ad-4527-a009-b269ffcb4bea",
+    "240e69da-302a-4ce2-a087-b9f3c1d8de34",
+    "b09c5e49-a261-404f-aee9-398d33809d3e",
+    "2898a51c-6f91-4551-a053-9990b20445f1",
+    "7805bd4c-ec1e-4bd7-9e00-4f9ab23424b7",
+    "52a83110-a22b-4980-b6e7-a128d0c9597b",
+    "3c3f757a-a932-41ea-90b8-414bca5bb0af"
+  ],
+  "workPeriods": [
+    "69762270-4d56-4c85-be29-15ecc6d0ee4d"
+  ],
+  "periodCounts": [
+    "b09c5e49-a261-404f-aee9-398d33809d3e:202610"
+  ],
+  "billing": {
+    "rateCards": [
+      "3a8a7183-7b1a-4a97-a020-8467dccb5aea",
+      "3b3cf41c-2f80-40f5-816f-f16d50ebd375",
+      "a52c5e04-dd29-4003-8b90-14ba75b1cc89",
+      "e1b7ddc9-d207-4128-ad8f-5f3aed685a0e"
+    ],
+    "rateCardEntries": [
+      "c197b703-46fe-454f-bebb-916bfeea9f0a",
+      "66cd57f9-7a2d-431c-8b2b-9b2fd43c990d"
+    ],
+    "clientServiceOverrides": [
+      "1f773e2d-5dc4-4f53-98ee-7921544d7a17"
+    ],
+    "bundles": [
+      "f21bcd12-95a5-4e6a-a388-61c06040f312"
+    ],
+    "termsOverrides": [
+      "dab751f5-c94f-4cab-9c2b-dd120c4e2553"
+    ],
+    "completionSourceMaps": [
+      "cb0edd31-81f4-4b0b-b6ae-22edcdca364d",
+      "ad7caeff-cfce-431c-a118-8495baf80259",
+      "9c381b5a-ec0b-4cc7-a747-db3adb6e0a16",
+      "c6fd1685-9fbe-487b-ae9b-c81d5f484bb2",
+      "b9af8572-f503-44ab-a289-26a98af6c9c6",
+      "de44450f-3b56-41e0-b997-8aa336f20c57",
+      "b66a3973-b657-4265-91dd-abdb4afca6b2"
+    ],
+    "candidates": [
+      "d825d216-cad7-48f2-8b3c-c6c6ea4b4169",
+      "15c4579d-5021-4995-8122-9173188c50e3",
+      "b2ad9647-aec1-4f32-9721-eb707dae24ae",
+      "16eb19cf-ba1d-4840-b87a-601cdce39357",
+      "b70cf515-944a-4fc8-9460-aae9db29144b",
+      "20826ed2-91ec-4b20-b5b3-100bc13554cd",
+      "a86bf352-4278-491b-9a26-ceabed7b68d5"
+    ],
+    "manualConfirmations": [
+      "52b2d65c-cfca-41d4-8929-820cce73222c"
+    ],
+    "invoices": [
+      "74d6e5fa-60e1-4e1e-9a03-c791db34a1b7",
+      "bc5c5d77-b577-4f65-b0b3-d94e370f7eab",
+      "a596dd55-5459-4ccb-a5a0-60742c693f8b",
+      "2639119b-8a9c-4bf5-9074-928446bf34b9",
+      "7fdeb0d9-2ec6-4800-a524-be8efdf5699b"
+    ],
+    "invoiceLines": [
+      "a560614a-a92d-4df5-830d-5b302501dcd7",
+      "59de703d-6e00-4fcd-a4cc-85287b114635",
+      "5fb350ac-8502-4fd6-8b91-be3a32fd95dd"
+    ],
+    "payments": [
+      "31da6f7f-14de-48b5-86ab-efbdb9a8a669"
+    ],
+    "paymentAllocations": [
+      "cbd9c33f-c412-454b-846b-4b2eabdfd09c"
+    ]
+  },
+  "uiSmokeDraftInvoice": "f2c29be1-6085-4eaf-bc8d-364f5c439b23"
+}
