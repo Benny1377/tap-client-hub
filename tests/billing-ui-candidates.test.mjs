@@ -208,4 +208,15 @@ check("run dates land on real month ends, over a year end and a leap February", 
   assert.deepEqual(work.nextRunDates("2026-11-30"), ["2026-11-30", "2026-12-31", "2027-01-31"]);
 });
 
+{
+  const pages = [{ items: [1, 2], nextCursor: "a" }, { items: [3], nextCursor: null }];
+  const seen = [];
+  const whole = await logic.readPages(async (cursor) => { seen.push(cursor); return { ok: true, status: 200, data: pages[seen.length - 1] }; });
+  check("reading on collects every page in order", () => { assert.deepEqual(whole.data, { items: [1, 2, 3], nextCursor: null }); assert.deepEqual(seen, [null, "a"]); });
+  const capped = await logic.readPages(async () => ({ ok: true, status: 200, data: { items: [1], nextCursor: "more" } }), 2);
+  check("the page limit keeps the cursor so the UI can say there is more", () => { assert.equal(capped.data.items.length, 2); assert.equal(capped.data.nextCursor, "more"); });
+  const failed = await logic.readPages(async () => ({ ok: false, status: 500, kind: "server", message: "x" }));
+  check("a failed page is returned as the failure", () => assert.equal(failed.ok, false));
+}
+
 console.log(`billing UI candidate checks passed (${passed})`);
