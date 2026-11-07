@@ -33,6 +33,7 @@ for migration in \
   20261019140000_collections_test_delivery_source_discrepancy.sql \
   20261107120000_collections_reconcile_noninvoice_pdf_rows.sql \
   20261107130000_audit_client_creation.sql \
+  20261107132830_collections_require_review_before_cross_check.sql \
   20261020100000_billing_ledger_database_invariants.sql \
   20261105100000_billing_phase2_core.sql \
   20261105110000_billing_manual_confirmation_guard.sql \

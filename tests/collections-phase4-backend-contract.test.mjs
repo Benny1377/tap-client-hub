@@ -80,7 +80,7 @@ test("customer group headings may contain digits without treating transaction ID
 
 test("parser behavior changes use a new version so existing batches can refresh", () => {
   const suggestions = source("lib/collections-pdf-suggestions.ts");
-  assert.match(suggestions, /COLLECTIONS_PDF_SUGGESTION_PARSER_VERSION = "quickbooks-aging-detail-v4"/);
+  assert.match(suggestions, /COLLECTIONS_PDF_SUGGESTION_PARSER_VERSION = "quickbooks-aging-detail-v5"/);
 });
 
 test("approved import source identities carry across actions and block stale or conflicting balances", () => {
@@ -128,8 +128,10 @@ test("raw imported report contents require review permission and balance selecti
 
 test("same-date summary reports require a reviewer-confirmed, auditable detail-total match", () => {
   const crossCheck = source("app/api/collections/imports/[id]/cross-check/route.ts");
+  const parse = source("app/api/collections/imports/[id]/parse/route.ts");
   const review = source("app/api/collections/imports/[id]/route.ts");
   const migration = source("supabase/migrations/20261019100000_collections_pdf_intake.sql");
+  const guardMigration = source("supabase/migrations/20261107132830_collections_require_review_before_cross_check.sql");
   const sqlTest = source("supabase/tests/collections_phase4_intake_schema.sql");
   assert.match(crossCheck, /cross_check_collection_import_reports/);
   assert.match(migration, /summary_reported_total/);
@@ -143,6 +145,12 @@ test("same-date summary reports require a reviewer-confirmed, auditable detail-t
   assert.match(migration, /collection_import_invoice_revisions/);
   assert.match(sqlTest, /Late link changed canonical identity or failed to share aliases/);
   assert.match(sqlTest, /post-report Billing change did not re-block/);
+  assert.match(guardMigration, /review_disposition='unreviewed'/);
+  assert.match(guardMigration, /r\.source_invoice_id is null/);
+  assert.match(parse, /This invoice text appears more than once in the report/);
+  assert.match(parse, /confirmedSameText/);
+  assert.match(sqlTest, /Cross-check did not refuse while a source invoice row was unreviewed/);
+  assert.match(sqlTest, /Cross-check did not refuse an invoice row without a staged identity/);
 });
 
 test("detail reconciliation includes recognized non-invoice evidence and fails closed on missing amounts", () => {
