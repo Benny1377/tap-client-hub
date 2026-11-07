@@ -82,3 +82,14 @@ test("a customer group containing the word Page is not mistaken for a page foote
   ];
   assert.equal(suggestCollectionsPdfRows(lines)[1].disposition, "header");
 });
+
+test("customer headings may include digits while obvious transaction IDs remain excluded", () => {
+  const lines = [
+    { page: 1, text: "Type | Date | Num | Name | Terms | Due Date | Aging | Open Balance", cells: ["Type", "Date", "Num", "Name", "Terms", "Due Date", "Aging", "Open Balance"] },
+    { page: 1, text: "4D Medical Group LLC", cells: ["4D Medical Group LLC"] },
+    { page: 1, text: "INV-4821", cells: ["INV-4821"] },
+  ];
+  const [, customer, transactionId] = suggestCollectionsPdfRows(lines);
+  assert.equal(customer.disposition, "header");
+  assert.equal(transactionId.disposition, "unreviewed");
+});

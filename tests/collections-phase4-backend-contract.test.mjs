@@ -26,12 +26,24 @@ test("parse results remain staging data until every source line and invoice is r
   const migration = source("supabase/migrations/20261019100000_collections_pdf_intake.sql");
   assert.match(parse, /parseCollectionsPdf/);
   assert.match(parse, /raw_text: line\.text/);
-  assert.match(parse, /review_disposition: "duplicate"/);
+  assert.match(parse, /review_disposition: autoClassified \? suggestion\.disposition : "unreviewed"/);
+  assert.doesNotMatch(parse, /review_disposition: "duplicate"/);
+  assert.match(parse, /update\.duplicate_of = null/);
   assert.match(review, /CLIENT_LINK_REQUIRED|Select an existing TAP Hub client first/);
   assert.match(migration, /review_disposition text not null default 'unreviewed'/);
   assert.match(migration, /every extracted line must be classified before approval/);
   assert.match(migration, /uploader cannot approve/);
   assert.match(migration, /corrector cannot approve/);
+});
+
+test("new client records carry a creator and generate a PII-minimized audit row", () => {
+  const clientsRoute = source("app/api/clients/route.ts");
+  const auditMigration = source("supabase/migrations/20261107130000_audit_client_creation.sql");
+  assert.match(clientsRoute, /created_by: access\.identity!\.id/);
+  assert.match(auditMigration, /after insert on tap_hub_project\.clients/);
+  assert.match(auditMigration, /new\.created_by/);
+  assert.match(auditMigration, /jsonb_build_object\('name', new\.name, 'type', new\.type, 'status', new\.status\)/);
+  assert.doesNotMatch(auditMigration, /new\.(?:emails|phones|ein|address)/);
 });
 
 test("automatic A/R mapping is conservative, permission-checked, auditable, and still gated by a separate approval", () => {
@@ -55,6 +67,12 @@ test("automatic A/R mapping is conservative, permission-checked, auditable, and 
   assert.match(lockMigration, /for update/);
   assert.match(ui, /Apply exact client matches in one step/);
   assert.match(ui, /A separate Owner\/Admin still has to approve/);
+});
+
+test("customer group headings may contain digits without treating transaction IDs as customers", () => {
+  const suggestions = source("lib/collections-pdf-suggestions.ts");
+  assert.match(suggestions, /QuickBooks customer headings can contain digits/);
+  assert.match(suggestions, /transaction IDs out/);
 });
 
 test("approved import source identities carry across actions and block stale or conflicting balances", () => {
