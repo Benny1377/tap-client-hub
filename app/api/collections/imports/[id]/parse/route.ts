@@ -91,7 +91,9 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     return {
       batch_id: id, page_number: line.page, row_number: rowNumber, raw_text: line.text,
       parsed_fields: { cells: line.cells, cell_positions: line.cell_positions, auto_suggestion: suggestion },
-      ...(autoClassified ? { review_disposition: suggestion.disposition } : {}),
+      // The database column is NOT NULL; every extracted line needs an explicit
+      // state, including invoice suggestions and rows needing human review.
+      review_disposition: autoClassified ? suggestion.disposition : "unreviewed",
     };
   });
   const autoClassifiedCount = suggestions.filter((suggestion) => suggestion.disposition === "header" || suggestion.disposition === "summary" || suggestion.disposition === "ignored").length;
@@ -102,7 +104,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       return NextResponse.json({ error: "The refreshed read disagrees with the report details already confirmed. Nothing was changed.", code: "IMPORT_REFRESH_METADATA_CONFLICT" }, { status: 409, headers: NO_STORE });
     }
     const { data: existingRows, error: existingRowsError } = await db.from("collection_import_rows")
-      .select("id,page_number,row_number,source_invoice_id,review_disposition").eq("batch_id", id).order("page_number").order("row_number");
+      .select("id,page_number,row_number,source_invoice_id,review_disposition,duplicate_of,exact_duplicate").eq("batch_id", id).order("page_number").order("row_number");
     if (existingRowsError || !existingRows) return NextResponse.json({ error: "Unable to safely refresh existing report rows", code: "IMPORT_REFRESH_READ_FAILED" }, { status: 500, headers: NO_STORE });
     if (existingRows.length !== rows.length || existingRows.some((row, index) => row.page_number !== rows[index].page_number || row.row_number !== rows[index].row_number)) {
       return NextResponse.json({ error: "The refreshed extraction has different line boundaries. Existing review was preserved.", code: "IMPORT_REFRESH_SHAPE_CHANGED" }, { status: 409, headers: NO_STORE });
@@ -110,10 +112,18 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     let updatedSuggestions = 0;
     for (let index = 0; index < existingRows.length; index += 1) {
       const existing = existingRows[index];
-      if (existing.source_invoice_id || existing.review_disposition === "duplicate") continue;
+      if (existing.source_invoice_id) continue;
       const suggestion = suggestions[index];
       const parsedFields = rows[index].parsed_fields;
       const update: Record<string, unknown> = { parsed_fields: parsedFields };
+      // Older builds marked repeated raw text as duplicate without enough
+      // evidence to distinguish a repeated transaction from a repeated line.
+      // These were machine-only flags (the review API never writes duplicate_of).
+      if (existing.review_disposition === "duplicate" && existing.duplicate_of && existing.exact_duplicate) {
+        update.review_disposition = suggestion.disposition;
+        update.duplicate_of = null;
+        update.exact_duplicate = false;
+      }
       if (existing.review_disposition === "unreviewed" && (suggestion.disposition === "header" || suggestion.disposition === "summary" || suggestion.disposition === "ignored")) {
         update.review_disposition = suggestion.disposition;
       }
@@ -134,7 +144,6 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
   const { error: clearError } = await db.from("collection_import_rows").delete().eq("batch_id", id);
   if (clearError) return NextResponse.json({ error: "Unable to replace the previous extraction", code: "IMPORT_ROWS_RESET_FAILED" }, { status: 500, headers: NO_STORE });
   if (rows.length) {
-    const savedRows: Array<{ id: string; page_number: number; row_number: number; raw_text: string }> = [];
     const chunkSize = 200;
     for (let offset = 0; offset < rows.length; offset += chunkSize) {
       const chunk = rows.slice(offset, offset + chunkSize);
@@ -152,21 +161,9 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
         });
         return NextResponse.json({ error: "Unable to save extracted report rows", code: "IMPORT_ROWS_WRITE_FAILED" }, { status: 500, headers: NO_STORE });
       }
-      savedRows.push(...data);
     }
-    const firstByText = new Map<string, string>();
-    const duplicates = new Map<string, string[]>();
-    for (const row of savedRows) {
-      const fingerprint = row.raw_text.normalize("NFKC").replace(/\s+/g, " ").trim().toLocaleLowerCase();
-      if (!fingerprint) continue;
-      const firstId = firstByText.get(fingerprint);
-      if (firstId) duplicates.set(firstId, [...(duplicates.get(firstId) || []), row.id]);
-      else firstByText.set(fingerprint, row.id);
-    }
-    for (const [firstId, duplicateIds] of duplicates) {
-      const { error: duplicateError } = await db.from("collection_import_rows").update({ duplicate_of: firstId, exact_duplicate: true, review_disposition: "duplicate" }).in("id", duplicateIds);
-      if (duplicateError) return NextResponse.json({ error: "Rows extracted, but duplicate markers could not be saved", code: "IMPORT_DUPLICATE_MARK_FAILED" }, { status: 500, headers: NO_STORE });
-    }
+    // Do not infer duplicates from identical PDF text. Repeated payment and
+    // invoice rows can be legitimate and participate in report reconciliation.
   }
   const status = parsed.report_type === "unknown" || !parsed.source_as_of ? "needs_review" : "needs_review";
   const { error: updateError } = await db.from("collection_import_batches").update({
