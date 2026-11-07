@@ -111,7 +111,7 @@ export function ClientPage({ api, client, invoices, receivables, canManage, onBa
     api.clientSummary(client.id).then((sum) => {
       if (!current) return;
       setSummaryDone(true);
-      if (sum.ok) setSummary(sum.data); else if (sum.kind !== "forbidden") setFailure(asFailure(sum));
+      if (sum.ok) setSummary(sum.data); else if (sum.ok === false && sum.kind !== "forbidden") setFailure(asFailure(sum));
     });
     return () => { current = false; };
   }, [api, client.id, refresh, runs, today]);
