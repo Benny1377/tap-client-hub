@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { DELEGABLE_BILLING_ROLES, effectiveBillingPolicy, requireBillingAccess, requireBillingAction, resolveBillingActions, type BillingPolicyRow } from "@/lib/billing-access";
+import { DELEGABLE_BILLING_ROLES, effectiveBillingPolicy, requireBillingAccess, requireBillingAction, requireBillingPowerUser, resolveBillingActions, type BillingPolicyRow } from "@/lib/billing-access";
 import { apiError, boundedLimit, cursorDecode, cursorEncode, firmDateISO, isDateOnly, moneyString, mutationResponse, permissionActionFor, toCamel, toPhase2Bundle, toPhase2Candidate } from "@/lib/billing-phase2";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { averageMonthlyCents, centsToMoney, moneyToCents, occurrencesPerYear } from "@/lib/billing-monthly-amount";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -263,6 +264,146 @@ async function clientServicesGet(request: NextRequest) {
     return { id: row.id, active: row.active, frequency: row.frequency, serviceCode: service?.code ?? null, serviceName: service?.name ?? null };
   }) }, { headers: { "Cache-Control": "no-store" } });
 }
+async function presentationGet() {
+  const access = await requireBillingAction("billing.view");
+  if (access.response) return access.response;
+  const { data, error } = await createAdminClient().from("billing_presentation_settings")
+    .select("firm_name,tagline,invoice_footer,updated_at").eq("singleton", true).maybeSingle();
+  if (error) return apiError("Unable to load invoice presentation settings", "BILLING_READ_FAILED", 500);
+  if (!data) return apiError("Invoice presentation settings are not initialized", "BILLING_READ_FAILED", 500);
+  return NextResponse.json({ firmName: data.firm_name, tagline: data.tagline, invoiceFooter: data.invoice_footer, invoiceNumberPrefix: "TAP", updatedAt: data.updated_at }, { headers: { "Cache-Control": "no-store" } });
+}
+async function presentationPatch(request: NextRequest) {
+  const access = await requireBillingPowerUser();
+  if (access.response || !access.identity) return access.response;
+  const body = await readObjectBody(request);
+  if (!body) return apiError("Invalid JSON body", "INVALID_JSON", 400);
+  const allowed = new Set(["firmName", "tagline", "invoiceFooter", "reason"]);
+  if (Object.keys(body).some((key) => !allowed.has(key))) return apiError("Unsupported presentation setting", "INVALID_INPUT", 422);
+  const firmName = typeof body.firmName === "string" ? body.firmName.trim() : "";
+  const tagline = body.tagline === null ? null : typeof body.tagline === "string" ? body.tagline.trim() : undefined;
+  const invoiceFooter = body.invoiceFooter === null ? null : typeof body.invoiceFooter === "string" ? body.invoiceFooter.trim() : undefined;
+  const reason = typeof body.reason === "string" ? body.reason.trim() : "";
+  if (!firmName || firmName.length > 160 || tagline === undefined || (tagline !== null && tagline.length > 500) || invoiceFooter === undefined || (invoiceFooter !== null && invoiceFooter.length > 500) || !reason || reason.length > 1000) {
+    return apiError("firmName, optional tagline/footer, and reason must meet the documented length limits", "INVALID_INPUT", 422);
+  }
+  const { data, error } = await createAdminClient().from("billing_presentation_settings").update({
+    firm_name: firmName, tagline: tagline ?? null, invoice_footer: invoiceFooter ?? null,
+    updated_by: access.identity.id, updated_at: new Date().toISOString(), reason,
+  }).eq("singleton", true).select("firm_name,tagline,invoice_footer,updated_at").maybeSingle();
+  if (error) return apiError("Unable to save invoice presentation settings", "BILLING_WRITE_FAILED", 500);
+  if (!data) return apiError("Invoice presentation settings are not initialized", "BILLING_WRITE_FAILED", 500);
+  return NextResponse.json({ firmName: data.firm_name, tagline: data.tagline, invoiceFooter: data.invoice_footer, invoiceNumberPrefix: "TAP", updatedAt: data.updated_at }, { headers: { "Cache-Control": "no-store" } });
+}
+async function clientSummaryGet(request: NextRequest) {
+  const pricing = await requireBillingAction("pricing.view");
+  if (pricing.response) return pricing.response;
+  const candidates = await requireBillingAction("candidates.view");
+  if (candidates.response) return candidates.response;
+  const clientId = request.nextUrl.searchParams.get("clientId");
+  if (!clientId || !UUID.test(clientId)) return apiError("clientId must be a UUID", "INVALID_INPUT", 422);
+  const db = createAdminClient(), today = firmDateISO();
+  const [{ data: client, error: clientError }, { data: serviceRows, error: serviceError }, { data: termSettings, error: termsError }, { data: termRows, error: termRowsError }, { data: bundleRows, error: bundleError }] = await Promise.all([
+    db.from("clients").select("id,name").eq("id", clientId).maybeSingle(),
+    db.from("client_services").select("id,active,frequency,financials_month,service:services(code,name)").eq("client_id", clientId).eq("active", true).order("id"),
+    db.from("billing_terms_settings").select("default_net_days").eq("singleton", true).maybeSingle(),
+    db.from("billing_terms_overrides").select("id,client_service_id,net_days,effective_from,effective_to").eq("client_id", clientId).lte("effective_from", today).or(`effective_to.is.null,effective_to.gte.${today}`).order("effective_from", { ascending: false }),
+    db.from("billing_bundles").select("id,name,unit_amount,effective_from,effective_to,billing_bundle_components(client_service_id)").eq("client_id", clientId).eq("active", true).lte("effective_from", today).or(`effective_to.is.null,effective_to.gte.${today}`).order("effective_from", { ascending: false }),
+  ]);
+  if (clientError) return apiError("Unable to load client summary", "BILLING_READ_FAILED", 500);
+  if (!client) return apiError("Client not found", "NOT_FOUND", 404);
+  if (serviceError || termsError || termRowsError || bundleError) return apiError("Unable to load client summary", "BILLING_READ_FAILED", 500);
+  const services: Row[] = [];
+  for (const row of serviceRows || []) {
+    const service = Array.isArray(row.service) ? row.service[0] : row.service;
+    if (!service?.code || !service?.name) continue;
+    const { data: resolved, error } = await db.rpc("resolve_billing_price", { p_client_service_id: row.id, p_client_id: clientId, p_service_code: service.code, p_unit: "service", p_on: today });
+    if (error) return apiError("Unable to resolve client price", "PRICING_READ_FAILED", 500);
+    const price = Array.isArray(resolved) ? resolved[0] : resolved;
+    services.push({ clientServiceId: row.id, serviceCode: service.code, serviceName: service.name, active: row.active, frequency: row.frequency, priceState: price?.unit_amount == null ? "unpriced" : "priced", unitAmount: price?.unit_amount == null ? null : moneyString(price.unit_amount), bundleName: null });
+  }
+  type ClientSummaryBundle = { id: string; name: string; unit_amount: string | number | null; componentIds: string[] };
+  const bundles: ClientSummaryBundle[] = (bundleRows || []).map((row: Row): ClientSummaryBundle => ({
+    id: String(row.id),
+    name: String(row.name),
+    unit_amount: row.unit_amount == null ? null : row.unit_amount,
+    componentIds: (row.billing_bundle_components || []).map((component: Row) => String(component.client_service_id)),
+  }));
+  const bundledServiceIds = new Set<string>();
+  let monthlyCents = 0;
+  let monthlyAmountComplete = true;
+  let unpricedServiceCount = 0;
+  for (const bundle of bundles) {
+    const components = bundle.componentIds.filter((id: string) => services.some((service) => service.clientServiceId === id));
+    if (!components.length) continue;
+    const componentRows = components.map((id: string) => serviceRows?.find((row: Row) => row.id === id)).filter(Boolean);
+    const frequencies = [...new Set(componentRows.map((row: Row) => occurrencesPerYear(row.frequency)))];
+    const priceCents = moneyToCents(bundle.unit_amount);
+    const occurrences = frequencies[0];
+    if (frequencies.length === 1 && occurrences !== null && priceCents !== null) monthlyCents += averageMonthlyCents(priceCents, occurrences);
+    else monthlyAmountComplete = false;
+    for (const id of components) {
+      bundledServiceIds.add(id);
+      const item = services.find((service) => service.clientServiceId === id);
+      if (item) item.bundleName = bundle.name;
+    }
+  }
+  for (const service of services) {
+    if (bundledServiceIds.has(service.clientServiceId)) continue;
+    const occurrences = occurrencesPerYear(service.frequency), cents = moneyToCents(service.unitAmount);
+    if (cents === null) { monthlyAmountComplete = false; unpricedServiceCount++; }
+    if (occurrences === null) monthlyAmountComplete = false;
+    else if (cents !== null) monthlyCents += averageMonthlyCents(cents, occurrences);
+  }
+  const overrides = termRows || [];
+  const clientOverride = overrides.find((row: Row) => row.client_service_id == null);
+  const termsByClientService = services.map((service) => {
+    const override = overrides.find((row: Row) => row.client_service_id === service.clientServiceId) || clientOverride;
+    return { clientServiceId: service.clientServiceId, netDays: override?.net_days ?? termSettings?.default_net_days ?? 15, source: override?.client_service_id ? "client_service" : override ? "client" : "firm_default" };
+  });
+  const { data: receivables, error: receivablesError } = await db.rpc("get_billing_receivables", { p_client_id: clientId });
+  if (receivablesError) return apiError("Unable to load client receivables", "BILLING_READ_FAILED", 500);
+  const aging = (receivables?.client_aging || []).find((row: Row) => row.client_id === clientId);
+  const openCents = [aging?.current, aging?.["1_30"], aging?.["31_60"], aging?.["61_90"], aging?.["90_plus"]].reduce((sum: number, amount: unknown) => sum + (moneyToCents(amount) ?? 0), 0);
+  const pastDueCents = [aging?.["1_30"], aging?.["31_60"], aging?.["61_90"], aging?.["90_plus"]].reduce((sum: number, amount: unknown) => sum + (moneyToCents(amount) ?? 0), 0);
+  const end = new Date(`${today}T00:00:00.000Z`); end.setUTCDate(end.getUTCDate() + 364);
+  const projection = await generateFromOperations(db, "", { from: today, to: end.toISOString().slice(0, 10), clientId, preview: true });
+  if (projection.error) return projection.error;
+  const { data: existing, error: candidatesError } = await db.from("billing_candidates").select("candidate_date").eq("client_id", clientId).in("state", ["open", "unpriced"]).gte("candidate_date", today).lte("candidate_date", end.toISOString().slice(0, 10)).order("candidate_date").limit(1000);
+  if (candidatesError) return apiError("Unable to load next invoice date", "BILLING_READ_FAILED", 500);
+  const dates = [...(existing || []).map((row: Row) => row.candidate_date), ...(projection.result?.items || []).map((row: Row) => row.candidateDate)].filter((date) => isDateOnly(date)).sort();
+  return NextResponse.json({
+    clientId, clientName: client.name, services, terms: { defaultNetDays: termSettings?.default_net_days ?? 15, byClientService: termsByClientService },
+    monthlyAmount: centsToMoney(monthlyCents), monthlyAmountComplete, unpricedServiceCount, nextInvoiceDate: dates[0] || null,
+    openBalance: centsToMoney(openCents), pastDueAmount: centsToMoney(pastDueCents),
+  }, { headers: { "Cache-Control": "no-store" } });
+}
+async function firmScheduleGet(request: NextRequest) {
+  const candidates = await requireBillingAction("candidates.view");
+  if (candidates.response) return candidates.response;
+  const pricing = await requireBillingAction("pricing.view");
+  if (pricing.response) return pricing.response;
+  const query = request.nextUrl.searchParams, from = query.get("from"), to = query.get("to");
+  if (!isDateOnly(from) || !isDateOnly(to) || from > to) return apiError("A valid from/to date window is required", "GENERATION_WINDOW_INVALID", 422);
+  const days = (Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86400000;
+  if (days > 364) return apiError("Schedule window cannot exceed 365 days", "GENERATION_WINDOW_INVALID", 422);
+  const limit = boundedLimit(query.get("limit"));
+  if (!limit) return apiError("limit must be between 1 and 100", "INVALID_INPUT", 422);
+  let cursor: Row | null = null;
+  try {
+    cursor = cursorDecode<Row>(query.get("cursor"));
+    if (query.get("cursor") && (!cursor || !isDateOnly(cursor.candidateDate) || typeof cursor.clientName !== "string" || cursor.clientName.length > 200 || typeof cursor.clientServiceId !== "string" || !UUID.test(cursor.clientServiceId) || typeof cursor.sourceIdentity !== "string" || cursor.sourceIdentity.length > 200)) throw new Error("INVALID_CURSOR");
+  } catch { return apiError("Cursor is invalid for this list", "INVALID_CURSOR", 422); }
+  const { data, error } = await createAdminClient().rpc("project_billing_firm_schedule", {
+    p_from: from, p_to: to, p_limit: limit,
+    p_after_date: cursor?.candidateDate ?? null, p_after_client: cursor?.clientName ?? null,
+    p_after_service: cursor?.clientServiceId ?? null, p_after_identity: cursor?.sourceIdentity ?? null,
+  });
+  if (error || !data || !Array.isArray(data.items) || !data.summary) return apiError("Unable to load firm schedule", "BILLING_READ_FAILED", 500);
+  const items = data.items as Row[];
+  const nextCursor = data.hasMore && items.length ? cursorEncode({ candidateDate: items.at(-1)!.candidateDate, clientName: items.at(-1)!.clientName, clientServiceId: items.at(-1)!.clientServiceId, sourceIdentity: items.at(-1)!.sourceIdentity }) : null;
+  return NextResponse.json({ items, nextCursor, summary: data.summary }, { headers: { "Cache-Control": "no-store" } });
+}
 async function listResource(request: NextRequest, path: string[]) {
   const db=createAdminClient(), q=request.nextUrl.searchParams, limit=boundedLimit(q.get("limit"));
   if (!limit) return apiError("limit must be between 1 and 100","INVALID_INPUT",422);
@@ -396,6 +537,10 @@ async function handler(request:NextRequest,ctx:Ctx,method:string) {
   if(path.length===1&&path[0]==="permissions"&&method==="GET")return permissionGet();
   if(path.length===2&&path[0]==="permissions"&&path[1]==="policy"&&method==="GET")return policyGet();
   if(path.length===1&&path[0]==="client-services"&&method==="GET")return clientServicesGet(request);
+  if(path.length===2&&path[0]==="clients"&&path[1]==="summary"&&method==="GET")return clientSummaryGet(request);
+  if(path.length===2&&path[0]==="candidates"&&path[1]==="firm-schedule"&&method==="GET")return firmScheduleGet(request);
+  if(path.length===2&&path[0]==="settings"&&path[1]==="presentation"&&method==="GET")return presentationGet();
+  if(path.length===2&&path[0]==="settings"&&path[1]==="presentation"&&method==="PATCH")return presentationPatch(request);
   const access=await authorized(path,method);
   if(access.response)return access.response;
   let resourceId: string | undefined;
