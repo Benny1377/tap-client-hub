@@ -18,6 +18,14 @@ const TABLES: Record<string,string> = { "rate-cards":"billing_rate_cards", "bund
 const MONEY = /^(?:0|[1-9]\d{0,9})(?:\.\d{1,2})?$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 function pathParts(ctx: Ctx) { return ctx.params.then(({path}) => path); }
+async function mapInBatches<T, R>(items: T[], batchSize: number, mapItem: (item: T) => Promise<R>): Promise<R[]> {
+  const results: R[] = [];
+  for (let offset = 0; offset < items.length; offset += batchSize) {
+    const batch = await Promise.all(items.slice(offset, offset + batchSize).map(mapItem));
+    results.push(...batch);
+  }
+  return results;
+}
 async function readObjectBody(request: NextRequest): Promise<Row | null> {
   try {
     const body: unknown = await request.json();
@@ -73,6 +81,9 @@ function inWindow(date: string, from: string, to: string) { return date >= from 
 function scheduledMonths(frequency: unknown, financialsMonth: unknown): number[] | null {
   const value = typeof frequency === "string" ? frequency.trim().toLowerCase() : "";
   if (value === "monthly") return Array.from({ length: 12 }, (_, index) => index + 1);
+  // Quarterly is intentionally anchored to Jan/Apr/Jul/Oct. Bi-Weekly has no
+  // Operations anchor date, so returning null marks it incomplete rather than
+  // inventing a cadence for invoice dates.
   if (value === "quarterly") return [1, 4, 7, 10];
   if (value === "annual" || value === "yearly") {
     const month = Number(financialsMonth);
@@ -99,6 +110,26 @@ export async function generateFromOperations(db: ReturnType<typeof createAdminCl
   if (mapsError) return { error: apiError("Unable to read Billing source maps", "BILLING_READ_FAILED", 500) };
   const mapsByService = new Map<string, Row[]>();
   for (const map of maps || []) mapsByService.set(map.client_service_id, [...(mapsByService.get(map.client_service_id) || []), map]);
+
+  // Read source facts in bounded chunks instead of one network round trip per
+  // service assignment. This is especially important for a client with many
+  // active services; the caller's date window is applied below after period
+  // formats have been normalized.
+  const workPeriodIds = [...new Set((maps || []).filter((map: Row) => map.adapter === "work_period_done").map((map: Row) => map.client_service_id))];
+  const periodCountIds = [...new Set((maps || []).filter((map: Row) => map.adapter === "period_count_threshold").map((map: Row) => map.client_service_id))];
+  const idChunks = (ids: string[]) => Array.from({ length: Math.ceil(ids.length / 100) }, (_, index) => ids.slice(index * 100, index * 100 + 100));
+  const [workPeriodPages, periodCountPages] = await Promise.all([
+    mapInBatches(idChunks(workPeriodIds), 4, async (ids) => await db.from("work_periods").select("client_service_id,period,stage,done_at").in("client_service_id", ids)),
+    mapInBatches(idChunks(periodCountIds), 4, async (ids) => await db.from("period_counts").select("client_service_id,period,processed").in("client_service_id", ids)),
+  ]);
+  const workPeriodError = workPeriodPages.find((page: Row) => page.error)?.error;
+  const periodCountError = periodCountPages.find((page: Row) => page.error)?.error;
+  if (workPeriodError) return { error: apiError("Unable to read Operations work periods", "BILLING_READ_FAILED", 500) };
+  if (periodCountError) return { error: apiError("Unable to read Operations period counts", "BILLING_READ_FAILED", 500) };
+  const workPeriodsByService = new Map<string, Row[]>();
+  const periodCountsByService = new Map<string, Row[]>();
+  for (const row of workPeriodPages.flatMap((page: Row) => page.data || [])) workPeriodsByService.set(row.client_service_id, [...(workPeriodsByService.get(row.client_service_id) || []), row]);
+  for (const row of periodCountPages.flatMap((page: Row) => page.data || [])) periodCountsByService.set(row.client_service_id, [...(periodCountsByService.get(row.client_service_id) || []), row]);
 
   const skippedByReason = { no_map: 0, map_disabled: 0, source_incomplete: 0, outside_window: 0 };
   const candidates: Row[] = [];
@@ -128,18 +159,11 @@ export async function generateFromOperations(db: ReturnType<typeof createAdminCl
           cursor.setUTCMonth(cursor.getUTCMonth() + 1);
         }
       } else if (map.adapter === "work_period_done") {
-        let workPeriodQuery = db.from("work_periods").select("client_service_id,period,stage,done_at").eq("client_service_id", clientServiceId);
-        if (map.candidate_date_rule === "completion_date") {
-          // Completion can happen after the service period. Filter by the actual
-          // Houston-local completion window, not by the period's YYYYMM value.
-          workPeriodQuery = workPeriodQuery.gte("done_at", firmMidnightISO(from)).lt("done_at", firmMidnightISO(nextDate(to)));
-        } else {
-          // Operations deployments store periods as either YYYYMM or YYYY-MM.
-          // Normalize per service before applying the requested date window.
-        }
-        const { data: workRows, error } = await workPeriodQuery;
-        if (error) return { error: apiError("Unable to read Operations work periods", "BILLING_READ_FAILED", 500) };
+        // Completion can happen after its service period. Filter by the actual
+        // Houston-local completion window, not by the YYYYMM/ YYYY-MM period.
+        const workRows = workPeriodsByService.get(clientServiceId) || [];
         for (const row of workRows || []) {
+          if (map.candidate_date_rule === "completion_date" && (!row.done_at || row.done_at < firmMidnightISO(from) || row.done_at >= firmMidnightISO(nextDate(to)))) continue;
           const period = normalizeOperationsPeriod(row.period);
           if (!period) { skippedByReason.source_incomplete++; continue; }
           if (row.stage !== "done") { skippedByReason.source_incomplete++; continue; }
@@ -152,9 +176,7 @@ export async function generateFromOperations(db: ReturnType<typeof createAdminCl
       } else if (map.adapter === "period_count_threshold") {
         const threshold = Number(map.predicate?.threshold);
         if (!Number.isInteger(threshold) || threshold <= 0) { skippedByReason.source_incomplete++; continue; }
-        const { data: countRows, error } = await db.from("period_counts").select("client_service_id,period,processed")
-          .eq("client_service_id", clientServiceId);
-        if (error) return { error: apiError("Unable to read Operations period counts", "BILLING_READ_FAILED", 500) };
+        const countRows = periodCountsByService.get(clientServiceId) || [];
         for (const row of countRows || []) {
           const period = normalizeOperationsPeriod(row.period);
           if (!period || !Number.isInteger(row.processed)) { skippedByReason.source_incomplete++; continue; }
@@ -173,6 +195,13 @@ export async function generateFromOperations(db: ReturnType<typeof createAdminCl
     }
   }
 
+  // The client summary needs only the earliest potential date. Avoid price
+  // resolution and persisted-candidate lookups for hundreds of future rows;
+  // the UI-facing schedule and explicit Generate paths still use full pricing.
+  if (input.preview && input.dateOnly === true) {
+    return { result: { projection: "projected", items: candidates.map((candidate) => ({ candidateDate: candidate.candidateDate })) } };
+  }
+
   const candidateIds: string[] = [], projectedItems: Row[] = []; let created = 0, unpriced = 0, existing = 0;
   let previewCandidates = candidates;
   if (input.preview && candidates.length) {
@@ -182,16 +211,18 @@ export async function generateFromOperations(db: ReturnType<typeof createAdminCl
     const existingKeys = new Set((persisted || []).map((row: Row) => `${row.client_service_id}:${row.source_identity}`));
     previewCandidates = candidates.filter((candidate) => !existingKeys.has(`${candidate.service.id}:${candidate.identity}`));
   }
-  for (const candidate of previewCandidates) {
-    const { data: priceData, error: priceError } = await db.rpc("resolve_billing_price", {
+  const candidatePrices = await mapInBatches(previewCandidates, 8, async (candidate) => {
+    const { data, error } = await db.rpc("resolve_billing_price", {
       p_client_service_id: candidate.service.id,
       p_client_id: candidate.service.client_id,
       p_service_code: candidate.serviceInfo.code,
       p_unit: candidate.unit,
       p_on: candidate.candidateDate,
     });
-    if (priceError) return { error: apiError("Unable to resolve candidate price", "PRICE_RESOLUTION_FAILED", 500) };
-    const price = Array.isArray(priceData) ? priceData[0] : priceData;
+    return { candidate, price: Array.isArray(data) ? data[0] : data, error };
+  });
+  if (candidatePrices.some((resolved) => resolved.error)) return { error: apiError("Unable to resolve candidate price", "PRICE_RESOLUTION_FAILED", 500) };
+  for (const { candidate, price } of candidatePrices) {
     if (input.preview) {
       projectedItems.push({ clientServiceId: candidate.service.id, candidateDate: candidate.candidateDate, period: candidate.period, description: candidate.description, serviceCode: candidate.serviceInfo.code, unit: candidate.unit, unitAmount: price?.unit_amount == null ? null : moneyString(price.unit_amount), state: price ? "priced" : "unpriced", source: { adapter: candidate.adapter, identity: candidate.identity } });
       continue;
@@ -313,15 +344,16 @@ async function clientSummaryGet(request: NextRequest) {
   if (clientError) return apiError("Unable to load client summary", "BILLING_READ_FAILED", 500);
   if (!client) return apiError("Client not found", "NOT_FOUND", 404);
   if (serviceError || termsError || termRowsError || bundleError) return apiError("Unable to load client summary", "BILLING_READ_FAILED", 500);
-  const services: Row[] = [];
-  for (const row of serviceRows || []) {
+  const pricedServices = await mapInBatches(serviceRows || [], 8, async (row: Row) => {
     const service = Array.isArray(row.service) ? row.service[0] : row.service;
-    if (!service?.code || !service?.name) continue;
+    if (!service?.code || !service?.name) return null;
     const { data: resolved, error } = await db.rpc("resolve_billing_price", { p_client_service_id: row.id, p_client_id: clientId, p_service_code: service.code, p_unit: "service", p_on: today });
-    if (error) return apiError("Unable to resolve client price", "PRICING_READ_FAILED", 500);
+    if (error) return { error };
     const price = Array.isArray(resolved) ? resolved[0] : resolved;
-    services.push({ clientServiceId: row.id, serviceCode: service.code, serviceName: service.name, active: row.active, frequency: row.frequency, priceState: price?.unit_amount == null ? "unpriced" : "priced", unitAmount: price?.unit_amount == null ? null : moneyString(price.unit_amount), bundleName: null });
-  }
+    return { service: { clientServiceId: row.id, serviceCode: service.code, serviceName: service.name, active: row.active, frequency: row.frequency, priceState: price?.unit_amount == null ? "unpriced" : "priced", unitAmount: price?.unit_amount == null ? null : moneyString(price.unit_amount), bundleName: null } };
+  });
+  if (pricedServices.some((result: Row) => result?.error)) return apiError("Unable to resolve client price", "PRICING_READ_FAILED", 500);
+  const services: Row[] = pricedServices.flatMap((result: Row) => result?.service ? [result.service] : []);
   type ClientSummaryBundle = { id: string; name: string; unit_amount: string | number | null; componentIds: string[] };
   const bundles: ClientSummaryBundle[] = (bundleRows || []).map((row: Row): ClientSummaryBundle => ({
     id: String(row.id),
@@ -367,7 +399,7 @@ async function clientSummaryGet(request: NextRequest) {
   const openCents = [aging?.current, aging?.["1_30"], aging?.["31_60"], aging?.["61_90"], aging?.["90_plus"]].reduce((sum: number, amount: unknown) => sum + (moneyToCents(amount) ?? 0), 0);
   const pastDueCents = [aging?.["1_30"], aging?.["31_60"], aging?.["61_90"], aging?.["90_plus"]].reduce((sum: number, amount: unknown) => sum + (moneyToCents(amount) ?? 0), 0);
   const end = new Date(`${today}T00:00:00.000Z`); end.setUTCDate(end.getUTCDate() + 364);
-  const projection = await generateFromOperations(db, "", { from: today, to: end.toISOString().slice(0, 10), clientId, preview: true });
+  const projection = await generateFromOperations(db, "", { from: today, to: end.toISOString().slice(0, 10), clientId, preview: true, dateOnly: true });
   if (projection.error) return projection.error;
   const { data: existing, error: candidatesError } = await db.from("billing_candidates").select("candidate_date").eq("client_id", clientId).in("state", ["open", "unpriced"]).gte("candidate_date", today).lte("candidate_date", end.toISOString().slice(0, 10)).order("candidate_date").limit(1000);
   if (candidatesError) return apiError("Unable to load next invoice date", "BILLING_READ_FAILED", 500);

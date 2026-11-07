@@ -64,7 +64,7 @@ try {
       values ('${ids.invoice}', '${ids.client}', null, 'draft', null, null, '${OWNER_ID}');
     insert into tap_hub_project.invoice_lines(invoice_id, description, quantity, unit_amount, amount, created_by)
       values ('${ids.invoice}', 'Synthetic race invoice line', 1, 100.00, 100.00, '${OWNER_ID}');
-    update tap_hub_project.invoices set status = 'issued', invoice_number = '${invoiceNumber}', issue_date = current_date, due_date = current_date + 15 where id = '${ids.invoice}';
+    update tap_hub_project.invoices set status = 'issued', invoice_number = '${invoiceNumber}', issue_date = current_date, due_date = current_date + 15, presentation_snapshot = '{"firmName":"Synthetic fixture"}'::jsonb where id = '${ids.invoice}';
     insert into tap_hub_project.payments(id, client_id, received_on, amount, method, created_by)
       values ('${ids.paymentA}', '${ids.client}', current_date, 75.00, 'check', '${OWNER_ID}'),
              ('${ids.paymentB}', '${ids.client}', current_date, 75.00, 'check', '${OWNER_ID}');

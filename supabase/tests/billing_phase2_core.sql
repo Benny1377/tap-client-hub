@@ -6,7 +6,8 @@ declare
   v_card uuid; v_bundle uuid; v_candidate uuid; v_candidate_2 uuid; v_invoice uuid; v_line uuid; v_number text; v_amount numeric; v_state text;
   v_billing_staff uuid; v_unassigned_staff uuid; v_candidate_mutation jsonb; v_audit_one text; v_audit_two text;
   v_projection_service uuid; v_projection_cs uuid; v_projection_service_2 uuid; v_projection_cs_2 uuid; v_projection_service_3 uuid; v_projection_cs_3 uuid;
-  v_projection jsonb; v_projection_next jsonb; v_projection_cursor jsonb;
+  v_projection jsonb; v_projection_next jsonb; v_projection_cursor jsonb; v_projection_scan jsonb;
+  v_projection_pages integer := 0; v_projection_found boolean := false;
   v_today date := tap_hub_project.billing_firm_today(now());
 begin
   if tap_hub_project.billing_firm_today(timestamptz '2026-03-08 05:59:00+00')<>'2026-03-07'
@@ -65,9 +66,6 @@ begin
   if jsonb_array_length(v_projection->'items')<>2 or v_projection->>'hasMore'<>'true' then
     raise exception 'firm schedule must return a continuation cursor when more rows remain than a short page';
   end if;
-  if not exists(select 1 from jsonb_array_elements(v_projection->'items') item where item->>'clientServiceId'=v_projection_cs::text and item->>'candidateDate'='2030-11-30' and item->>'unitAmount'='25.00') then
-    raise exception 'firm schedule must project the synthetic monthly assignment at its server-resolved price';
-  end if;
   if v_projection->'summary'->>'projectedAmount' is null then raise exception 'firm schedule must return server-calculated decimal-string totals'; end if;
   v_projection_cursor:=v_projection->'items'->1;
   v_projection_next:=tap_hub_project.project_billing_firm_schedule(date '2030-11-30',date '2030-11-30',2,
@@ -75,6 +73,26 @@ begin
   if jsonb_array_length(v_projection_next->'items')<1
     or (v_projection_next->'items'->0->>'clientServiceId') in (v_projection->'items'->0->>'clientServiceId',v_projection_cursor->>'clientServiceId') then
     raise exception 'firm schedule cursor must continue after the last row on the previous page';
+  end if;
+  v_projection_scan:=v_projection;
+  loop
+    if exists(
+      select 1 from jsonb_array_elements(v_projection_scan->'items') item
+      where item->>'clientServiceId'=v_projection_cs::text
+        and item->>'candidateDate'='2030-11-30' and item->>'unitAmount'='25.00'
+    ) then
+      v_projection_found:=true;
+      exit;
+    end if;
+    exit when v_projection_scan->>'hasMore'<>'true';
+    v_projection_cursor:=v_projection_scan->'items'->(jsonb_array_length(v_projection_scan->'items')-1);
+    v_projection_scan:=tap_hub_project.project_billing_firm_schedule(date '2030-11-30',date '2030-11-30',2,
+      (v_projection_cursor->>'candidateDate')::date,v_projection_cursor->>'clientName',(v_projection_cursor->>'clientServiceId')::uuid,v_projection_cursor->>'sourceIdentity');
+    v_projection_pages:=v_projection_pages+1;
+    if v_projection_pages>100 then raise exception 'firm schedule pagination exceeded the bounded test scan'; end if;
+  end loop;
+  if not v_projection_found then
+    raise exception 'firm schedule pages must include the synthetic monthly assignment at its server-resolved price';
   end if;
 
   insert into tap_hub_project.billing_completion_source_maps(client_service_id,adapter,predicate,identity_fields,candidate_date_rule,effective_from,created_by,updated_by,reason)
@@ -139,7 +157,12 @@ begin
   exception when sqlstate '42501' then null;
   end;
   perform tap_hub_project.issue_billing_invoice(v_invoice,v_billing_staff);
-  if not exists(select 1 from tap_hub_project.invoices where id=v_invoice and status='issued' and invoice_number ~ '^TAP-[0-9]{4}-[0-9]{4}$' and issue_date=v_today and due_date=issue_date+45 and remittance_snapshot->>'payeeName'='TAP Synthetic') then raise exception 'atomic issue fields, client-service terms, or remittance snapshot incorrect'; end if;
+  if not exists(select 1 from tap_hub_project.invoices where id=v_invoice and status='issued' and invoice_number ~ '^TAP-[0-9]{4}-[0-9]{4}$' and issue_date=v_today and due_date=issue_date+45 and remittance_snapshot->>'payeeName'='TAP Synthetic' and presentation_snapshot->>'firmName'='TAP Associates, LLC' and presentation_snapshot->>'tagline'='Transactional API test') then raise exception 'atomic issue fields, terms, remittance or presentation snapshot incorrect'; end if;
+  begin
+    update tap_hub_project.invoices set presentation_snapshot='{"firmName":"Tampered"}'::jsonb where id=v_invoice;
+    raise exception 'issued invoice presentation snapshot unexpectedly changed' using errcode='P0003';
+  exception when sqlstate 'P0001' then null;
+  end;
   select invoice_number into v_number from tap_hub_project.invoices where id=v_invoice;
   select state into v_state from tap_hub_project.billing_candidates where id=v_candidate;
   if v_state<>'invoiced' then raise exception 'issue did not transition candidate to invoiced'; end if;
