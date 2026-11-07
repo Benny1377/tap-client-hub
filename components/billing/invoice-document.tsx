@@ -10,8 +10,9 @@ export function InvoiceDocument({ invoice, clientName, receivable, remittance, p
   const lines = [...(invoice.invoice_lines || [])].sort((a, b) => a.sort_order - b.sort_order);
   const snapshot = (invoice as Invoice & { remittance_snapshot?: Partial<Remittance> & { payee_name?: string | null } | null }).remittance_snapshot;
   const pay = snapshot ? { payeeName: snapshot.payeeName ?? snapshot.payee_name ?? null, address: snapshot.address ?? null, instructions: snapshot.instructions ?? null } : remittance;
-  // Firm settings are not saved with an invoice, so only a draft follows them. An issued invoice must not change after the fact.
-  const firm = invoice.status === "draft" ? presentation : null;
+  // A draft follows the current firm details. Issuing saves them on the invoice, so an issued invoice never changes afterwards;
+  // invoices issued before that have no saved copy and show only their saved payee.
+  const firm = invoice.status === "draft" ? presentation : invoice.presentation_snapshot ?? null;
   return (
     <div className="doc" data-invoice-document>
       <div className="doc-top">

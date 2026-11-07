@@ -182,15 +182,17 @@ check("the monthly note never reads a partial total as complete", () => {
   assert.match(work.monthlyNote(false, 0), /partial/);
 });
 
-check("firm details show on a draft only, so an issued invoice never changes", () => {
+check("a draft follows firm details, and an issued invoice keeps what was saved on it", () => {
   const { InvoiceDocument } = loadTs("components/billing/invoice-document.tsx");
   const presentation = { firmName: "Firm Now", tagline: "Tag now", invoiceFooter: "Foot now", invoiceNumberPrefix: "TAP", updatedAt: null };
   const remittance = { payeeName: "Saved Payee", address: null, instructions: null };
-  const render = (status) => renderToStaticMarkup(h(InvoiceDocument, { invoice: { id: "i-1", client_id: "c-1", status, invoice_number: status === "draft" ? null : "TAP-1", invoice_lines: [] }, clientName: "Client", receivable: null, remittance, presentation }));
+  const render = (status, presentation_snapshot) => renderToStaticMarkup(h(InvoiceDocument, { invoice: { id: "i-1", client_id: "c-1", status, invoice_number: status === "draft" ? null : "TAP-1", invoice_lines: [], presentation_snapshot }, clientName: "Client", receivable: null, remittance, presentation }));
   const draft = render("draft");
   assert.match(draft, /Firm Now/); assert.match(draft, /Tag now/); assert.match(draft, /Foot now/);
   const issued = render("issued");
   assert.match(issued, /Saved Payee/); assert.doesNotMatch(issued, /Firm Now|Tag now|Foot now/);
+  const saved = render("issued", { firmName: "Firm Then", tagline: "Tag then", invoiceFooter: "Foot then" });
+  assert.match(saved, /Firm Then/); assert.match(saved, /Tag then/); assert.match(saved, /Foot then/); assert.doesNotMatch(saved, /Firm Now|Tag now|Foot now/);
 });
 
 check("the firm date follows Houston across a month end and both clock changes", () => {

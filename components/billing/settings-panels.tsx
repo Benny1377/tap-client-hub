@@ -59,7 +59,7 @@ function FirmDetails({ api, canEdit, onSaved }: { api: BillingApi; canEdit: bool
   const tooLong = (form: FormValues) => Object.fromEntries([["firmName", 160], ["tagline", 500], ["invoiceFooter", 500]].filter(([name, most]) => form[name as string].trim().length > (most as number)).map(([name, most]) => [name, `Keep this to ${most} characters`]));
   return (
     <div className="card" style={{ marginBottom: 14 }} data-form="presentation">
-      <h3>Firm details<span>shown on draft invoices</span></h3>
+      <h3>Firm details<span>saved on each invoice when it is issued</span></h3>
       {failure ? <ErrorBanner kind={failure.kind} message={failure.message} code={failure.code} /> : null}
       {values ? (
         <>
