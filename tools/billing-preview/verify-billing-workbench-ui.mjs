@@ -74,7 +74,8 @@ try {
 
   await tab(admin, "Clients & prices");
   rec("P0", "Clients & prices lists clients", !!(await admin.$(`[data-client-row="${C1}"]`)), (await admin.$$("[data-client-row]")).length);
-  await admin.evaluate((id) => document.querySelector(`[data-client-row="${id}"] button`).click(), C1); await wait(2500);
+  await admin.evaluate((id) => document.querySelector(`[data-client-row="${id}"] button`).click(), C1);
+  await admin.waitForFunction((v) => document.body.innerText.includes(`GEN ${v}`), { timeout: 30000 }, tag).catch(() => {});
   let t = await text(admin);
   rec("P1", "a client opens on its own page with its services", !!(await admin.$(`[data-client-page="${C1}"]`)) && t.includes(`GEN ${tag}`));
   await fill(admin, "override", { clientServiceId: svc.OVR, unitAmount: "88.00", effectiveFrom: "2026-01-01", reason: "Synthetic" });
@@ -133,17 +134,19 @@ try {
   await fill(admin, "confirm", { clientServiceId: svc.MAN, confirmedDate: "2026-11-05", sourceNote: "Synthetic confirmation", reason: "Synthetic confirmation" });
   rec("T7", "a manual confirmation creates a candidate", (await count("billing_candidates", `client_service_id=eq.${svc.MAN}`)) === 1);
 
+  // Hosted generate time grows with the client's services, so this waits for the result rather than a fixed time.
+  const generated = async (pattern) => { await admin.waitForFunction((src) => new RegExp(src).test(document.querySelector("[data-generate-result]")?.innerText || "") && [...document.querySelectorAll("[data-generate] button")].some((b) => b.textContent.trim() === "Generate candidates"), { timeout: 90000 }, pattern.source).catch(() => {}); await wait(800); };
   await tab(admin, "What bills next"); await wait(1500);
   const before = await count("billing_candidates", `client_id=eq.${C1}`);
   t = await text(admin);
   const cells = await admin.evaluate(() => document.querySelectorAll("[data-next-runs] [data-run-row]").length);
   rec("W1", "the next three runs show expected work, and reading writes nothing", cells > 0 && t.includes(`GEN ${tag}`) && /projected/i.test(t) && (await count("billing_candidates", `client_id=eq.${C1}`)) === before, `rows=${cells} candidates=${before}`);
   rec("W0", "a package's services read as Package in the table", /Package/.test(await admin.evaluate(() => document.querySelector("[data-next-runs]").innerText)));
-  await admin.evaluate(() => { [...document.querySelectorAll("[data-generate] button")].find((b) => b.textContent.trim() === "Generate candidates").click(); }); await wait(4000);
+  await admin.evaluate(() => { [...document.querySelectorAll("[data-generate] button")].find((b) => b.textContent.trim() === "Generate candidates").click(); }); await generated(/Created [1-9]/);
   let result = await admin.evaluate(() => document.querySelector("[data-generate-result]")?.innerText || "");
   const made = await count("billing_candidates", `client_id=eq.${C1}`);
   rec("W2", "generate is explicit and reports its totals", made > before && /Created [1-9]/.test(result), result);
-  await admin.evaluate(() => { [...document.querySelectorAll("[data-generate] button")].find((b) => b.textContent.trim() === "Generate candidates").click(); }); await wait(4000);
+  await admin.evaluate(() => { [...document.querySelectorAll("[data-generate] button")].find((b) => b.textContent.trim() === "Generate candidates").click(); }); await generated(/Created 0/);
   result = await admin.evaluate(() => document.querySelector("[data-generate-result]")?.innerText || "");
   rec("W3", "generating again creates nothing new", (await count("billing_candidates", `client_id=eq.${C1}`)) === made && /Created 0/.test(result), result);
   const oneOff = await admin.evaluate(() => document.querySelector("[data-one-off]").innerText);
@@ -154,7 +157,7 @@ try {
   rec("W5", "no page errors as Admin", admin.errors.length === 0, admin.errors.join("; "));
 
   const firmPage = await login("ADMIN");
-  await firmPage.goto(BASE + "/billing", { waitUntil: "networkidle2", timeout: 60000 }); await wait(3000);
+  await firmPage.goto(BASE + "/billing", { waitUntil: "networkidle2", timeout: 60000 }); await firmPage.waitForSelector("[data-firm-schedule],[data-firm-empty]", { timeout: 45000 }).catch(() => {}); await wait(500);
   const firmBefore = await count("billing_candidates", `client_id=eq.${C1}`);
   const firmView = async () => firmPage.evaluate(() => ({ rows: document.querySelectorAll("[data-firm-row]").length, empty: !!document.querySelector("[data-firm-empty]"), shown: document.querySelector("[data-firm-shown]")?.innerText || "", more: [...document.querySelectorAll("[data-firm-schedule] button")].some((b) => /Load more/.test(b.textContent)), total: document.querySelector("[data-firm-summary] .v")?.innerText || "" }));
   let firm = await firmView();
@@ -184,7 +187,7 @@ try {
   rec("R4", "no page errors as Billing staff", staff.errors.length === 0, staff.errors.join("; "));
   for (const [id, account] of [["R5", "STAFF_COLLECTIONS"], ["R6", "STAFF_UNASSIGNED"]]) {
     const p = await login(account);
-    await p.goto(BASE + "/billing", { waitUntil: "networkidle2", timeout: 60000 }); await wait(1500);
+    await p.goto(BASE + "/billing", { waitUntil: "networkidle2", timeout: 60000 }); await p.waitForFunction(() => location.pathname !== "/billing", { timeout: 15000 }).catch(() => {});
     rec(id, `${account} cannot open Billing`, new URL(p.url()).pathname !== "/billing", new URL(p.url()).pathname);
   }
   const small = await login("STAFF_BILLING"); await small.setViewport({ width: 375, height: 800 }); await open(small);
