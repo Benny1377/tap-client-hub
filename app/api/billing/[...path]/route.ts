@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { DELEGABLE_BILLING_ROLES, effectiveBillingPolicy, requireBillingAccess, requireBillingAction, requireBillingPowerUser, resolveBillingActions, type BillingPolicyRow } from "@/lib/billing-access";
 import { apiError, boundedLimit, cursorDecode, cursorEncode, firmDateISO, isDateOnly, moneyString, mutationResponse, permissionActionFor, toCamel, toPhase2Bundle, toPhase2Candidate } from "@/lib/billing-phase2";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { averageMonthlyCents, centsToMoney, moneyToCents, occurrencesPerYear } from "@/lib/billing-monthly-amount";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -77,22 +78,6 @@ function scheduledMonths(frequency: unknown, financialsMonth: unknown): number[]
     const month = Number(financialsMonth);
     return [Number.isInteger(month) && month >= 1 && month <= 12 ? month : 12];
   }
-  return null;
-}
-function moneyToCents(value: unknown): number | null {
-  if (typeof value !== "string" && typeof value !== "number") return null;
-  const raw = String(value);
-  const match = /^(\d+)(?:\.(\d{1,2}))?$/.exec(raw);
-  if (!match) return null;
-  const cents = Number(match[1]) * 100 + Number((match[2] || "").padEnd(2, "0"));
-  return Number.isSafeInteger(cents) ? cents : null;
-}
-function centsToMoney(value: number) { return `${Math.floor(value / 100)}.${String(value % 100).padStart(2, "0")}`; }
-function monthlyFrequencyDivisor(frequency: unknown): number | null {
-  const value = typeof frequency === "string" ? frequency.trim().toLowerCase() : "";
-  if (value === "monthly") return 1;
-  if (value === "quarterly") return 3;
-  if (value === "annual" || value === "yearly") return 12;
   return null;
 }
 export async function generateFromOperations(db: ReturnType<typeof createAdminClient>, actor: string, input: Row) {
@@ -337,19 +322,23 @@ async function clientSummaryGet(request: NextRequest) {
     const price = Array.isArray(resolved) ? resolved[0] : resolved;
     services.push({ clientServiceId: row.id, serviceCode: service.code, serviceName: service.name, active: row.active, frequency: row.frequency, priceState: price?.unit_amount == null ? "unpriced" : "priced", unitAmount: price?.unit_amount == null ? null : moneyString(price.unit_amount), bundleName: null });
   }
-  const bundles = (bundleRows || []).map((row: Row) => ({ ...row, componentIds: (row.billing_bundle_components || []).map((component: Row) => component.client_service_id) }));
+  type ClientSummaryBundle = Row & { id: string; name: string; unit_amount: string | number; componentIds: string[] };
+  const bundles: ClientSummaryBundle[] = (bundleRows || []).map((row: Row) => ({
+    ...row,
+    componentIds: (row.billing_bundle_components || []).map((component: Row) => String(component.client_service_id)),
+  }));
   const bundledServiceIds = new Set<string>();
-  let monthlyCents = 0;
+  let monthlyCents = 0n;
   let monthlyAmountComplete = true;
   let unpricedServiceCount = 0;
   for (const bundle of bundles) {
     const components = bundle.componentIds.filter((id: string) => services.some((service) => service.clientServiceId === id));
     if (!components.length) continue;
     const componentRows = components.map((id: string) => serviceRows?.find((row: Row) => row.id === id)).filter(Boolean);
-    const divisors = [...new Set(componentRows.map((row: Row) => monthlyFrequencyDivisor(row.frequency)))];
+    const frequencies = [...new Set(componentRows.map((row: Row) => occurrencesPerYear(row.frequency)))];
     const priceCents = moneyToCents(bundle.unit_amount);
-    const divisor = divisors[0];
-    if (divisors.length === 1 && typeof divisor === "number" && divisor > 0 && priceCents !== null) monthlyCents += Math.floor((priceCents + (divisor >> 1)) / divisor);
+    const occurrences = frequencies[0];
+    if (frequencies.length === 1 && occurrences !== null && priceCents !== null) monthlyCents += averageMonthlyCents(priceCents, occurrences);
     else monthlyAmountComplete = false;
     for (const id of components) {
       bundledServiceIds.add(id);
@@ -359,9 +348,10 @@ async function clientSummaryGet(request: NextRequest) {
   }
   for (const service of services) {
     if (bundledServiceIds.has(service.clientServiceId)) continue;
-    const divisor = monthlyFrequencyDivisor(service.frequency), cents = moneyToCents(service.unitAmount);
-    if (divisor && cents !== null) monthlyCents += Math.floor((cents + (divisor >> 1)) / divisor);
-    else if (divisor && cents === null) { monthlyAmountComplete = false; unpricedServiceCount++; }
+    const occurrences = occurrencesPerYear(service.frequency), cents = moneyToCents(service.unitAmount);
+    if (cents === null) { monthlyAmountComplete = false; unpricedServiceCount++; }
+    if (occurrences === null) monthlyAmountComplete = false;
+    else if (cents !== null) monthlyCents += averageMonthlyCents(cents, occurrences);
   }
   const overrides = termRows || [];
   const clientOverride = overrides.find((row: Row) => row.client_service_id == null);
@@ -372,8 +362,8 @@ async function clientSummaryGet(request: NextRequest) {
   const { data: receivables, error: receivablesError } = await db.rpc("get_billing_receivables", { p_client_id: clientId });
   if (receivablesError) return apiError("Unable to load client receivables", "BILLING_READ_FAILED", 500);
   const aging = (receivables?.client_aging || []).find((row: Row) => row.client_id === clientId);
-  const openCents = [aging?.current, aging?.["1_30"], aging?.["31_60"], aging?.["61_90"], aging?.["90_plus"]].reduce((sum: number, amount: unknown) => sum + (moneyToCents(amount) || 0), 0);
-  const pastDueCents = [aging?.["1_30"], aging?.["31_60"], aging?.["61_90"], aging?.["90_plus"]].reduce((sum: number, amount: unknown) => sum + (moneyToCents(amount) || 0), 0);
+  const openCents = [aging?.current, aging?.["1_30"], aging?.["31_60"], aging?.["61_90"], aging?.["90_plus"]].reduce((sum: bigint, amount: unknown) => sum + (moneyToCents(amount) ?? 0n), 0n);
+  const pastDueCents = [aging?.["1_30"], aging?.["31_60"], aging?.["61_90"], aging?.["90_plus"]].reduce((sum: bigint, amount: unknown) => sum + (moneyToCents(amount) ?? 0n), 0n);
   const end = new Date(`${today}T00:00:00.000Z`); end.setUTCDate(end.getUTCDate() + 364);
   const projection = await generateFromOperations(db, "", { from: today, to: end.toISOString().slice(0, 10), clientId, preview: true });
   if (projection.error) return projection.error;

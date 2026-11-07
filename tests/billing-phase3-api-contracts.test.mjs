@@ -58,6 +58,9 @@ test("client summary is client-scoped, permission-gated, and returns ledger and 
   assert.match(summary, /get_billing_receivables/);
   assert.match(summary, /generateFromOperations\(db,[\s\S]*preview: true/);
   assert.match(summary, /monthlyAmount: centsToMoney/);
+  assert.match(summary, /occurrencesPerYear\(service\.frequency\)/);
+  assert.match(summary, /if \(occurrences === null\) monthlyAmountComplete = false/);
+  assert.match(summary, /reduce\(\(sum: bigint/);
 });
 
 test("presentation migration is mirrored byte-for-byte and protects metadata with RLS", () => {
