@@ -322,10 +322,14 @@ declare
   v_source uuid := gen_random_uuid();
   v_row uuid := gen_random_uuid();
   v_credit_row uuid := gen_random_uuid();
+  v_unreviewed_row uuid := gen_random_uuid();
+  v_unstaged_invoice_row uuid := gen_random_uuid();
   v_as_of date := tap_hub_project.collections_firm_today();
   v_check jsonb;
   v_blocked boolean := false;
   v_missing_evidence_blocked boolean := false;
+  v_unreviewed_blocked boolean := false;
+  v_unstaged_invoice_blocked boolean := false;
 begin
   insert into tap_hub_project.collection_import_batches
     (id,file_sha256,storage_path,original_filename,content_type,file_size_bytes,report_type,source_as_of,status,uploaded_by)
@@ -339,9 +343,29 @@ begin
   insert into tap_hub_project.collection_import_rows(id,batch_id,page_number,row_number,raw_text,parsed_fields,review_disposition)
     values (v_credit_row,v_detail,1,2,'Payment | synthetic credit',
       '{"cells":["Payment"],"auto_suggestion":{"disposition":"ignored","fields":{"transaction_type":"Payment"}}}'::jsonb,'ignored');
+  insert into tap_hub_project.collection_import_rows(id,batch_id,page_number,row_number,raw_text,parsed_fields,review_disposition)
+    values (v_unreviewed_row,v_detail,1,3,'Synthetic unresolved invoice row',
+      '{"auto_suggestion":{"disposition":"invoice","confidence":"low"}}'::jsonb,'unreviewed');
   insert into tap_hub_project.collection_import_invoices
     (source_invoice_id,batch_id,invoice_number,customer_name,open_balance,source_as_of,source_row_key,review_status)
     values (v_source,v_detail,'SYN-XCHECK','Synthetic Orchard',42,v_as_of,'1:1','ready');
+  begin
+    perform tap_hub_project.cross_check_collection_import_reports(v_summary,v_detail,40,'Unreviewed row must block','00000000-0000-4000-8000-000000000003');
+  exception when sqlstate 'P0001' then
+    v_unreviewed_blocked := position('every invoice source row must be reviewed' in sqlerrm) > 0;
+  end;
+  if not v_unreviewed_blocked then raise exception 'Cross-check did not refuse while a source invoice row was unreviewed'; end if;
+  update tap_hub_project.collection_import_rows set review_disposition='header' where id=v_unreviewed_row;
+  insert into tap_hub_project.collection_import_rows(id,batch_id,page_number,row_number,raw_text,parsed_fields,review_disposition)
+    values (v_unstaged_invoice_row,v_detail,1,4,'Synthetic invoice suggestion without staged identity',
+      '{"auto_suggestion":{"disposition":"invoice","confidence":"high"}}'::jsonb,'invoice');
+  begin
+    perform tap_hub_project.cross_check_collection_import_reports(v_summary,v_detail,40,'Unstaged invoice must block','00000000-0000-4000-8000-000000000003');
+  exception when sqlstate 'P0001' then
+    v_unstaged_invoice_blocked := position('every invoice source row must be reviewed' in sqlerrm) > 0;
+  end;
+  if not v_unstaged_invoice_blocked then raise exception 'Cross-check did not refuse an invoice row without a staged identity'; end if;
+  update tap_hub_project.collection_import_rows set review_disposition='header' where id=v_unstaged_invoice_row;
   begin
     perform tap_hub_project.cross_check_collection_import_reports(v_summary,v_detail,40,'Missing amount must block','00000000-0000-4000-8000-000000000003');
   exception when sqlstate 'P0001' then v_missing_evidence_blocked := true;

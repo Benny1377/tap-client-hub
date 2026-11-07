@@ -77,11 +77,26 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       }
     }
   }
-  const suggestions = parsed.report_type === "aging_detail"
+  const extractedSuggestions = parsed.report_type === "aging_detail"
     ? suggestCollectionsPdfRows(parsed.lines, summaryLines)
     : parsed.report_type === "aging_summary"
       ? parsed.lines.map(() => ({ disposition: "ignored" as const, confidence: "high" as const, reason: "Summary reports are aggregate cross-check evidence, not invoice rows" }))
       : parsed.lines.map(() => ({ disposition: "unreviewed" as const, confidence: "low" as const, reason: "Automatic invoice mapping is available only for recognized QuickBooks layouts" }));
+  const textCounts = new Map<string, number>();
+  for (const line of parsed.lines) {
+    const key = line.text.normalize("NFKC").replace(/\s+/g, " ").trim().toLocaleLowerCase();
+    if (key) textCounts.set(key, (textCounts.get(key) || 0) + 1);
+  }
+  const suggestions = extractedSuggestions.map((suggestion, index) => {
+    const line = parsed.lines[index];
+    const key = line.text.normalize("NFKC").replace(/\s+/g, " ").trim().toLocaleLowerCase();
+    if (suggestion.disposition !== "invoice" || (textCounts.get(key) || 0) < 2) return suggestion;
+    return {
+      ...suggestion,
+      confidence: "low" as const,
+      reason: "This invoice text appears more than once in the report; inspect the row before matching",
+    };
+  });
   const pageRows = new Map<number, number>();
   const rows = parsed.lines.map((line, index) => {
     const rowNumber = (pageRows.get(line.page) || 0) + 1;
@@ -104,7 +119,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       return NextResponse.json({ error: "The refreshed read disagrees with the report details already confirmed. Nothing was changed.", code: "IMPORT_REFRESH_METADATA_CONFLICT" }, { status: 409, headers: NO_STORE });
     }
     const { data: existingRows, error: existingRowsError } = await db.from("collection_import_rows")
-      .select("id,page_number,row_number,source_invoice_id,review_disposition,duplicate_of,exact_duplicate").eq("batch_id", id).order("page_number").order("row_number");
+      .select("id,page_number,row_number,raw_text,source_invoice_id,review_disposition,duplicate_of,exact_duplicate").eq("batch_id", id).order("page_number").order("row_number");
     if (existingRowsError || !existingRows) return NextResponse.json({ error: "Unable to safely refresh existing report rows", code: "IMPORT_REFRESH_READ_FAILED" }, { status: 500, headers: NO_STORE });
     if (existingRows.length !== rows.length || existingRows.some((row, index) => row.page_number !== rows[index].page_number || row.row_number !== rows[index].row_number)) {
       return NextResponse.json({ error: "The refreshed extraction has different line boundaries. Existing review was preserved.", code: "IMPORT_REFRESH_SHAPE_CHANGED" }, { status: 409, headers: NO_STORE });
@@ -116,6 +131,11 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       const suggestion = suggestions[index];
       const parsedFields = { ...rows[index].parsed_fields } as Record<string, unknown>;
       const update: Record<string, unknown> = { parsed_fields: parsedFields };
+      const fingerprint = existing.raw_text.normalize("NFKC").replace(/\s+/g, " ").trim().toLocaleLowerCase();
+      const confirmedSameText = Boolean(fingerprint) && existingRows.some((other, otherIndex) =>
+        otherIndex !== index && other.source_invoice_id !== null
+        && other.raw_text.normalize("NFKC").replace(/\s+/g, " ").trim().toLocaleLowerCase() === fingerprint,
+      );
       // Older builds marked repeated raw text as duplicate without enough
       // evidence to distinguish a repeated transaction from a repeated line.
       // These were machine-only flags (the review API never writes duplicate_of).
@@ -136,6 +156,17 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
         }
         update.duplicate_of = null;
         update.exact_duplicate = false;
+      }
+      // Repair rows already restored by v4: if the same source text is already
+      // attached to a confirmed invoice, require a person to distinguish a
+      // second transaction from a duplicate before automatic matching.
+      if (suggestion.disposition === "invoice" && confirmedSameText) {
+        parsedFields.auto_suggestion = {
+          ...(parsedFields.auto_suggestion as Record<string, unknown>),
+          confidence: "low",
+          reason: "This invoice text is already attached to another confirmed row; inspect before matching",
+        };
+        update.review_disposition = "unreviewed";
       }
       if (existing.review_disposition === "unreviewed" && (suggestion.disposition === "header" || suggestion.disposition === "summary" || suggestion.disposition === "ignored")) {
         update.review_disposition = suggestion.disposition;

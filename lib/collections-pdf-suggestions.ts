@@ -1,6 +1,6 @@
 import type { PdfTextLine } from "@/lib/collections-pdf-parser";
 
-export const COLLECTIONS_PDF_SUGGESTION_PARSER_VERSION = "quickbooks-aging-detail-v4";
+export const COLLECTIONS_PDF_SUGGESTION_PARSER_VERSION = "quickbooks-aging-detail-v5";
 
 export type SuggestedInvoiceFields = {
   transaction_type: string;
@@ -25,7 +25,7 @@ export type SuggestedNonInvoiceFields = {
 export type PdfRowSuggestion =
   | { disposition: "header" | "summary"; confidence: "high"; reason: string }
   | { disposition: "ignored"; confidence: "high"; reason: string; fields: SuggestedNonInvoiceFields }
-  | { disposition: "invoice"; confidence: "high"; reason: string; fields: SuggestedInvoiceFields }
+  | { disposition: "invoice"; confidence: "high" | "low"; reason: string; fields: SuggestedInvoiceFields }
   | { disposition: "unreviewed"; confidence: "low"; reason: string };
 
 type HeaderMap = Partial<Record<keyof SuggestedInvoiceFields | "po_number", number>>;
