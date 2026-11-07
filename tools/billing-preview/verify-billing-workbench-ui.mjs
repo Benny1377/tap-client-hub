@@ -168,6 +168,7 @@ try {
   await tab(staff, "Clients & prices");
   await staff.evaluate((id) => document.querySelector(`[data-client-row="${id}"] button`).click(), C1); await wait(2500);
   rec("R1", "Billing staff see prices read-only", (await text(staff)).includes(`GEN ${tag}`) && !(await staff.$('[data-form="override"]')) && !(await staff.$('[data-form="bundle"]')));
+  await staff.waitForSelector("[data-client-summary]", { timeout: 45000 }).catch(() => {});
   const money = await staff.evaluate(async (id) => { const api = await (await fetch(`/api/billing/clients/summary?clientId=${id}`)).json(); const stats = [...document.querySelectorAll("[data-client-summary] .stat .v")].map((e) => e.innerText); return { api: api.monthlyAmount, open: api.openBalance, shown: stats, note: document.querySelector("[data-monthly-note]")?.innerText || "", complete: api.monthlyAmountComplete, prices: document.querySelectorAll("[data-service-price]").length }; }, C1);
   const digits = (v) => String(v).replace(/\D/g, "");
   rec("S1", "the client page shows the server's monthly and open amounts", money.shown.length === 4 && digits(money.shown[0]) === digits(money.api) && digits(money.shown[2]) === digits(money.open), `shown=${money.shown.length}`);
