@@ -31,7 +31,7 @@ begin
   values (v_old_invoice,'Fixture',1,100,100),(v_later_invoice,'Fixture',1,100,100),
     (v_pending_invoice,'Fixture',1,100,100),(v_catchup_invoice,'Fixture',1,100,100),
     (v_early_invoice,'Fixture',1,100,100);
-  update tap_hub_project.invoices i set status = 'issued', invoice_number = v.n, issue_date = v.d1, due_date = v.d2 from (values
+  update tap_hub_project.invoices i set status = 'issued', invoice_number = v.n, issue_date = v.d1, due_date = v.d2, presentation_snapshot = '{"firmName":"Synthetic fixture"}'::jsonb from (values
     (v_old_invoice,'TST-'||substr(v_old_invoice::text,1,8),v_today-100,v_today-90),
     (v_later_invoice,'TST-'||substr(v_later_invoice::text,1,8),v_today-40,v_today-30),
     (v_pending_invoice,'TST-'||substr(v_pending_invoice::text,1,8),v_today-56,v_today-46),
