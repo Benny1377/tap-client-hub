@@ -73,6 +73,18 @@ test("presentation migration is mirrored byte-for-byte and protects metadata wit
   assert.match(migration, /grant execute[\s\S]*to service_role/);
 });
 
+test("invoice issue snapshots firm presentation and the database prevents later edits", () => {
+  const migration = read("supabase/migrations/20261107150120_billing_issue_presentation_snapshot.sql");
+  const mirror = read("tools/sandbox/supabase/migrations/20261107150120_billing_issue_presentation_snapshot.sql");
+  assert.equal(mirror, migration);
+  assert.match(migration, /add column if not exists presentation_snapshot jsonb/);
+  assert.match(migration, /presentationSnapshot|firmName/);
+  assert.match(migration, /presentation_snapshot=v_presentation_snapshot/);
+  assert.match(migration, /issued invoice presentation snapshot is immutable/);
+  const reset = read("tools/collections-local/reset.sh");
+  assert.match(reset, /20261107150120_billing_issue_presentation_snapshot\.sql/);
+});
+
 test("invoice list adds candidate provenance without returning the junction payload", () => {
   const route = read("app/api/billing/invoices/route.ts");
   assert.match(route, /invoice_lines\(\*, billing_candidate_line_links\(candidate_id,active\)\)/);
@@ -96,6 +108,9 @@ test("Phase 3 contract records all review clarifications and new read shapes", (
     "sourceIdentity}],nextCursor,summary",
     "monthlyAmount",
     "monthlyAmountComplete,unpricedServiceCount",
+    "Quarterly schedule candidates use January, April, July, and October month-end dates",
+    "Bi-Weekly amounts contribute to the annualized monthly estimate, but dates are not projected or generated until Operations provides a billing anchor",
+    "presentationSnapshot",
     "invoiceNumberPrefix:\"TAP\"",
     "candidateIds",
     "created:false",

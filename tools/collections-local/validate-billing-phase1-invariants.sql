@@ -31,7 +31,7 @@ begin
     if sqlerrm not like 'invariant_violation:%' then raise; end if;
   end;
 
-  update tap_hub_project.invoices set status = 'issued', invoice_number = 'LOCAL-INVARIANT-' || replace(v_invoice_id::text, '-', ''), issue_date = current_date, due_date = current_date + 15 where id = v_invoice_id;
+  update tap_hub_project.invoices set status = 'issued', invoice_number = 'LOCAL-INVARIANT-' || replace(v_invoice_id::text, '-', ''), issue_date = current_date, due_date = current_date + 15, presentation_snapshot = '{"firmName":"Synthetic fixture"}'::jsonb where id = v_invoice_id;
 
   begin
     update tap_hub_project.invoice_lines set description = 'Mutated issued line' where id = v_line_id;

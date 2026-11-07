@@ -69,6 +69,8 @@ export interface Invoice {
   voided_by: string | null;
   voided_at: string | null;
   void_reason: string | null;
+  /** Firm identity/footer copied atomically when issued; null for drafts and legacy issued rows. */
+  presentation_snapshot?: { firmName?: string; tagline?: string; invoiceFooter?: string } | null;
   invoice_lines: InvoiceLine[];
 }
 

@@ -47,3 +47,23 @@ Status: Owner decisions recorded; implementation is on this branch and the payro
 ## Related implementation branch
 
 `codex/payroll-credential-fields-ui` is based on Engineer A's `codex/billing-phase2-matrix` at `4ee043f`; it contains the UI mitigation and tests, and includes the previously reviewed payroll API fix (`1c771fb`) and Preview matrix (`7d202fd`) in its history. See the same-named owner-decision handoff on that branch for its files and validation.
+
+## 2026-11-07 follow-up
+
+Engineer A reports commit `8a0b486` passes the full typecheck/build and the Phase 3 read-only Preview check 23/23. The Preview pagination probe returned all 30 unique rows at limits 1, 7, and 50, confirming the sandbox has `20261107140000_billing_firm_schedule_paging.sql`. No work has been merged to `dev` or `main`. Engineer A's final hosted workbench check is still pending on the follow-up to `616890c`; the client “What bills next” first-100-item defect was fixed there and needs the final hosted rerun.
+
+Owner decisions for the Phase 3 amendment:
+
+- At invoice issue, atomically snapshot `{firmName,tagline,invoiceFooter}` beside the remittance snapshot. Draft previews may use live settings; issued invoice rendering uses the immutable saved snapshot. Existing issued invoices are not rewritten.
+- Quarterly recurring schedule dates remain January, April, July, and October month ends.
+- Bi-Weekly remains a supported annualized frequency for monthly estimates (26 occurrences/year), but no billing dates are inferred without an Operations anchor. Generation reports it as source-incomplete; the schedule does not invent dates.
+- The owner approved cleanup of the synthetic Billing data listed by Engineer A, but it must wait until the final hosted Billing check is complete. Preserve immutable ledger/audit evidence and Collections data; Engineer A should provide the exact manifest/tagged targets before a scoped cleanup is prepared. No shared-sandbox rows have been deleted by this branch.
+
+Local implementation follow-up on `codex/billing-phase3-post-integration-fixes` (included in this reviewed push):
+
+- Client summary Operations reads now batch client-service IDs and candidate-price RPC calls run with a concurrency cap of eight to reduce the prior N+1 latency risk.
+- The transactional firm-schedule SQL test now checks the random-ID row across both pages, avoiding an order-dependent assertion.
+- Forward migration `20261107150120_billing_issue_presentation_snapshot.sql` adds the issue-time presentation snapshot and a database guard against changing it after issue. The root migration, sandbox mirror, reset entry and invoice serializer/type/test are included. The migration has not been applied to the shared sandbox.
+- Local focused route, serializer, and Phase 3 contract tests: 31/31 passed. `node --test tests/*.test.mjs`: 156/156 passed. `bash tools/collections-local/reset.sh --local`, `bash tools/collections-local/test.sh --local`, and `psql postgresql://postgres:postgres@127.0.0.1:55322/postgres -X -v ON_ERROR_STOP=1 -f tools/collections-local/validate-billing-phase1-invariants.sql` all passed, including issue snapshot creation and post-issue immutability. `git diff --check` passes.
+- `npm run typecheck` reports no errors in changed Billing files; the only error in this checkout remains the pre-existing missing `pdfjs-dist/legacy/build/pdf.mjs` declaration. A production build was attempted but is unverified: Next/Turbopack rejected the temporary out-of-worktree `node_modules` symlink used to expose the existing checkout dependencies. That link was removed; no dependency was installed.
+- Do not represent the local follow-up as Preview-tested or as a Phase 3 closeout. Engineer A must review the contract amendment, deploy the matching code/migration to the test Preview, and complete the final hosted workbench check.

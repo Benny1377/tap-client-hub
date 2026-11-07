@@ -60,14 +60,17 @@ test("candidate source is a canonical nested object", () => {
   });
 });
 
-test("invoice serializer emits camelCase lines, decimal quantities, and active provenance", () => {
+test("invoice serializer emits camelCase snapshots, lines, decimal quantities, and active provenance", () => {
   assert.deepEqual(api.toPhase2Invoice({
-    id: "invoice-1", invoice_number: null, invoice_lines: [{
+    id: "invoice-1", invoice_number: null,
+    presentation_snapshot: { firmName: "TAP Associates, LLC", tagline: "Tax and accounting" },
+    invoice_lines: [{
       id: "line-1", quantity: "1.2", unit_amount: "10", amount: "12",
       billing_candidate_line_links: [{ candidate_id: "candidate-1", active: true }, { candidate_id: "candidate-2", active: false }],
     }],
   }), {
     id: "invoice-1", invoiceNumber: null,
+    presentationSnapshot: { firmName: "TAP Associates, LLC", tagline: "Tax and accounting" },
     lines: [{ id: "line-1", quantity: "1.2000", unitAmount: "10.00", amount: "12.00", candidateIds: ["candidate-1"] }],
   });
 });

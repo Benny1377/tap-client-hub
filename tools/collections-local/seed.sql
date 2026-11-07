@@ -54,9 +54,11 @@ values
 select set_config('tap_hub.actor_id', '00000000-0000-4000-8000-000000000001', false);
 
 update tap_hub_project.invoices
-set status = 'issued', invoice_number = 'LOCAL-001', issue_date = tap_hub_project.collections_firm_today() - 70, due_date = tap_hub_project.collections_firm_today() - 40
+set status = 'issued', invoice_number = 'LOCAL-001', issue_date = tap_hub_project.collections_firm_today() - 70, due_date = tap_hub_project.collections_firm_today() - 40,
+    presentation_snapshot = (select jsonb_strip_nulls(jsonb_build_object('firmName', firm_name, 'tagline', tagline, 'invoiceFooter', invoice_footer)) from tap_hub_project.billing_presentation_settings where singleton)
 where id = '20000000-0000-4000-8000-000000000001';
 
 update tap_hub_project.invoices
-set status = 'issued', invoice_number = 'LOCAL-002', issue_date = tap_hub_project.collections_firm_today() - 45, due_date = tap_hub_project.collections_firm_today() - 15
+set status = 'issued', invoice_number = 'LOCAL-002', issue_date = tap_hub_project.collections_firm_today() - 45, due_date = tap_hub_project.collections_firm_today() - 15,
+    presentation_snapshot = (select jsonb_strip_nulls(jsonb_build_object('firmName', firm_name, 'tagline', tagline, 'invoiceFooter', invoice_footer)) from tap_hub_project.billing_presentation_settings where singleton)
 where id = '20000000-0000-4000-8000-000000000002';
