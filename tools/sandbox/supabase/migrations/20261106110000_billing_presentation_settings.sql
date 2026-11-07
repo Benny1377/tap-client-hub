@@ -112,7 +112,7 @@ with service_data as materialized (
 ), page as (
   select * from projected p where p_after_date is null
     or (p.candidate_date,p.client_name,p.client_service_id,p.source_identity)>(p_after_date,p_after_client,p_after_service,p_after_identity)
-  order by candidate_date,client_name,client_service_id,source_identity limit least(greatest(p_limit,1),101)
+  order by candidate_date,client_name,client_service_id,source_identity limit least(greatest(coalesce(p_limit,1),1),100)+1
 )
 select jsonb_build_object(
   'items',coalesce((select jsonb_agg(jsonb_build_object(
@@ -120,8 +120,8 @@ select jsonb_build_object(
     'serviceName',service_name,'candidateDate',candidate_date,'period',period,'description',description,
     'unit',unit,'unitAmount',unit_amount::numeric(12,2)::text,'priceState',price_state,
     'sourceAdapter',source_adapter,'sourceIdentity',source_identity
-  ) order by candidate_date,client_name,client_service_id,source_identity) from (select * from page limit least(greatest(p_limit,1),100)) p),'[]'::jsonb),
-  'hasMore',(select count(*)>least(greatest(p_limit,1),100) from page),
+  ) order by candidate_date,client_name,client_service_id,source_identity) from (select * from page limit least(greatest(coalesce(p_limit,1),1),100)) p),'[]'::jsonb),
+  'hasMore',(select count(*)>least(greatest(coalesce(p_limit,1),1),100) from page),
   'summary',jsonb_build_object('candidateCount',(select candidate_count from totals),'pricedCount',(select priced_count from totals),
     'unpricedCount',(select unpriced_count from totals),'projectedAmount',(select projected_amount::text from totals))
 );
