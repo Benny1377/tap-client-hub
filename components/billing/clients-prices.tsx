@@ -2,9 +2,9 @@
 
 import { useEffect, useMemo, useState } from "react";
 import type { ApiResult, BillingApi } from "@/lib/billing-ui/api";
-import type { BillingBundle, BillingCandidate, ClientOption, Invoice, Receivable } from "@/lib/billing-ui/types";
+import type { BillingBundle, BillingCandidate, ClientBillingSummary, ClientOption, Invoice, Receivable } from "@/lib/billing-ui/types";
 import { formatMoney } from "@/lib/billing-ui/view-model";
-import { clientRows, firmToday, nextRunDates, pricedHow, required, runRows, shortDate, type PriceOverride, type ProjectedItem } from "@/lib/billing-ui/workbench";
+import { clientRows, firmToday, monthlyNote, nextRunDates, pricedHow, required, runRows, shortDate, type PriceOverride, type ProjectedItem } from "@/lib/billing-ui/workbench";
 import { ReasonAction } from "./candidate-panels";
 import { ErrorBanner, LedgerForm, StatusBadge, type FormValues } from "./ui";
 import { BillingChain, PricedChip } from "./what-next";
@@ -91,6 +91,7 @@ export function ClientPage({ api, client, invoices, receivables, canManage, onBa
   const [overrides, setOverrides] = useState<PriceOverride[]>([]);
   const [bundles, setBundles] = useState<BillingBundle[]>([]);
   const [projected, setProjected] = useState<ProjectedItem[]>([]);
+  const [summary, setSummary] = useState<ClientBillingSummary | null>(null);
   const [failure, setFailure] = useState<Failure | null>(null);
   const [refresh, setRefresh] = useState(0);
   const today = firmToday();
@@ -98,11 +99,13 @@ export function ClientPage({ api, client, invoices, receivables, canManage, onBa
 
   useEffect(() => {
     let current = true;
-    Promise.all([api.clientServices(client.id), api.clientPricing(client.id), api.schedule({ from: `${today.slice(0, 7)}-01`, to: runs[runs.length - 1], clientId: client.id })]).then(([s, p, sched]) => {
+    Promise.all([api.clientServices(client.id), api.clientPricing(client.id), api.schedule({ from: `${today.slice(0, 7)}-01`, to: runs[runs.length - 1], clientId: client.id }), api.clientSummary(client.id)]).then(([s, p, sched, sum]) => {
       if (!current) return;
       if (s.ok) setServices(s.data.items); else setFailure(asFailure(s));
       if (p.ok) { setOverrides(p.data.overrides as unknown as PriceOverride[]); setBundles(p.data.bundles || []); } else setFailure(asFailure(p));
       if (sched.ok) setProjected(sched.data.items as unknown as ProjectedItem[]);
+      // The summary also needs candidates.view. Without it the rest of the page still works, so a 403 hides the row.
+      if (sum.ok) setSummary(sum.data); else if (sum.ok === false && sum.kind !== "forbidden") setFailure(asFailure(sum));
     });
     return () => { current = false; };
   }, [api, client.id, refresh, runs, today]);
@@ -132,16 +135,30 @@ export function ClientPage({ api, client, invoices, receivables, canManage, onBa
         <div className="stat"><div className="k">Open invoices</div><div className="v num" style={{ color: owed.length ? "var(--red)" : undefined }}>{owed.length}</div><div className="d">{daysPast ? `${daysPast} days past due` : "nothing past due"}</div></div>
       </div>
 
+      {summary ? (
+        <div className="g4" style={{ marginBottom: 16 }} data-client-summary>
+          <div className="stat"><div className="k">Per month</div><div className="v num">{formatMoney(summary.monthlyAmount)}</div><div className="d" data-monthly-note style={summary.monthlyAmountComplete ? undefined : { color: "var(--amber)" }}>{monthlyNote(summary.monthlyAmountComplete, summary.unpricedServiceCount)}</div></div>
+          <div className="stat"><div className="k">Next invoice</div><div className="v num">{summary.nextInvoiceDate ? shortDate(summary.nextInvoiceDate) : "—"}</div><div className="d">{summary.nextInvoiceDate ? summary.nextInvoiceDate.slice(0, 4) : "nothing scheduled"}</div></div>
+          <div className="stat"><div className="k">Open balance</div><div className="v num">{formatMoney(summary.openBalance)}</div><div className="d">issued, still owed</div></div>
+          <div className="stat"><div className="k">Past due</div><div className="v num" style={{ color: Number(summary.pastDueAmount) > 0 ? "var(--red)" : undefined }}>{formatMoney(summary.pastDueAmount)}</div><div className="d">{daysPast ? `oldest ${daysPast} days` : "nothing past due"}</div></div>
+        </div>
+      ) : null}
+
       <div className="card" style={{ marginBottom: 16 }} data-client-services>
         <h3>Services from Operations<span>what they buy</span></h3>
         <div className="svcpick">
-          {services.map((service) => (
-            <div key={service.id} style={service.active ? undefined : { opacity: 0.5 }}>
+          {services.map((service) => {
+            const priced = summary?.services.find((item) => item.clientServiceId === service.id);
+            return (
+            <div key={service.id} data-service-row={service.id} style={service.active ? undefined : { opacity: 0.5 }}>
               <span>{service.serviceName || "Service"}</span>
               {service.frequency ? <span className="sub">{service.frequency}</span> : null}
+              {/* Each of a package's services carries the whole package price, so the package is named instead. */}
+              {priced && service.active ? <span className="sub num" data-service-price>{priced.bundleName ? priced.bundleName : priced.unitAmount === null ? "No price" : formatMoney(priced.unitAmount)}</span> : null}
               {service.active ? <PricedChip how={pricedHow(service.id, today, overrides, bundles)} /> : <span className="sub">off</span>}
             </div>
-          ))}
+            );
+          })}
           {services.length === 0 ? <p style={{ fontSize: 13, color: "var(--muted)" }}>No services on this client.</p> : null}
         </div>
         <p className="fine" style={{ border: "none", marginTop: 10, paddingTop: 0 }}>A package comes first, then the client&apos;s own price, then the rate card. Changing a price never rewrites existing candidates, drafts or invoices.</p>

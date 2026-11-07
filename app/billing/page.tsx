@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { readyData } from "@/lib/billing-ui/ledger";
 import type { ApiResult } from "@/lib/billing-ui/api";
-import type { CandidateState, Invoice, Payment, Receivable } from "@/lib/billing-ui/types";
+import type { BillingPresentation, CandidateState, Invoice, Payment, Receivable } from "@/lib/billing-ui/types";
 import { receivableFor } from "@/lib/billing-ui/view-model";
 import { useCandidates } from "@/components/billing/use-candidates";
 import { useLedger } from "@/components/billing/use-ledger";
@@ -59,6 +59,7 @@ export default function BillingPage() {
   const [tab, setTab] = useState<TabId>("what-next");
   const [openClientId, setOpenClientId] = useState<string | null>(null);
   const [remittance, setRemittance] = useState<Remittance | null>(null);
+  const [presentation, setPresentation] = useState<BillingPresentation | null>(null);
   const [clientId, setClientId] = useState<string | null>(null);
   const [selectedInvoiceId, setSelectedInvoiceId] = useState<string | null>(null);
   const [filter, setFilter] = useState<InvoiceFilter>("all");
@@ -76,6 +77,7 @@ export default function BillingPage() {
   useEffect(() => {
     let current = true;
     api.remittance().then((result) => { if (current && result.ok) setRemittance(result.data.remittance); });
+    api.presentation().then((result) => { if (current && result.ok) setPresentation(result.data); });
     return () => { current = false; };
   }, [api]);
   const canViewCandidates = granted.includes("candidates.view");
@@ -166,7 +168,7 @@ export default function BillingPage() {
               }}
             />
               </div>
-              <InvoiceDocument invoice={selectedInvoice} clientName={clientNames[selectedInvoice.client_id] || "Client"} receivable={receivableFor(selectedInvoice.id, receivables)} remittance={remittance} />
+              <InvoiceDocument invoice={selectedInvoice} clientName={clientNames[selectedInvoice.client_id] || "Client"} receivable={receivableFor(selectedInvoice.id, receivables)} remittance={remittance} presentation={presentation} />
             </div>
           </section>
         ) : (
@@ -280,6 +282,7 @@ export default function BillingPage() {
           clientId={clientId}
           clients={clients}
           canGenerate={canManageCandidates}
+          canViewFirm={canViewCandidates && granted.includes("pricing.view")}
           canDraft={canManageDrafts}
           version={candidateVersion}
           draftCount={drafts}
@@ -310,7 +313,7 @@ export default function BillingPage() {
       </TabPanel>
 
       <TabPanel id="settings" active={tab}>
-        <BillingSettings api={api} clientId={clientId} clients={clients} actions={granted} />
+        <BillingSettings api={api} clientId={clientId} clients={clients} actions={granted} onPresentation={setPresentation} />
       </TabPanel>
 
       <TabPanel id="receivables" active={tab}>

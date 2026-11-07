@@ -170,4 +170,27 @@ check("client rows count, and never add money", () => {
   assert.deepEqual({ open: row.openInvoices, past: row.daysPastDue, ready: row.ready, none: row.noPrice }, { open: 1, past: 4, ready: 1, none: 0 });
 });
 
+check("a package row in the firm schedule is known by its source", () => {
+  assert.equal(work.isPackageRow("bundle:b-1:2026-11-30"), true);
+  assert.equal(work.isPackageRow("schedule:s-1:2026-11"), false);
+});
+
+check("the monthly note never reads a partial total as complete", () => {
+  assert.equal(work.monthlyNote(true, 0), "average month");
+  assert.match(work.monthlyNote(false, 2), /partial · 2 services have no price/);
+  assert.match(work.monthlyNote(false, 1), /1 service has no price/);
+  assert.match(work.monthlyNote(false, 0), /partial/);
+});
+
+check("firm details show on a draft only, so an issued invoice never changes", () => {
+  const { InvoiceDocument } = loadTs("components/billing/invoice-document.tsx");
+  const presentation = { firmName: "Firm Now", tagline: "Tag now", invoiceFooter: "Foot now", invoiceNumberPrefix: "TAP", updatedAt: null };
+  const remittance = { payeeName: "Saved Payee", address: null, instructions: null };
+  const render = (status) => renderToStaticMarkup(h(InvoiceDocument, { invoice: { id: "i-1", client_id: "c-1", status, invoice_number: status === "draft" ? null : "TAP-1", invoice_lines: [] }, clientName: "Client", receivable: null, remittance, presentation }));
+  const draft = render("draft");
+  assert.match(draft, /Firm Now/); assert.match(draft, /Tag now/); assert.match(draft, /Foot now/);
+  const issued = render("issued");
+  assert.match(issued, /Saved Payee/); assert.doesNotMatch(issued, /Firm Now|Tag now|Foot now/);
+});
+
 console.log(`billing UI candidate checks passed (${passed})`);

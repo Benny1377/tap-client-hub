@@ -2,7 +2,7 @@
 
 import { useEffect, useState, type ReactNode } from "react";
 import type { ApiResult, BillingApi } from "@/lib/billing-ui/api";
-import type { ClientOption } from "@/lib/billing-ui/types";
+import type { BillingPresentation, ClientOption } from "@/lib/billing-ui/types";
 import { formatMoney } from "@/lib/billing-ui/view-model";
 import { firmToday, required } from "@/lib/billing-ui/workbench";
 import { ReasonAction } from "./candidate-panels";
@@ -25,7 +25,7 @@ const SUB_TABS = [
 ] as const;
 type SubTab = (typeof SUB_TABS)[number]["id"];
 
-export function BillingSettings({ api, clientId, clients, actions }: { api: BillingApi; clientId: string | null; clients: ClientOption[]; actions: string[] }) {
+export function BillingSettings({ api, clientId, clients, actions, onPresentation }: { api: BillingApi; clientId: string | null; clients: ClientOption[]; actions: string[]; onPresentation: (next: BillingPresentation) => void }) {
   const [tab, setTab] = useState<SubTab>("firm");
   const tabs = SUB_TABS.filter((item) => item.id !== "access" || actions.includes("policy.manage"));
   return (
@@ -35,12 +35,60 @@ export function BillingSettings({ api, clientId, clients, actions }: { api: Bill
           {tabs.map((item) => <button key={item.id} type="button" className={tab === item.id ? "on" : undefined} aria-pressed={tab === item.id} onClick={() => setTab(item.id)}>{item.label}</button>)}
         </div>
       </div>
+      {tab === "firm" ? <FirmDetails api={api} canEdit={actions.includes("policy.manage")} onSaved={onPresentation} /> : null}
       {tab === "firm" ? <FirmTerms api={api} clientId={clientId} clients={clients} actions={actions} /> : null}
       {tab === "pay" ? <GettingPaid api={api} actions={actions} /> : null}
       {tab === "rates" ? <RateCards api={api} actions={actions} /> : null}
       {tab === "rules" ? <CompletionRules api={api} clientId={clientId} actions={actions} /> : null}
       {tab === "access" ? <PermissionPolicy api={api} /> : null}
       {!actions.includes("policy.manage") ? <p className="fine">Policy editing is restricted to Owner/Admin.</p> : null}
+    </div>
+  );
+}
+
+/** How the firm reads on a draft invoice. Only Owner/Admin may save; the invoice number prefix is fixed. */
+function FirmDetails({ api, canEdit, onSaved }: { api: BillingApi; canEdit: boolean; onSaved: (next: BillingPresentation) => void }) {
+  const [values, setValues] = useState<BillingPresentation | null>(null);
+  const [failure, setFailure] = useState<Failure | null>(null);
+  const [saved, setSaved] = useState(false);
+  useEffect(() => {
+    let current = true;
+    api.presentation().then((result) => { if (!current) return; if (result.ok) setValues(result.data); else setFailure(asFailure(result)); });
+    return () => { current = false; };
+  }, [api]);
+  const tooLong = (form: FormValues) => Object.fromEntries([["firmName", 160], ["tagline", 500], ["invoiceFooter", 500]].filter(([name, most]) => form[name as string].trim().length > (most as number)).map(([name, most]) => [name, `Keep this to ${most} characters`]));
+  return (
+    <div className="card" style={{ marginBottom: 14 }} data-form="presentation">
+      <h3>Firm details<span>shown on draft invoices</span></h3>
+      {failure ? <ErrorBanner kind={failure.kind} message={failure.message} code={failure.code} /> : null}
+      {values ? (
+        <>
+          {canEdit ? (
+            <LedgerForm
+              key={values.updatedAt || "unsaved"}
+              resetOnSuccess={false}
+              fields={[{ name: "firmName", label: "Firm name" }, { name: "tagline", label: "Tagline", optional: true }, { name: "invoiceFooter", label: "Invoice footer", type: "textarea", optional: true }, { name: "reason", label: "Reason", type: "textarea" }]}
+              initialValues={{ firmName: values.firmName, tagline: values.tagline || "", invoiceFooter: values.invoiceFooter || "", reason: "" }}
+              validate={(form: FormValues) => ({ ...required("firmName", "reason")(form), ...tooLong(form) })}
+              onSubmit={async (form: FormValues) => {
+                // The server replaces every field, so all of them always go; an empty one clears it.
+                const result = await api.updatePresentation({ firmName: form.firmName.trim(), tagline: form.tagline.trim() || null, invoiceFooter: form.invoiceFooter.trim() || null, reason: form.reason.trim() });
+                if (result.ok) { setSaved(true); setValues(result.data); onSaved(result.data); }
+                return result;
+              }}
+              submitLabel="Save firm details"
+            />
+          ) : (
+            <>
+              <div className="fld"><label>Firm name</label><input value={values.firmName} disabled readOnly /></div>
+              <div className="fld"><label>Tagline</label><input value={values.tagline || "None"} disabled readOnly /></div>
+              <div className="fld"><label>Invoice footer</label><input value={values.invoiceFooter || "None"} disabled readOnly /></div>
+            </>
+          )}
+          <div className="fld"><label>Invoice number prefix</label><input value={values.invoiceNumberPrefix} disabled readOnly /><div className="sub">Fixed. Numbers are assigned when an invoice is issued.</div></div>
+          {saved ? <p role="status" className="sub">Saved. Issued invoices don&apos;t change.</p> : null}
+        </>
+      ) : !failure ? <Muted>Loading firm details…</Muted> : null}
     </div>
   );
 }

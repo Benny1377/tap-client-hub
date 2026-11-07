@@ -322,13 +322,15 @@ async function clientSummaryGet(request: NextRequest) {
     const price = Array.isArray(resolved) ? resolved[0] : resolved;
     services.push({ clientServiceId: row.id, serviceCode: service.code, serviceName: service.name, active: row.active, frequency: row.frequency, priceState: price?.unit_amount == null ? "unpriced" : "priced", unitAmount: price?.unit_amount == null ? null : moneyString(price.unit_amount), bundleName: null });
   }
-  type ClientSummaryBundle = Row & { id: string; name: string; unit_amount: string | number; componentIds: string[] };
-  const bundles: ClientSummaryBundle[] = (bundleRows || []).map((row: Row) => ({
-    ...row,
+  type ClientSummaryBundle = { id: string; name: string; unit_amount: string | number | null; componentIds: string[] };
+  const bundles: ClientSummaryBundle[] = (bundleRows || []).map((row: Row): ClientSummaryBundle => ({
+    id: String(row.id),
+    name: String(row.name),
+    unit_amount: row.unit_amount == null ? null : row.unit_amount,
     componentIds: (row.billing_bundle_components || []).map((component: Row) => String(component.client_service_id)),
   }));
   const bundledServiceIds = new Set<string>();
-  let monthlyCents = 0n;
+  let monthlyCents = 0;
   let monthlyAmountComplete = true;
   let unpricedServiceCount = 0;
   for (const bundle of bundles) {
@@ -362,8 +364,8 @@ async function clientSummaryGet(request: NextRequest) {
   const { data: receivables, error: receivablesError } = await db.rpc("get_billing_receivables", { p_client_id: clientId });
   if (receivablesError) return apiError("Unable to load client receivables", "BILLING_READ_FAILED", 500);
   const aging = (receivables?.client_aging || []).find((row: Row) => row.client_id === clientId);
-  const openCents = [aging?.current, aging?.["1_30"], aging?.["31_60"], aging?.["61_90"], aging?.["90_plus"]].reduce((sum: bigint, amount: unknown) => sum + (moneyToCents(amount) ?? 0n), 0n);
-  const pastDueCents = [aging?.["1_30"], aging?.["31_60"], aging?.["61_90"], aging?.["90_plus"]].reduce((sum: bigint, amount: unknown) => sum + (moneyToCents(amount) ?? 0n), 0n);
+  const openCents = [aging?.current, aging?.["1_30"], aging?.["31_60"], aging?.["61_90"], aging?.["90_plus"]].reduce((sum: number, amount: unknown) => sum + (moneyToCents(amount) ?? 0), 0);
+  const pastDueCents = [aging?.["1_30"], aging?.["31_60"], aging?.["61_90"], aging?.["90_plus"]].reduce((sum: number, amount: unknown) => sum + (moneyToCents(amount) ?? 0), 0);
   const end = new Date(`${today}T00:00:00.000Z`); end.setUTCDate(end.getUTCDate() + 364);
   const projection = await generateFromOperations(db, "", { from: today, to: end.toISOString().slice(0, 10), clientId, preview: true });
   if (projection.error) return projection.error;
