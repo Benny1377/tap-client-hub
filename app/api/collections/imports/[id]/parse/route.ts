@@ -114,13 +114,26 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       const existing = existingRows[index];
       if (existing.source_invoice_id) continue;
       const suggestion = suggestions[index];
-      const parsedFields = rows[index].parsed_fields;
+      const parsedFields = { ...rows[index].parsed_fields } as Record<string, unknown>;
       const update: Record<string, unknown> = { parsed_fields: parsedFields };
       // Older builds marked repeated raw text as duplicate without enough
       // evidence to distinguish a repeated transaction from a repeated line.
       // These were machine-only flags (the review API never writes duplicate_of).
       if (existing.review_disposition === "duplicate" && existing.duplicate_of && existing.exact_duplicate) {
-        update.review_disposition = suggestion.disposition;
+        // Restored invoice rows need an explicit person to inspect them: the
+        // earlier auto-duplicate may have been another genuine transaction.
+        // Low confidence keeps them out of the exact-match batch operation.
+        const priorSuggestion = parsedFields.auto_suggestion as Record<string, unknown> | undefined;
+        if (suggestion.disposition === "invoice") {
+          parsedFields.auto_suggestion = {
+            ...priorSuggestion,
+            confidence: "low",
+            reason: "Repeated source text was previously marked as a duplicate; confirm this invoice row manually",
+          };
+          update.review_disposition = "unreviewed";
+        } else {
+          update.review_disposition = suggestion.disposition;
+        }
         update.duplicate_of = null;
         update.exact_duplicate = false;
       }

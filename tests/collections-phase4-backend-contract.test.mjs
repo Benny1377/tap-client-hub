@@ -29,6 +29,9 @@ test("parse results remain staging data until every source line and invoice is r
   assert.match(parse, /review_disposition: autoClassified \? suggestion\.disposition : "unreviewed"/);
   assert.doesNotMatch(parse, /review_disposition: "duplicate"/);
   assert.match(parse, /update\.duplicate_of = null/);
+  assert.match(parse, /confidence: "low"/);
+  assert.match(parse, /Repeated source text was previously marked as a duplicate/);
+  assert.match(parse, /update\.review_disposition = "unreviewed"/);
   assert.match(review, /CLIENT_LINK_REQUIRED|Select an existing TAP Hub client first/);
   assert.match(migration, /review_disposition text not null default 'unreviewed'/);
   assert.match(migration, /every extracted line must be classified before approval/);
@@ -73,6 +76,11 @@ test("customer group headings may contain digits without treating transaction ID
   const suggestions = source("lib/collections-pdf-suggestions.ts");
   assert.match(suggestions, /QuickBooks customer headings can contain digits/);
   assert.match(suggestions, /transaction IDs out/);
+});
+
+test("parser behavior changes use a new version so existing batches can refresh", () => {
+  const suggestions = source("lib/collections-pdf-suggestions.ts");
+  assert.match(suggestions, /COLLECTIONS_PDF_SUGGESTION_PARSER_VERSION = "quickbooks-aging-detail-v4"/);
 });
 
 test("approved import source identities carry across actions and block stale or conflicting balances", () => {
