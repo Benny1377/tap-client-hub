@@ -51,7 +51,9 @@ async function openBilling(page) {
 }
 const back = async (page) => { await page.evaluate(() => document.querySelector("section[aria-label='Invoice detail'] .bk").click()); await wait(1500); };
 const openInvoice = async (page, id) => { await page.evaluate((i) => document.querySelector(`[data-invoice-row="${i}"] button`).click(), id); await wait(1000); };
-const filter = async (page, label) => { await page.waitForSelector("[data-candidates-panel]", { timeout: 20000 }); await page.evaluate((l) => { [...document.querySelectorAll("[data-candidates-panel] button")].find((b) => b.textContent.trim() === l).click(); }, label); await wait(2000); };
+const pickFilter = async (page, label) => { await page.waitForSelector("[data-candidates-panel]", { timeout: 20000 }); await page.evaluate((l) => { [...document.querySelectorAll("[data-candidates-panel] button")].find((b) => b.textContent.trim() === l).click(); }, label); await wait(2000); };
+const loadAll = async (page) => { for (let i = 0; i < 8; i += 1) { const more = await page.evaluate(() => { const b = [...document.querySelectorAll("[data-candidates-panel] button")].find((x) => /Load more/.test(x.textContent)); if (b) b.click(); return !!b; }); if (!more) return; await wait(1800); } };
+const filter = async (page, label) => { await pickFilter(page, label); await loadAll(page); };
 const rows = (page) => page.evaluate(() => [...document.querySelectorAll("[data-candidate-row]")].map((tr) => ({ text: tr.innerText.replace(/\s+/g, " "), checkbox: !!tr.querySelector("input[type=checkbox]"), disabled: !!tr.querySelector("input[type=checkbox]:disabled") })));
 const has = (list, text) => list.find((row) => row.text.includes(text));
 async function reasonAction(page, rowText, action, reason) {
