@@ -22,6 +22,25 @@ begin
 end;
 $$;
 
+-- Client creation must retain the creator while avoiding contact-detail PII
+-- in the generic audit log.
+do $$
+declare
+  v_client uuid := gen_random_uuid();
+  v_actor uuid := '00000000-0000-4000-8000-000000000001';
+  v_detail jsonb;
+begin
+  insert into tap_hub_project.clients(id,name,type,status,created_by)
+    values (v_client,'Synthetic Audit Client','business','active',v_actor);
+  select detail into v_detail from tap_hub_project.audit_log
+    where entity='clients' and entity_id=v_client::text and actor=v_actor and action='insert';
+  if v_detail is null or v_detail->>'name'<>'Synthetic Audit Client'
+    or v_detail ? 'emails' or v_detail ? 'phones' or v_detail ? 'ein' or v_detail ? 'address' then
+    raise exception 'Client creation audit was missing, misattributed, or included contact PII';
+  end if;
+end;
+$$;
+
 -- A reviewer may correct an unrecognized report header only before invoice
 -- review begins; the before/after values are retained and the corrector cannot
 -- approve the same batch.

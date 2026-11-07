@@ -890,6 +890,7 @@ export async function POST(request: Request) {
 
     const clientRecord: Record<string, any> = {
       id: clientId, name, type: type || "Business",
+      created_by: access.identity!.id,
       group_name: group || "", key_name: contact || "", status: "active",
       city: city || "", state: state || "", zip: zip || "",
       address: address || "", ein: ein || "", notes: "",

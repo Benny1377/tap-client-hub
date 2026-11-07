@@ -77,7 +77,12 @@ function customerGroupLabel(text: string): boolean {
   const value = text.trim();
   if (!value || isKnownReportHeading(value) || /^(aging|quickzoom|invoice|payment|total|current|over 90)$/i.test(value)) return false;
   if (/\d{1,2}:\d{2}\s*(am|pm)|\b\d{1,2}\/\d{1,2}\/\d{2,4}\b/i.test(value)) return false;
-  return /[\p{L}]/u.test(value) && !/[\d$]/.test(value);
+  // QuickBooks customer headings can contain digits (for example numbered
+  // entities). Keep dates, amounts, and obvious transaction IDs out, but do
+  // not reject a customer name merely because it includes a digit.
+  if (/[$]/.test(value) || /^\d+(?:[.,]\d+)?$/.test(value)) return false;
+  if (/^(?:inv(?:oice)?|pmt|pay(?:ment)?|chk|check|jrn|je)[\s#-]*\w+$/i.test(value)) return false;
+  return /[\p{L}]/u.test(value);
 }
 
 function isTruncatedCustomerName(value: string): boolean {
