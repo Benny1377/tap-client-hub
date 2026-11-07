@@ -242,7 +242,7 @@ export function ClientPage({ api, client, invoices, receivables, canManage, onBa
             <table><tbody>
               {theirInvoices.map((invoice) => (
                 <tr key={invoice.id} style={{ cursor: "pointer" }} onClick={() => onOpenInvoice(invoice.id)}>
-                  <td className="mono">{invoice.invoice_number ?? "Draft"}</td><td>{invoice.issue_date ?? "—"}</td><td><StatusBadge status={invoice.status} /></td>
+                  <td className="mono"><button type="button" className="lnk" onClick={(event) => { event.stopPropagation(); onOpenInvoice(invoice.id); }}>{invoice.invoice_number ?? "Draft"}</button></td><td>{invoice.issue_date ?? "—"}</td><td><StatusBadge status={invoice.status} /></td>
                 </tr>
               ))}
               {theirInvoices.length === 0 ? <tr><td className="sub">Nothing billed yet.</td></tr> : null}

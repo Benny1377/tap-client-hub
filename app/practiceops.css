@@ -436,6 +436,7 @@ td.mtd.now{background:var(--brand-soft)}
   box-shadow:var(--shadow);margin:0 0 18px}
 .chain .ch{flex:1;padding:11px 14px;border-right:1px solid var(--line2);min-width:0}
 .chain .ch:last-child{border-right:none}
+.chain button.ch{font:inherit;color:inherit;text-align:left;background:transparent;border-top:0;border-bottom:0;border-left:0;cursor:pointer}
 .chain .ch.now{background:var(--brand-soft)}
 .chain .ch.ext{background:var(--card2)}
 .chain .cht{font-size:9px;letter-spacing:.11em;text-transform:uppercase;color:var(--faint);font-weight:700}
