@@ -92,6 +92,7 @@ export function ClientPage({ api, client, invoices, receivables, canManage, onBa
   const [bundles, setBundles] = useState<BillingBundle[]>([]);
   const [projected, setProjected] = useState<ProjectedItem[]>([]);
   const [summary, setSummary] = useState<ClientBillingSummary | null>(null);
+  const [summaryDone, setSummaryDone] = useState(false);
   const [failure, setFailure] = useState<Failure | null>(null);
   const [refresh, setRefresh] = useState(0);
   const today = firmToday();
@@ -99,13 +100,18 @@ export function ClientPage({ api, client, invoices, receivables, canManage, onBa
 
   useEffect(() => {
     let current = true;
-    Promise.all([api.clientServices(client.id), api.clientPricing(client.id), api.schedule({ from: `${today.slice(0, 7)}-01`, to: runs[runs.length - 1], clientId: client.id }), api.clientSummary(client.id)]).then(([s, p, sched, sum]) => {
+    Promise.all([api.clientServices(client.id), api.clientPricing(client.id), api.schedule({ from: `${today.slice(0, 7)}-01`, to: runs[runs.length - 1], clientId: client.id })]).then(([s, p, sched]) => {
       if (!current) return;
       if (s.ok) setServices(s.data.items); else setFailure(asFailure(s));
       if (p.ok) { setOverrides(p.data.overrides as unknown as PriceOverride[]); setBundles(p.data.bundles || []); } else setFailure(asFailure(p));
       if (sched.ok) setProjected(sched.data.items as unknown as ProjectedItem[]);
-      // The summary also needs candidates.view. Without it the rest of the page still works, so a 403 hides the row.
-      if (sum.ok) setSummary(sum.data); else if (sum.ok === false && sum.kind !== "forbidden") setFailure(asFailure(sum));
+    });
+    // The summary is the slow call, so it fills in on its own and never holds up the services and prices.
+    // It also needs candidates.view: without it the rest of the page still works, so a 403 hides the row.
+    api.clientSummary(client.id).then((sum) => {
+      if (!current) return;
+      setSummaryDone(true);
+      if (sum.ok) setSummary(sum.data); else if (sum.kind !== "forbidden") setFailure(asFailure(sum));
     });
     return () => { current = false; };
   }, [api, client.id, refresh, runs, today]);
@@ -142,7 +148,7 @@ export function ClientPage({ api, client, invoices, receivables, canManage, onBa
           <div className="stat"><div className="k">Open balance</div><div className="v num">{formatMoney(summary.openBalance)}</div><div className="d">issued, still owed</div></div>
           <div className="stat"><div className="k">Past due</div><div className="v num" style={{ color: Number(summary.pastDueAmount) > 0 ? "var(--red)" : undefined }}>{formatMoney(summary.pastDueAmount)}</div><div className="d">{daysPast ? `oldest ${daysPast} days` : "nothing past due"}</div></div>
         </div>
-      ) : null}
+      ) : !summaryDone ? <p className="sub" role="status" style={{ marginBottom: 16 }} data-client-summary-loading>Loading this client&apos;s totals…</p> : null}
 
       <div className="card" style={{ marginBottom: 16 }} data-client-services>
         <h3>Services from Operations<span>what they buy</span></h3>
