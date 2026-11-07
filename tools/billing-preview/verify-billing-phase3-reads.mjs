@@ -34,6 +34,7 @@ const rec = (id, name, ok, ev = "") => { results.push(ok); console.log(`${ok ? "
 const admin = await new Session().signIn("ADMIN"), billing = await new Session().signIn("STAFF_BILLING"), collections = await new Session().signIn("STAFF_COLLECTIONS"), unassigned = await new Session().signIn("STAFF_UNASSIGNED"), anon = new Session();
 
 const before = await db("billing_action_policy?select=action_key,allowed_roles,enabled&order=action_key");
+const candidatesBefore = await db("billing_candidates?select=id&order=id");
 const pol = await admin.call("/api/billing/permissions/policy");
 const DELEGABLE = ["billing.view","pricing.view","pricing.manage","candidates.view","candidates.manage","invoices.draft.manage","invoices.issue","payments.record","payments.allocate","settings.terms.manage","settings.remittance.manage"];
 rec("Q1", "policy: Admin 200, all 11 delegable actions, no fixed action, exact shape", pol.status === 200 && pol.json.policies.length === 11 && DELEGABLE.every((k) => pol.json.policies.some((p) => p.actionKey === k)) && pol.json.policies.every((p) => Object.keys(p).sort().join() === "actionKey,allowedRoles,enabled"), `${pol.status} rows=${pol.json?.policies?.length} stored=${before.length}`);
@@ -70,6 +71,36 @@ const legacy = "id,amount,period,quantity,created_by,invoice_id,sort_order,updat
 rec("Q9", "invoices: legacy line fields retained", lines.every((l) => legacy.every((k) => k in l)), `lines=${lines.length}`);
 const after = await db("billing_action_policy?select=action_key,allowed_roles,enabled&order=action_key");
 rec("Q10", "read checks changed nothing in policy", JSON.stringify(before) === JSON.stringify(after));
+
+const presentation = await admin.call("/api/billing/settings/presentation");
+const billingPresentation = await billing.call("/api/billing/settings/presentation");
+const presentationDenied = await collections.call("/api/billing/settings/presentation");
+const presentationAnon = await anon.call("/api/billing/settings/presentation");
+rec("Q11", "presentation settings: Admin/Billing read only the documented fields; TAP prefix is fixed", presentation.status === 200 && billingPresentation.status === 200 && presentation.json.invoiceNumberPrefix === "TAP" && Object.keys(presentation.json).sort().join() === "firmName,invoiceFooter,invoiceNumberPrefix,tagline,updatedAt", `${presentation.status}/${billingPresentation.status} prefix=${presentation.json?.invoiceNumberPrefix}`);
+rec("Q12", "presentation settings: Collections 403, anon 401", presentationDenied.status === 403 && presentationAnon.status === 401, `${presentationDenied.status}/${presentationAnon.status}`);
+
+const summary = await billing.call(`/api/billing/clients/summary?clientId=${C1}`);
+const decimal = (value) => typeof value === "string" && /^\d+\.\d{2}$/.test(value);
+const summaryKeys = "clientId,clientName,monthlyAmount,monthlyAmountComplete,nextInvoiceDate,openBalance,pastDueAmount,services,terms,unpricedServiceCount";
+rec("Q13", "client summary: Billing receives one client, decimal strings, complete/incomplete total signal, server terms and services", summary.status === 200 && Object.keys(summary.json).sort().join() === summaryKeys && [summary.json.monthlyAmount, summary.json.openBalance, summary.json.pastDueAmount].every(decimal) && typeof summary.json.monthlyAmountComplete === "boolean" && Number.isInteger(summary.json.unpricedServiceCount) && Array.isArray(summary.json.services) && Array.isArray(summary.json.terms.byClientService), `${summary.status} services=${summary.json?.services?.length} totalComplete=${summary.json?.monthlyAmountComplete}`);
+rec("Q14", "client summary: response contains no payroll/EFTPS credential field names", summary.status === 200 && !/(payroll_password|eftps)/i.test(summary.text), `status=${summary.status}`);
+const summary403 = await collections.call(`/api/billing/clients/summary?clientId=${C1}`), summaryAnon = await anon.call(`/api/billing/clients/summary?clientId=${C1}`);
+rec("Q15", "client summary: Collections 403, anon 401", summary403.status === 403 && summaryAnon.status === 401, `${summary403.status}/${summaryAnon.status}`);
+
+const today = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Chicago", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+const scheduleEndDate = new Date(`${today}T00:00:00.000Z`); scheduleEndDate.setUTCDate(scheduleEndDate.getUTCDate() + 30);
+const scheduleRange = `from=${today}&to=${scheduleEndDate.toISOString().slice(0, 10)}`;
+const schedule = await billing.call(`/api/billing/candidates/firm-schedule?${scheduleRange}&limit=1`);
+const scheduleKeys = "candidateCount,pricedCount,projectedAmount,unpricedCount";
+rec("Q16", "firm schedule: Billing gets bounded projection and server decimal totals", schedule.status === 200 && Array.isArray(schedule.json.items) && schedule.json.items.length <= 1 && Object.keys(schedule.json.summary || {}).sort().join() === scheduleKeys && decimal(schedule.json.summary?.projectedAmount) && Number.isInteger(schedule.json.summary?.candidateCount), `${schedule.status} rows=${schedule.json?.items?.length} cursor=${Boolean(schedule.json?.nextCursor)}`);
+const scheduleNext = schedule.json?.nextCursor ? await billing.call(`/api/billing/candidates/firm-schedule?${scheduleRange}&limit=1&cursor=${encodeURIComponent(schedule.json.nextCursor)}`) : null;
+const firstKey = schedule.json?.items?.[0] && `${schedule.json.items[0].candidateDate}|${schedule.json.items[0].clientServiceId}|${schedule.json.items[0].sourceIdentity}`;
+const secondKey = scheduleNext?.json?.items?.[0] && `${scheduleNext.json.items[0].candidateDate}|${scheduleNext.json.items[0].clientServiceId}|${scheduleNext.json.items[0].sourceIdentity}`;
+rec("Q17", "firm schedule: opaque cursor continues without repeating the first row", schedule.status === 200 && (!schedule.json.nextCursor || (scheduleNext?.status === 200 && firstKey !== secondKey)), `next=${scheduleNext?.status ?? "not-needed"}`);
+const schedule403 = await collections.call(`/api/billing/candidates/firm-schedule?${scheduleRange}`), scheduleAnon = await anon.call(`/api/billing/candidates/firm-schedule?${scheduleRange}`);
+rec("Q18", "firm schedule: Collections 403, anon 401", schedule403.status === 403 && scheduleAnon.status === 401, `${schedule403.status}/${scheduleAnon.status}`);
+const candidatesAfter = await db("billing_candidates?select=id&order=id");
+rec("Q19", "new Phase 3 reads create no candidates", JSON.stringify(candidatesBefore) === JSON.stringify(candidatesAfter), `before=${candidatesBefore.length} after=${candidatesAfter.length}`);
 
 const failed = results.filter((x) => !x).length;
 console.log(`\n${results.length - failed}/${results.length} passed`);
