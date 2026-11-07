@@ -117,6 +117,13 @@ try {
     await sub(admin, "Getting paid");
     await fill(admin, "remittance", { payeeName: "Synthetic Payee", address: "1 Test St", instructions: "Synthetic instructions", reason: "Synthetic" });
     rec("T5", "remittance saves all three fields", (await rest("GET", "billing_remittance_settings?select=payee_name,address,instructions"))[0].instructions === "Synthetic instructions");
+    await sub(admin, "Firm & invoices");
+    await fill(admin, "presentation", { firmName: `Synthetic Firm ${tag}`, tagline: "Synthetic tagline", invoiceFooter: "Synthetic footer", reason: "Synthetic" });
+    const firmRow = (await rest("GET", "billing_presentation_settings?select=firm_name,tagline,invoice_footer"))[0];
+    rec("T8", "firm details save all fields, and the prefix stays fixed", firmRow.firm_name === `Synthetic Firm ${tag}` && firmRow.invoice_footer === "Synthetic footer" && /TAP/.test(await admin.evaluate(() => [...document.querySelectorAll('[data-form="presentation"] input')].map((i) => i.value).join(" "))));
+    await fill(admin, "presentation", { tagline: "", invoiceFooter: "", reason: "Synthetic clear" });
+    const cleared = (await rest("GET", "billing_presentation_settings?select=tagline,invoice_footer"))[0];
+    rec("T9", "an emptied field clears", cleared.tagline === null && cleared.invoice_footer === null);
   }
   await sub(admin, "Completion rules");
   for (const [k, adapter, rule] of [["GEN", "schedule", "period_end"], ["BA", "schedule", "period_end"], ["BB", "schedule", "period_end"], ["MAN", "manual_confirmation", "confirmed_date"]]) {
@@ -146,13 +153,30 @@ try {
   rec("W4", "generated work reaches Invoices, the package as one row", inv.includes(`GEN ${tag}`) && inv.includes(`W ${tag} package`));
   rec("W5", "no page errors as Admin", admin.errors.length === 0, admin.errors.join("; "));
 
+  const firmPage = await login("ADMIN");
+  await firmPage.goto(BASE + "/billing", { waitUntil: "networkidle2", timeout: 60000 }); await wait(3000);
+  const firmBefore = await count("billing_candidates", `client_id=eq.${C1}`);
+  const firmView = async () => firmPage.evaluate(() => ({ rows: document.querySelectorAll("[data-firm-row]").length, empty: !!document.querySelector("[data-firm-empty]"), shown: document.querySelector("[data-firm-shown]")?.innerText || "", more: [...document.querySelectorAll("[data-firm-schedule] button")].some((b) => /Load more/.test(b.textContent)), total: document.querySelector("[data-firm-summary] .v")?.innerText || "" }));
+  let firm = await firmView();
+  rec("F1", "with no client chosen, the all-clients schedule loads with the server total", (firm.rows > 0 || firm.empty) && !!firm.total, `rows=${firm.rows} empty=${firm.empty} ${firm.shown}`);
+  for (let i = 0; i < 12 && firm.more; i += 1) { await firmPage.evaluate(() => [...document.querySelectorAll("[data-firm-schedule] button")].find((b) => /Load more/.test(b.textContent)).click()); await wait(1800); firm = await firmView(); }
+  const firmOf = /of (\d+)/.exec(firm.shown)?.[1];
+  rec("F2", "Load more reaches every row once", firm.empty || (Number(firmOf) === firm.rows && !firm.more), firm.shown);
+  rec("F3", "reading the schedule writes nothing, and no page errors", (await count("billing_candidates", `client_id=eq.${C1}`)) === firmBefore && firmPage.errors.length === 0, firmPage.errors.join("; "));
+
   const staff = await login("STAFF_BILLING"); await open(staff);
   await tab(staff, "Clients & prices");
   await staff.evaluate((id) => document.querySelector(`[data-client-row="${id}"] button`).click(), C1); await wait(2500);
   rec("R1", "Billing staff see prices read-only", (await text(staff)).includes(`GEN ${tag}`) && !(await staff.$('[data-form="override"]')) && !(await staff.$('[data-form="bundle"]')));
+  const money = await staff.evaluate(async (id) => { const api = await (await fetch(`/api/billing/clients/summary?clientId=${id}`)).json(); const stats = [...document.querySelectorAll("[data-client-summary] .stat .v")].map((e) => e.innerText); return { api: api.monthlyAmount, open: api.openBalance, shown: stats, note: document.querySelector("[data-monthly-note]")?.innerText || "", complete: api.monthlyAmountComplete, prices: document.querySelectorAll("[data-service-price]").length }; }, C1);
+  const digits = (v) => String(v).replace(/\D/g, "");
+  rec("S1", "the client page shows the server's monthly and open amounts", money.shown.length === 4 && digits(money.shown[0]) === digits(money.api) && digits(money.shown[2]) === digits(money.open), `shown=${money.shown.length}`);
+  rec("S2", "a partial monthly total says so", money.complete ? /average month/.test(money.note) : /partial/.test(money.note), money.note);
+  rec("S3", "each active service shows its price or package", money.prices > 0, money.prices);
   await tab(staff, "Settings");
   const staffSubs = await staff.evaluate(() => [...document.querySelectorAll("[data-billing-settings] .seg button")].map((b) => b.textContent.trim()));
   rec("R2", "Billing staff get no policy editor and cannot save firm terms", !staffSubs.includes("Permissions") && !(await staff.$('[data-form="terms"] button[type=submit]')) && /restricted to Owner\/Admin/.test(await text(staff)), staffSubs.join(" | "));
+  rec("R2c", "Billing staff read firm details but cannot save them", !!(await staff.$('[data-form="presentation"]')) && !(await staff.$('[data-form="presentation"] button[type=submit]')));
   await sub(staff, "Getting paid"); rec("R2b", "Billing staff cannot save remittance", !(await staff.$('[data-form="remittance"] button[type=submit]')));
   await tab(staff, "What bills next");
   rec("R3", "Billing staff keep the default generate action", /Generate candidates/.test(await text(staff)));

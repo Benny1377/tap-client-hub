@@ -1,19 +1,21 @@
 "use client";
 
-import type { Invoice, Receivable } from "@/lib/billing-ui/types";
+import type { BillingPresentation, Invoice, Receivable } from "@/lib/billing-ui/types";
 import { formatMoney } from "@/lib/billing-ui/view-model";
 
 export type Remittance = { payeeName: string | null; address: string | null; instructions: string | null };
 
 /** The invoice as the client reads it. Every amount shown is the server's; a draft's total stays blank until it has a server figure. */
-export function InvoiceDocument({ invoice, clientName, receivable, remittance }: { invoice: Invoice; clientName: string; receivable: Receivable | null; remittance: Remittance | null }) {
+export function InvoiceDocument({ invoice, clientName, receivable, remittance, presentation }: { invoice: Invoice; clientName: string; receivable: Receivable | null; remittance: Remittance | null; presentation: BillingPresentation | null }) {
   const lines = [...(invoice.invoice_lines || [])].sort((a, b) => a.sort_order - b.sort_order);
   const snapshot = (invoice as Invoice & { remittance_snapshot?: Partial<Remittance> & { payee_name?: string | null } | null }).remittance_snapshot;
   const pay = snapshot ? { payeeName: snapshot.payeeName ?? snapshot.payee_name ?? null, address: snapshot.address ?? null, instructions: snapshot.instructions ?? null } : remittance;
+  // Firm settings are not saved with an invoice, so only a draft follows them. An issued invoice must not change after the fact.
+  const firm = invoice.status === "draft" ? presentation : null;
   return (
     <div className="doc" data-invoice-document>
       <div className="doc-top">
-        <div><div className="doc-brand">{pay?.payeeName || "Your firm"}</div></div>
+        <div><div className="doc-brand">{firm?.firmName || pay?.payeeName || "Your firm"}</div>{firm?.tagline ? <div className="doc-tag">{firm.tagline}</div> : null}</div>
         <div>
           <div className="doc-title">INVOICE</div>
           <div className="doc-no">{invoice.invoice_number ? `#${invoice.invoice_number}` : "Draft"}</div>
@@ -57,6 +59,7 @@ export function InvoiceDocument({ invoice, clientName, receivable, remittance }:
         </div>
       ) : null}
       {invoice.memo ? <div className="doc-foot">{invoice.memo}</div> : null}
+      {firm?.invoiceFooter ? <div className="doc-foot" data-invoice-footer>{firm.invoiceFooter}</div> : null}
     </div>
   );
 }

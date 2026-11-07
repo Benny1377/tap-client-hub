@@ -11,6 +11,9 @@ import type {
 } from "@/lib/collections-api";
 import type {
   BillingBundle,
+  BillingPresentation,
+  ClientBillingSummary,
+  FirmSchedule,
   ClientOption,
   BillingCandidate,
   CollectionEvent,
@@ -162,6 +165,13 @@ export function createBillingApi(fetchImpl: FetchLike) {
       const query = new URLSearchParams(params);
       return request<{ projection: "projected"; items: Array<Record<string, unknown>> }>(fetchImpl, `/api/billing/candidates/schedule?${query}`);
     },
+    /** Read-only, across all clients, one bounded page at a time. */
+    firmSchedule: (params: { from: string; to: string; limit?: number; cursor?: string | null }) => {
+      const query = new URLSearchParams({ from: params.from, to: params.to, limit: String(params.limit ?? 50) });
+      if (params.cursor) query.set("cursor", params.cursor);
+      return request<FirmSchedule>(fetchImpl, `/api/billing/candidates/firm-schedule?${query}`);
+    },
+    clientSummary: (clientId: string) => request<ClientBillingSummary>(fetchImpl, `/api/billing/clients/summary?${new URLSearchParams({ clientId })}`),
     generateCandidates: (input: { from: string; to: string; clientId: string }) =>
       post<{ created: number; unpriced: number; existing: number; skipped: number; skippedByReason: Record<string, number>; candidateIds: string[] }>(fetchImpl, "/api/billing/candidates/generate", input),
     createRateCard: (input: Record<string, unknown>) => post<Record<string, unknown>>(fetchImpl, "/api/billing/rate-cards", input),
@@ -180,6 +190,9 @@ export function createBillingApi(fetchImpl: FetchLike) {
     updateTermsOverride: (id: string, input: Record<string, unknown>) => patch<Record<string, unknown>>(fetchImpl, `/api/billing/settings/terms/overrides/${encodeURIComponent(id)}`, input),
     remittance: () => request<{ remittance: { payeeName: string | null; address: string | null; instructions: string | null }; updatedAt: string | null }>(fetchImpl, "/api/billing/settings/remittance"),
     updateRemittance: (input: Record<string, unknown>) => patch<Record<string, unknown>>(fetchImpl, "/api/billing/settings/remittance", input),
+    presentation: () => request<BillingPresentation>(fetchImpl, "/api/billing/settings/presentation"),
+    /** Full replacement: all four fields go every time. */
+    updatePresentation: (input: { firmName: string; tagline: string | null; invoiceFooter: string | null; reason: string }) => patch<BillingPresentation>(fetchImpl, "/api/billing/settings/presentation", input),
     completionMaps: (clientServiceId?: string) => request<{ items: Array<Record<string, unknown>> }>(fetchImpl, `/api/billing/completion-source-maps${clientServiceId ? `?clientServiceId=${encodeURIComponent(clientServiceId)}` : ""}`),
     createCompletionMap: (input: Record<string, unknown>) => post<Record<string, unknown>>(fetchImpl, "/api/billing/completion-source-maps", input),
     updateCompletionMap: (id: string, input: Record<string, unknown>) => patch<Record<string, unknown>>(fetchImpl, `/api/billing/completion-source-maps/${encodeURIComponent(id)}`, input),

@@ -1,11 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ApiResult, BillingApi } from "@/lib/billing-ui/api";
 import { candidateUnits } from "@/lib/billing-ui/candidates";
-import type { BillingBundle, BillingCandidate, ClientOption } from "@/lib/billing-ui/types";
+import type { BillingBundle, BillingCandidate, ClientOption, FirmSchedule } from "@/lib/billing-ui/types";
 import { formatMoney } from "@/lib/billing-ui/view-model";
-import { firmToday, nextRunDates, pricedHow, runItems, runRows, shortDate, whyItMoves, type PriceOverride, type ProjectedItem } from "@/lib/billing-ui/workbench";
+import { firmToday, isPackageRow, nextRunDates, pricedHow, runItems, runRows, shortDate, whyItMoves, type PriceOverride, type ProjectedItem } from "@/lib/billing-ui/workbench";
 import { ActionButton, ErrorBanner } from "./ui";
 
 type Failure = { kind: "unauthorized" | "forbidden" | "not_found" | "conflict" | "invalid" | "server" | "network"; message: string; code?: string };
@@ -42,13 +42,42 @@ export function BillingChain({ now, onGo }: { now: string; onGo?: (tab: string) 
   );
 }
 
-export function WhatBillsNext({ api, active, clientId, clients, canGenerate, canDraft, version, draftCount, onGenerated, onDraft, onReviewDrafts, onOpenClient, onGo }: {
+/** Every client's projected work in one bounded list. The server orders it and supplies the totals; nothing is added up here. */
+function FirmScheduleTable({ data, loading, loadingMore, onMore, onOpenClient }: { data: FirmSchedule | null; loading: boolean; loadingMore: boolean; onMore: () => void; onOpenClient: (id: string) => void }) {
+  if (!data) return <p style={{ fontSize: 13, color: "var(--muted)" }} role="status">{loading ? "Loading the schedule…" : "The schedule isn't available right now."}</p>;
+  if (data.items.length === 0) return <p style={{ fontSize: 13, color: "var(--muted)" }} data-firm-empty>Nothing projected in these dates that isn&apos;t already a candidate.</p>;
+  return (
+    <div data-firm-schedule>
+      <div className="scroll">
+        <table>
+          <thead><tr><th>Date</th><th>Client</th><th>Service</th><th className="r">Price</th></tr></thead>
+          <tbody>
+            {data.items.map((item) => (
+              <tr key={`${item.clientServiceId}|${item.sourceIdentity}`} data-firm-row>
+                <td className="mono" style={{ whiteSpace: "nowrap" }}>{shortDate(item.candidateDate)}</td>
+                <td><button type="button" className="lnk" style={{ textAlign: "left" }} onClick={() => onOpenClient(item.clientId)}>{item.clientName}</button></td>
+                <td>{item.description}{isPackageRow(item.sourceIdentity) ? <> <PricedChip how="Package" /></> : null}</td>
+                <td className="r num">{item.unitAmount === null ? <span className="sub">No price</span> : formatMoney(item.unitAmount)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <p className="sub" style={{ marginTop: 8 }} data-firm-shown>Showing {data.items.length} of {data.summary.candidateCount}</p>
+      {data.nextCursor ? <button type="button" className="bc-btn quiet" style={{ marginTop: 8 }} disabled={loadingMore} onClick={onMore}>{loadingMore ? "Loading…" : "Load more"}</button> : null}
+    </div>
+  );
+}
+
+export function WhatBillsNext({ api, active, clientId, clients, canGenerate, canViewFirm, canDraft, version, draftCount, onGenerated, onDraft, onReviewDrafts, onOpenClient, onGo }: {
   api: BillingApi;
   /** True while this tab is showing. Rules and prices change elsewhere, so it reloads on each visit. */
   active: boolean;
   clientId: string | null;
   clients: ClientOption[];
   canGenerate: boolean;
+  /** The all-clients schedule needs both candidates.view and pricing.view. */
+  canViewFirm: boolean;
   canDraft: boolean;
   version: number;
   draftCount: number;
@@ -72,23 +101,42 @@ export function WhatBillsNext({ api, active, clientId, clients, canGenerate, can
   const [generated, setGenerated] = useState<Generated | null>(null);
   const [refresh, setRefresh] = useState(0);
   const [loadedFor, setLoadedFor] = useState<string | null>(null);
+  const [firm, setFirm] = useState<FirmSchedule | null>(null);
+  const [firmMore, setFirmMore] = useState(false);
+  // A page that lands after the dates changed belongs to the old list.
+  const firmWindow = useRef("");
 
   const load = useCallback(async () => {
     setLoading(true); setFailure(null);
-    const [openResult, unpricedResult, pricing, schedule] = await Promise.all([
+    const showFirm = !clientId && canViewFirm;
+    const dates = `${from}|${to}`;
+    firmWindow.current = showFirm ? dates : "";
+    const [openResult, unpricedResult, pricing, schedule, firmResult] = await Promise.all([
       api.candidates({ clientId, state: "open", limit: 100 }),
       api.candidates({ clientId, state: "unpriced", limit: 100 }),
       clientId ? api.clientPricing(clientId) : Promise.resolve(null),
       clientId ? api.schedule({ from, to, clientId }) : Promise.resolve(null),
+      showFirm ? api.firmSchedule({ from, to, limit: 50 }) : Promise.resolve(null),
     ]);
     if (openResult.ok) setOpen(openResult.data.items); else setFailure(asFailure(openResult));
     if (unpricedResult.ok) setUnpriced(unpricedResult.data.items);
     setBundles(pricing && pricing.ok ? pricing.data.bundles || [] : []);
     setOverrides(pricing && pricing.ok ? pricing.data.overrides as unknown as PriceOverride[] : []);
     if (schedule) { if (schedule.ok) setItems(schedule.data.items as unknown as ProjectedItem[]); else setFailure(asFailure(schedule)); } else setItems([]);
+    if (firmResult && firmWindow.current === dates) { if (firmResult.ok) setFirm(firmResult.data); else { setFirm(null); setFailure(asFailure(firmResult)); } } else if (!showFirm) setFirm(null);
     setLoadedFor(clientId);
     setLoading(false);
-  }, [api, clientId, from, to]);
+  }, [api, canViewFirm, clientId, from, to]);
+
+  const loadMoreFirm = async () => {
+    if (!firm?.nextCursor) return;
+    const dates = firmWindow.current;
+    setFirmMore(true);
+    const result = await api.firmSchedule({ from, to, limit: 50, cursor: firm.nextCursor });
+    setFirmMore(false);
+    if (firmWindow.current !== dates) return;
+    if (result.ok) setFirm({ ...result.data, items: [...firm.items, ...result.data.items] }); else setFailure(asFailure(result));
+  };
 
   // Reading the projection never creates anything; only the Generate button below writes.
   useEffect(() => { if (active) void load(); }, [active, load, refresh, version]);
@@ -122,7 +170,11 @@ export function WhatBillsNext({ api, active, clientId, clients, canGenerate, can
         </div>
       </div>
       <div className="g4" style={{ marginBottom: 16 }}>
-        <div className="stat"><div className="k">Recurring · {shortDate(nextRun)}</div><div className="v num">{clientId ? inNextRun : "—"}</div><div className="d">{clientId ? "services on the calendar" : "choose a client to project"}</div></div>
+        {clientId || !firm ? (
+          <div className="stat"><div className="k">Recurring · {shortDate(nextRun)}</div><div className="v num">{clientId ? inNextRun : "—"}</div><div className="d">{clientId ? "services on the calendar" : "choose a client to project"}</div></div>
+        ) : (
+          <div className="stat" data-firm-summary><div className="k">Projected · all clients</div><div className="v num">{formatMoney(firm.summary.projectedAmount)}</div><div className="d">{firm.summary.candidateCount} items{firm.summary.unpricedCount ? `, ${firm.summary.unpricedCount} with no price` : ""}</div></div>
+        )}
         <div className="stat"><div className="k">Ready to bill</div><div className="v num" style={{ color: open.length ? "var(--amber)" : undefined }}>{open.length}</div><div className="d">candidates, not invoiced</div></div>
         <div className="stat"><div className="k">No price</div><div className="v num" style={{ color: unpricedCount ? "var(--red)" : undefined }}>{unpricedCount}</div><div className="d">captured, can&apos;t be drafted yet</div></div>
         <div className="stat"><div className="k">Drafts</div><div className="v num">{draftCount}</div><div className="d">waiting for you</div></div>
@@ -130,9 +182,9 @@ export function WhatBillsNext({ api, active, clientId, clients, canGenerate, can
       {failure ? <ErrorBanner kind={failure.kind} message={failure.message} code={failure.code} /> : null}
 
       <div className="card" style={{ marginBottom: 16 }} data-next-runs>
-        <h3>The next three runs<span>projected · billed on the calendar</span></h3>
+        <h3>{clientId ? "The next three runs" : "Coming up, all clients"}<span>projected · billed on the calendar</span></h3>
         {!clientId ? (
-          <p style={{ fontSize: 13, color: "var(--muted)" }}>Choose a client above to see their next runs. The projection works one client at a time.</p>
+          canViewFirm ? <FirmScheduleTable data={firm} loading={loading} loadingMore={firmMore} onMore={() => { void loadMoreFirm(); }} onOpenClient={onOpenClient} /> : <p style={{ fontSize: 13, color: "var(--muted)" }}>Choose a client above to see their next runs.</p>
         ) : rows.length === 0 ? (
           <p style={{ fontSize: 13, color: "var(--muted)" }} role="status">{loading ? "Loading the projection…" : `Nothing projected for ${client?.name || "this client"} in these runs.`}</p>
         ) : (
@@ -155,7 +207,7 @@ export function WhatBillsNext({ api, active, clientId, clients, canGenerate, can
             </table>
           </div>
         )}
-        <p className="fine" style={{ border: "none", marginTop: 10, paddingTop: 0 }}>Each package shows once, at its package price. Change a price or a frequency in Operations and work not yet generated moves with it.</p>
+        <p className="fine" style={{ border: "none", marginTop: 10, paddingTop: 0 }}>Each package shows once, at its package price. Change a price or a frequency in Operations and work not yet generated moves with it.{clientId ? "" : " This list leaves out work that is already a candidate; that is counted under Ready to bill."}</p>
       </div>
 
       <div className="card" style={{ marginBottom: 16 }} data-one-off>

@@ -74,6 +74,18 @@ export function whyItMoves(row: RunRow, runDates: string[]) {
   return reasons.join(" · ") || "—";
 }
 
+/** A package is one firm-schedule row, identified by its source. Its services are not listed separately. */
+export function isPackageRow(sourceIdentity: string) {
+  return sourceIdentity.startsWith("bundle:");
+}
+
+/** The word under the monthly amount. The figure is the server's; this only says how far to trust it. */
+export function monthlyNote(complete: boolean, unpricedCount: number) {
+  if (complete) return "average month";
+  if (unpricedCount > 0) return `partial · ${unpricedCount} ${unpricedCount === 1 ? "service has" : "services have"} no price`;
+  return "partial · a frequency can't be averaged";
+}
+
 export type PricedHow = "Package" | "Own price" | "Rate card";
 
 /** How a service gets its price on a date, in the server's order: package, then client override, then rate card. */

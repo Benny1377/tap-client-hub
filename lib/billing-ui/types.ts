@@ -213,3 +213,45 @@ export interface Viewer {
   role: string;
   modules: string[];
 }
+
+/** GET /api/billing/clients/summary. Every amount is a server decimal string; the browser only shows them. */
+export interface ClientBillingSummary {
+  clientId: string;
+  clientName: string;
+  services: Array<{ clientServiceId: string; serviceCode: string | null; serviceName: string | null; active: boolean; frequency: string | null; priceState: "priced" | "unpriced"; unitAmount: string | null; bundleName: string | null }>;
+  monthlyAmount: string;
+  monthlyAmountComplete: boolean;
+  unpricedServiceCount: number;
+  nextInvoiceDate: string | null;
+  openBalance: string;
+  pastDueAmount: string;
+}
+
+/** One projected row from GET /api/billing/candidates/firm-schedule. A package is one row, with a bundle: source identity. */
+export interface FirmScheduleItem {
+  clientId: string;
+  clientName: string;
+  clientServiceId: string;
+  serviceCode: string | null;
+  serviceName: string | null;
+  candidateDate: string;
+  period: string | null;
+  description: string;
+  unitAmount: string | null;
+  priceState: "priced" | "unpriced";
+  sourceIdentity: string;
+}
+
+export interface FirmSchedule {
+  items: FirmScheduleItem[];
+  nextCursor: string | null;
+  summary: { candidateCount: number; pricedCount: number; unpricedCount: number; projectedAmount: string };
+}
+
+export interface BillingPresentation {
+  firmName: string;
+  tagline: string | null;
+  invoiceFooter: string | null;
+  invoiceNumberPrefix: string;
+  updatedAt: string | null;
+}
