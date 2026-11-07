@@ -30,13 +30,17 @@ export function BillingChain({ now, onGo }: { now: string; onGo?: (tab: string) 
     <div className="chain" data-billing-chain>
       {steps.map((step) => {
         const here = Boolean(now) && step.id === now;
-        return (
-          <div key={step.name} className={`ch${here ? " now" : ""}${step.external ? " ext" : ""}`} style={step.id && onGo ? { cursor: "pointer" } : undefined} onClick={step.id && onGo ? () => onGo(step.id) : undefined}>
+        const className = `ch${here ? " now" : ""}${step.external ? " ext" : ""}`;
+        const body = (
+          <>
             <div className="cht">{here ? "You are here" : step.external ? "Another module" : "Billing"}</div>
             <div className="chn">{step.name}</div>
             <div className="chd">{step.detail}</div>
-          </div>
+          </>
         );
+        return step.id && onGo
+          ? <button key={step.name} type="button" className={className} aria-current={here ? "page" : undefined} onClick={() => onGo(step.id)}>{body}</button>
+          : <div key={step.name} className={className}>{body}</div>;
       })}
     </div>
   );

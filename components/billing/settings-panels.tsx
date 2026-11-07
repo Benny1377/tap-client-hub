@@ -80,12 +80,12 @@ function FirmDetails({ api, canEdit, onSaved }: { api: BillingApi; canEdit: bool
             />
           ) : (
             <>
-              <div className="fld"><label>Firm name</label><input value={values.firmName} disabled readOnly /></div>
-              <div className="fld"><label>Tagline</label><input value={values.tagline || "None"} disabled readOnly /></div>
-              <div className="fld"><label>Invoice footer</label><input value={values.invoiceFooter || "None"} disabled readOnly /></div>
+              <div className="fld"><label>Firm name</label><input aria-label="Firm name" value={values.firmName} disabled readOnly /></div>
+              <div className="fld"><label>Tagline</label><input aria-label="Tagline" value={values.tagline || "None"} disabled readOnly /></div>
+              <div className="fld"><label>Invoice footer</label><input aria-label="Invoice footer" value={values.invoiceFooter || "None"} disabled readOnly /></div>
             </>
           )}
-          <div className="fld"><label>Invoice number prefix</label><input value={values.invoiceNumberPrefix} disabled readOnly /><div className="sub">Fixed. Numbers are assigned when an invoice is issued.</div></div>
+          <div className="fld"><label>Invoice number prefix</label><input aria-label="Invoice number prefix" value={values.invoiceNumberPrefix} disabled readOnly /><div className="sub">Fixed. Numbers are assigned when an invoice is issued.</div></div>
           {saved ? <p role="status" className="sub">Saved. Issued invoices don&apos;t change.</p> : null}
         </>
       ) : !failure ? <Muted>Loading firm details…</Muted> : null}
@@ -116,7 +116,7 @@ function FirmTerms({ api, clientId, clients, actions }: { api: BillingApi; clien
         <h3>Invoice defaults<span>apply to future invoices</span></h3>
         {terms ? (
           <>
-            <div className="fld"><label>Billing day</label><input value="Last day of the service period" disabled readOnly /><div className="sub">Issued invoices keep their saved terms; a later change only affects new invoices.</div></div>
+            <div className="fld"><label>Billing day</label><input aria-label="Billing day" value="Last day of the service period" disabled readOnly /><div className="sub">Issued invoices keep their saved terms; a later change only affects new invoices.</div></div>
             {mayEdit ? (
               <LedgerForm
                 key={text(terms, "defaultNetDays")}
@@ -127,7 +127,7 @@ function FirmTerms({ api, clientId, clients, actions }: { api: BillingApi; clien
                 onSubmit={(values: FormValues) => done(() => api.updateTerms({ defaultNetDays: Number(values.defaultNetDays), billingDay: "service_period_end", reason: values.reason.trim() }))}
                 submitLabel="Save firm terms"
               />
-            ) : <div className="fld"><label>Default terms</label><input value={`Net ${text(terms, "defaultNetDays", "15")}`} disabled readOnly /></div>}
+            ) : <div className="fld"><label>Default terms</label><input aria-label="Default terms" value={`Net ${text(terms, "defaultNetDays", "15")}`} disabled readOnly /></div>}
             {saved ? <p role="status" className="sub">Saved.</p> : null}
           </>
         ) : <Muted>Loading terms…</Muted>}
@@ -193,7 +193,7 @@ function GettingPaid({ api, actions }: { api: BillingApi; actions: string[] }) {
         </>
       ) : (
         <>
-          <div className="fld"><label>Payee</label><input value={values.payeeName} disabled readOnly /></div>
+          <div className="fld"><label>Payee</label><input aria-label="Payee" value={values.payeeName} disabled readOnly /></div>
           <div className="fld"><label>Mailing address</label><textarea value={values.address} disabled readOnly rows={2} /></div>
           <div className="fld"><label>Payment instructions</label><textarea value={values.instructions} disabled readOnly rows={3} /></div>
         </>

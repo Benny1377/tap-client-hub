@@ -193,4 +193,19 @@ check("firm details show on a draft only, so an issued invoice never changes", (
   assert.match(issued, /Saved Payee/); assert.doesNotMatch(issued, /Firm Now|Tag now|Foot now/);
 });
 
+check("the firm date follows Houston across a month end and both clock changes", () => {
+  assert.equal(work.firmToday(new Date("2026-12-01T05:30:00Z")), "2026-11-30");
+  assert.equal(work.firmToday(new Date("2026-12-01T06:30:00Z")), "2026-12-01");
+  assert.equal(work.firmToday(new Date("2026-03-08T07:59:00Z")), "2026-03-08");
+  assert.equal(work.firmToday(new Date("2026-03-08T04:59:00Z")), "2026-03-07");
+  assert.equal(work.firmToday(new Date("2026-11-01T05:30:00Z")), "2026-11-01");
+  assert.equal(work.firmToday(new Date("2026-11-02T05:30:00Z")), "2026-11-01");
+});
+
+check("run dates land on real month ends, over a year end and a leap February", () => {
+  assert.deepEqual(work.nextRunDates("2026-12-31"), ["2026-12-31", "2027-01-31", "2027-02-28"]);
+  assert.deepEqual(work.nextRunDates("2028-01-31"), ["2028-01-31", "2028-02-29", "2028-03-31"]);
+  assert.deepEqual(work.nextRunDates("2026-11-30"), ["2026-11-30", "2026-12-31", "2027-01-31"]);
+});
+
 console.log(`billing UI candidate checks passed (${passed})`);
