@@ -1,6 +1,7 @@
 // Billable candidates: how they are grouped and which can go on a draft. Prices come from the server as
 // decimal strings and are only displayed here. A package's components each carry the full package price,
 // so a package is shown once and its component prices are never added together.
+import type { ApiResult } from "./api";
 import type { BillingBundle, Candidate, CandidateState } from "./types";
 
 export const CANDIDATE_FILTERS: Array<{ id: CandidateState; label: string }> = [
@@ -77,4 +78,21 @@ export function selectedCandidateIds(units: CandidateUnit[], selected: ReadonlyS
 
 export function candidateTypeLabel(type: string) {
   return type ? `${type[0].toUpperCase()}${type.slice(1).replace(/_/g, " ")}` : "—";
+}
+
+/**
+ * The server caps a page at 100 and sorts newest first, so one page can hide one-off work behind recurring rows.
+ * This reads on to a bounded limit; a nextCursor in the result means there was still more.
+ */
+export async function readPages<T>(fetchPage: (cursor: string | null) => Promise<ApiResult<{ items: T[]; nextCursor: string | null }>>, maxPages = 10): Promise<ApiResult<{ items: T[]; nextCursor: string | null }>> {
+  const items: T[] = [];
+  let cursor: string | null = null;
+  for (let page = 0; page < maxPages; page += 1) {
+    const result = await fetchPage(cursor);
+    if (!result.ok) return result;
+    items.push(...result.data.items);
+    cursor = result.data.nextCursor;
+    if (!cursor) return { ...result, data: { items, nextCursor: null } };
+  }
+  return { ok: true, status: 200, data: { items, nextCursor: cursor } };
 }

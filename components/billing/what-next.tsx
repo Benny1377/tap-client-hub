@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ApiResult, BillingApi } from "@/lib/billing-ui/api";
-import { candidateUnits } from "@/lib/billing-ui/candidates";
+import { candidateUnits, readPages } from "@/lib/billing-ui/candidates";
 import type { BillingBundle, BillingCandidate, ClientOption, FirmSchedule } from "@/lib/billing-ui/types";
 import { formatMoney } from "@/lib/billing-ui/view-model";
 import { firmToday, isPackageRow, nextRunDates, pricedHow, runItems, runRows, shortDate, whyItMoves, type PriceOverride, type ProjectedItem } from "@/lib/billing-ui/workbench";
@@ -105,6 +105,7 @@ export function WhatBillsNext({ api, active, clientId, clients, canGenerate, can
   const [generated, setGenerated] = useState<Generated | null>(null);
   const [refresh, setRefresh] = useState(0);
   const [loadedFor, setLoadedFor] = useState<string | null>(null);
+  const [openCapped, setOpenCapped] = useState(false);
   const [firm, setFirm] = useState<FirmSchedule | null>(null);
   const [firmMore, setFirmMore] = useState(false);
   // A page that lands after the dates changed belongs to the old list.
@@ -116,13 +117,13 @@ export function WhatBillsNext({ api, active, clientId, clients, canGenerate, can
     const dates = `${from}|${to}`;
     firmWindow.current = showFirm ? dates : "";
     const [openResult, unpricedResult, pricing, schedule, firmResult] = await Promise.all([
-      api.candidates({ clientId, state: "open", limit: 100 }),
-      api.candidates({ clientId, state: "unpriced", limit: 100 }),
+      readPages((cursor) => api.candidates({ clientId, state: "open", limit: 100, cursor })),
+      readPages((cursor) => api.candidates({ clientId, state: "unpriced", limit: 100, cursor })),
       clientId ? api.clientPricing(clientId) : Promise.resolve(null),
       clientId ? api.schedule({ from, to, clientId }) : Promise.resolve(null),
       showFirm ? api.firmSchedule({ from, to, limit: 50 }) : Promise.resolve(null),
     ]);
-    if (openResult.ok) setOpen(openResult.data.items); else setFailure(asFailure(openResult));
+    if (openResult.ok) { setOpen(openResult.data.items); setOpenCapped(Boolean(openResult.data.nextCursor)); } else setFailure(asFailure(openResult));
     if (unpricedResult.ok) setUnpriced(unpricedResult.data.items);
     setBundles(pricing && pricing.ok ? pricing.data.bundles || [] : []);
     setOverrides(pricing && pricing.ok ? pricing.data.overrides as unknown as PriceOverride[] : []);
@@ -179,7 +180,7 @@ export function WhatBillsNext({ api, active, clientId, clients, canGenerate, can
         ) : (
           <div className="stat" data-firm-summary><div className="k">Projected · all clients</div><div className="v num">{formatMoney(firm.summary.projectedAmount)}</div><div className="d">{firm.summary.candidateCount} items{firm.summary.unpricedCount ? `, ${firm.summary.unpricedCount} with no price` : ""}</div></div>
         )}
-        <div className="stat"><div className="k">Ready to bill</div><div className="v num" style={{ color: open.length ? "var(--amber)" : undefined }}>{open.length}</div><div className="d">candidates, not invoiced</div></div>
+        <div className="stat"><div className="k">Ready to bill</div><div className="v num" style={{ color: open.length ? "var(--amber)" : undefined }}>{open.length}{openCapped ? "+" : ""}</div><div className="d">candidates, not invoiced</div></div>
         <div className="stat"><div className="k">No price</div><div className="v num" style={{ color: unpricedCount ? "var(--red)" : undefined }}>{unpricedCount}</div><div className="d">captured, can&apos;t be drafted yet</div></div>
         <div className="stat"><div className="k">Drafts</div><div className="v num">{draftCount}</div><div className="d">waiting for you</div></div>
       </div>
