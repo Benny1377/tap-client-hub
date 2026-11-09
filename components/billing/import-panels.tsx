@@ -30,9 +30,11 @@ import {
   type ImportInvoice,
   type ImportPolicy,
   type ImportRow,
+  summaryRowView,
 } from "@/lib/billing-ui/imports";
 import type { ClientOption, Receivable, Viewer } from "@/lib/billing-ui/types";
 import { formatMoney } from "@/lib/billing-ui/view-model";
+import { PairApprovalBox, SummaryRows } from "./import-pair";
 import { COLLECTIONS_PDF_SUGGESTION_PARSER_VERSION, normalizeImportedCustomerName, suggestImportedClientMatches, type ImportedClientMatch } from "@/lib/collections-pdf-suggestions";
 
 type Failure = { kind: string; message: string; code?: string };
@@ -274,6 +276,7 @@ function BatchReview({ api, batchId, viewer, clients, billingInvoices, batches, 
   const data = detail.data;
   const { batch, rows, invoices } = data;
   const editable = batch.status === "needs_review";
+  const isSummary = batch.report_type === "aging_summary";
   const progress = reviewProgress(rows);
   const exactMatchCount = rows.filter((row) => {
     const suggestion = row.parsed_fields.auto_suggestion;
@@ -361,7 +364,7 @@ function BatchReview({ api, batchId, viewer, clients, billingInvoices, batches, 
             <table className="bc-table sm" data-import-lines>
               <thead><tr><th>Line</th><th>Text read from the PDF</th><th>Review</th></tr></thead>
               <tbody>
-                {rows.map((row) => (
+                {(isSummary ? rows.filter((row) => summaryRowView(row).kind === "other") : rows).map((row) => (
                   <LineRow
                     key={row.id}
                     row={row}
@@ -392,20 +395,29 @@ function BatchReview({ api, batchId, viewer, clients, billingInvoices, batches, 
         </>
       ) : null}
 
+      {isSummary ? (
+        <SummaryRows rows={rows} editable={editable} onCorrect={(input) => act(() => api.correctSummaryRow(batch.id, input), undefined, true)} />
+      ) : null}
+
       {invoices.length > 0 ? (
         <ConfirmedInvoices invoices={invoices} revisions={data.revisions} clientNames={clientNames} billingById={billingById} />
       ) : null}
 
-      {batch.report_type === "aging_summary" ? (
-        <CrossCheckForm api={api} batch={batch} batches={batches} onDone={() => Promise.all([load(), onBatchChanged()]).then(() => undefined)} />
+      {isSummary && batch.status === "needs_review" ? (
+        <div className="bc-source" role="note" data-summary-pairing style={{ marginTop: 16 }}>
+          {batches.some((item) => item.report_type === "aging_detail" && item.status === "needs_review" && item.source_as_of === batch.source_as_of)
+            ? <>The detail report for {dateLabel(batch.source_as_of)} is uploaded. Approve the pair from the detail report: it reconciles every customer here and approves both reports together.</>
+            : <>Upload the detail report for {dateLabel(batch.source_as_of)}. Nothing reaches Collections until both reports are reviewed and approved together.</>}
+        </div>
       ) : null}
 
       {batch.report_type === "aging_detail" && batch.status === "needs_review" ? (
-        <ApprovalBox
+        <PairApprovalBox
+          api={api}
           detail={data}
           viewer={viewer}
-          pendingSummaries={batches.filter((item) => item.report_type === "aging_summary" && item.status === "needs_review" && item.source_as_of === batch.source_as_of)}
-          onApprove={() => act(() => api.approveImport(batch.id), onCollectionsChanged)}
+          summaries={batches.filter((item) => item.report_type === "aging_summary" && item.status === "needs_review" && item.source_as_of === batch.source_as_of)}
+          onApproved={async () => { setActionNotice("Both reports are approved. The detail report's invoices are now on the Collections call list."); await Promise.all([load(), onBatchChanged()]); onCollectionsChanged(); }}
         />
       ) : null}
       {batch.status === "approved" ? (

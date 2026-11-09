@@ -27,7 +27,7 @@ import type {
   Viewer,
 } from "./types";
 import type { DeliveriesQuery, DeliveriesResponse, DeliverySetup, DeliveryTestRunResult } from "./delivery";
-import type { ClassifyDisposition, CrossCheckResult, DiscrepancyResolution, ImportBatch, ImportBatchDetail, ImportInvoice, ImportInvoiceInput, ImportPolicy } from "./imports";
+import type { ClassifyDisposition, CrossCheckResult, DiscrepancyResolution, ImportBatch, ImportBatchDetail, ImportInvoice, ImportInvoiceInput, ImportPolicy, SummaryRowCorrection } from "./imports";
 
 /** Source-aware invoice target accepted by the hold and event routes (Phase 4 addendum). */
 export type InvoiceTarget = { source: "billing"; invoice_id: string } | { source: "pdf_import"; source_invoice_id: string };
@@ -43,7 +43,7 @@ export type ApiErrorKind = "unauthorized" | "forbidden" | "not_found" | "conflic
 
 export type ApiResult<T> =
   | { ok: true; status: number; data: T }
-  | { ok: false; status: number; kind: ApiErrorKind; message: string; code?: string };
+  | { ok: false; status: number; kind: ApiErrorKind; message: string; code?: string; details?: unknown };
 
 export type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
 
@@ -75,7 +75,7 @@ async function request<T>(fetchImpl: FetchLike, url: string, init?: RequestInit)
     body = null;
   }
   if (!response.ok) {
-    const payload = body && typeof body === "object" ? (body as { error?: unknown; code?: unknown }) : {};
+    const payload = body && typeof body === "object" ? (body as { error?: unknown; code?: unknown; result?: unknown }) : {};
     const failure: ApiResult<T> = {
       ok: false,
       status: response.status,
@@ -84,6 +84,8 @@ async function request<T>(fetchImpl: FetchLike, url: string, init?: RequestInit)
     };
     // Stable machine-readable code from the server, when it sends one.
     if (typeof payload.code === "string") failure.code = payload.code;
+    // Some refusals carry the evidence behind them, such as a failed A/R reconciliation.
+    if (payload.result !== undefined && failure.ok === false) failure.details = payload.result;
     return failure;
   }
   // A success with no JSON body (for example an HTML page from a dev-server reload)
@@ -318,6 +320,9 @@ export function createBillingApi(fetchImpl: FetchLike) {
         `/api/collections/imports/${encodeURIComponent(batchId)}/approve`,
         summaryBatchId ? { summary_batch_id: summaryBatchId } : {},
       ),
+    /** A person's correction of one summary customer row. Whoever corrects either report can't approve the pair. */
+    correctSummaryRow: (summaryBatchId: string, input: SummaryRowCorrection) =>
+      patch<{ row: { row_id: string; customer_name: string; fields: Record<string, string>; review_disposition: string } }>(fetchImpl, `/api/collections/imports/${encodeURIComponent(summaryBatchId)}/summary-row`, { ...input, confirmed: true }),
     crossCheckImport: (summaryBatchId: string, input: { detail_batch_id: string; summary_total: number; note: string }) =>
       post<{ cross_check: CrossCheckResult }>(fetchImpl, `/api/collections/imports/${encodeURIComponent(summaryBatchId)}/cross-check`, input),
     /** Choosing the balance that drives collection actions; needs approve permission. */
