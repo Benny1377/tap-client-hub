@@ -26,12 +26,27 @@ test("parse results remain staging data until every source line and invoice is r
   const migration = source("supabase/migrations/20261019100000_collections_pdf_intake.sql");
   assert.match(parse, /parseCollectionsPdf/);
   assert.match(parse, /raw_text: line\.text/);
-  assert.match(parse, /review_disposition: "duplicate"/);
+  assert.match(parse, /review_disposition: autoClassified \? suggestion\.disposition : "unreviewed"/);
+  assert.doesNotMatch(parse, /review_disposition: "duplicate"/);
+  assert.match(parse, /update\.duplicate_of = null/);
+  assert.match(parse, /confidence: "low"/);
+  assert.match(parse, /Repeated source text was previously marked as a duplicate/);
+  assert.match(parse, /update\.review_disposition = "unreviewed"/);
   assert.match(review, /CLIENT_LINK_REQUIRED|Select an existing TAP Hub client first/);
   assert.match(migration, /review_disposition text not null default 'unreviewed'/);
   assert.match(migration, /every extracted line must be classified before approval/);
   assert.match(migration, /uploader cannot approve/);
   assert.match(migration, /corrector cannot approve/);
+});
+
+test("new client records carry a creator and generate a PII-minimized audit row", () => {
+  const clientsRoute = source("app/api/clients/route.ts");
+  const auditMigration = source("supabase/migrations/20261107130000_audit_client_creation.sql");
+  assert.match(clientsRoute, /created_by: access\.identity!\.id/);
+  assert.match(auditMigration, /after insert on tap_hub_project\.clients/);
+  assert.match(auditMigration, /new\.created_by/);
+  assert.match(auditMigration, /jsonb_build_object\('name', new\.name, 'type', new\.type, 'status', new\.status\)/);
+  assert.doesNotMatch(auditMigration, /new\.(?:emails|phones|ein|address)/);
 });
 
 test("automatic A/R mapping is conservative, permission-checked, auditable, and still gated by a separate approval", () => {
@@ -55,6 +70,38 @@ test("automatic A/R mapping is conservative, permission-checked, auditable, and 
   assert.match(lockMigration, /for update/);
   assert.match(ui, /Apply exact client matches in one step/);
   assert.match(ui, /A separate Owner\/Admin still has to approve/);
+});
+
+test("customer group headings may contain digits without treating transaction IDs as customers", () => {
+  const suggestions = source("lib/collections-pdf-suggestions.ts");
+  assert.match(suggestions, /QuickBooks customer headings can contain digits/);
+  assert.match(suggestions, /transaction IDs out/);
+});
+
+test("parser behavior changes use a new version so existing batches can refresh", () => {
+  const suggestions = source("lib/collections-pdf-suggestions.ts");
+  assert.match(suggestions, /COLLECTIONS_PDF_SUGGESTION_PARSER_VERSION = "quickbooks-aging-summary-match-v7"/);
+});
+
+test("paired A/R approval requires a same-date summary and commits both batches together", () => {
+  const approve = source("app/api/collections/imports/[id]/approve/route.ts");
+  const summaryCorrection = source("app/api/collections/imports/[id]/summary-row/route.ts");
+  const migration = source("supabase/migrations/20261109121124_collections_atomic_summary_detail_approval.sql");
+  const parse = source("app/api/collections/imports/[id]/parse/route.ts");
+  assert.match(approve, /summary_batch_id/);
+  assert.match(approve, /approve_collection_import_pair/);
+  assert.match(approve, /IMPORT_RECONCILIATION_MISMATCH/);
+  assert.match(approve, /IMPORT_SEPARATION_OF_DUTIES/);
+  assert.match(approve, /conflict \? 409/);
+  assert.match(summaryCorrection, /canUseCollectionsImport\(access\.identity!, "review"\)/);
+  assert.match(summaryCorrection, /review_collection_import_summary_row/);
+  assert.doesNotMatch(summaryCorrection, /\bBigInt\b|\d+n\b/);
+  assert.match(migration, /pdf_summary_row_corrected/);
+  assert.match(parse, /suggestCollectionsSummaryRows/);
+  assert.match(migration, /status = 'approved',approved_by = p_actor/);
+  assert.match(migration, /summary and detail reports do not match|status','mismatch/);
+  assert.match(migration, /non-admin uploader cannot approve/);
+  assert.match(migration, /batch corrector cannot approve/);
 });
 
 test("approved import source identities carry across actions and block stale or conflicting balances", () => {
@@ -102,8 +149,10 @@ test("raw imported report contents require review permission and balance selecti
 
 test("same-date summary reports require a reviewer-confirmed, auditable detail-total match", () => {
   const crossCheck = source("app/api/collections/imports/[id]/cross-check/route.ts");
+  const parse = source("app/api/collections/imports/[id]/parse/route.ts");
   const review = source("app/api/collections/imports/[id]/route.ts");
   const migration = source("supabase/migrations/20261019100000_collections_pdf_intake.sql");
+  const guardMigration = source("supabase/migrations/20261107132830_collections_require_review_before_cross_check.sql");
   const sqlTest = source("supabase/tests/collections_phase4_intake_schema.sql");
   assert.match(crossCheck, /cross_check_collection_import_reports/);
   assert.match(migration, /summary_reported_total/);
@@ -117,4 +166,36 @@ test("same-date summary reports require a reviewer-confirmed, auditable detail-t
   assert.match(migration, /collection_import_invoice_revisions/);
   assert.match(sqlTest, /Late link changed canonical identity or failed to share aliases/);
   assert.match(sqlTest, /post-report Billing change did not re-block/);
+  assert.match(guardMigration, /review_disposition='unreviewed'/);
+  assert.match(guardMigration, /r\.source_invoice_id is null/);
+  assert.match(parse, /This invoice text appears more than once in the report/);
+  assert.match(parse, /confirmedSameText/);
+  assert.match(sqlTest, /Cross-check did not refuse while a source invoice row was unreviewed/);
+  assert.match(sqlTest, /Cross-check did not refuse an invoice row without a staged identity/);
+});
+
+test("detail reconciliation includes recognized non-invoice evidence and fails closed on missing amounts", () => {
+  const migration = source("supabase/migrations/20261107120000_collections_reconcile_noninvoice_pdf_rows.sql");
+  const reset = source("tools/collections-local/reset.sh");
+  const parser = source("lib/collections-pdf-suggestions.ts");
+  assert.match(migration, /v_invoice_total \+ v_non_invoice_total/);
+  assert.match(migration, /v_expected_non_invoice_count <> v_evidence_count/);
+  assert.match(migration, /detail_invoice_subtotal/);
+  assert.match(migration, /detail_non_invoice_adjustments/);
+  assert.match(migration, /detail_net_total/);
+  assert.match(reset, /20261107120000_collections_reconcile_noninvoice_pdf_rows\.sql/);
+  assert.match(reset, /20261104160000_collections_guard_auto_match_review_state\.sql/);
+  assert.match(parser, /transaction retained as report evidence/);
+  assert.match(parser, /transaction_type: type,[\s\S]*open_balance: amount/);
+});
+
+test("detail parsing uses only one same-date summary as name evidence and audits that read", () => {
+  const route = source("app/api/collections/imports/[id]/parse/route.ts");
+  const parser = source("lib/collections-pdf-suggestions.ts");
+  assert.match(route, /eq\("report_type", "aging_summary"\)\.eq\("source_as_of", parsed\.source_as_of\)/);
+  assert.match(route, /summaryBatches\?\.length === 1/);
+  assert.match(route, /pdf_summary_matching_context_read/);
+  assert.match(route, /suggestCollectionsPdfRows\(parsed\.lines, summaryLines\)/);
+  assert.match(parser, /nameCandidates\.length !== 1/);
+  assert.match(parser, /total\.balance === nameCandidates\[0\]\.balance/);
 });

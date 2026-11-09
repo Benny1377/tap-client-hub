@@ -93,6 +93,7 @@ export function sanitizeManagerModules(
 export function moduleForPathname(pathname: string): string | null {
   // Contacts is a second Clients surface, not an independently assignable module.
   if (pathname === "/contacts") return "Clients";
+  if (pathname.startsWith("/clients/")) return "Clients";
   if (pathname.startsWith("/support/")) return "Support";
   if (pathname.startsWith("/billing/")) return "Billing";
   if (pathname.startsWith("/collections/")) return "Collections";

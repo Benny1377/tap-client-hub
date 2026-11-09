@@ -28,7 +28,7 @@ begin
   values (v_invoice, v_client, null, 'draft', null, null, v_creator);
   insert into tap_hub_project.invoice_lines(invoice_id, description, quantity, unit_amount, amount, created_by)
   values (v_invoice, 'Audit fixture line', 1, 40, 40, v_creator);
-  update tap_hub_project.invoices set status = 'issued', invoice_number = 'AUDIT-' || replace(v_invoice::text, '-', ''), issue_date = current_date, due_date = current_date where id = v_invoice;
+  update tap_hub_project.invoices set status = 'issued', invoice_number = 'AUDIT-' || replace(v_invoice::text, '-', ''), issue_date = current_date, due_date = current_date, presentation_snapshot = '{"firmName":"Synthetic fixture"}'::jsonb where id = v_invoice;
 
   insert into tap_hub_project.payments(id, client_id, received_on, amount, method, created_by)
   values (v_payment, v_client, tap_hub_project.collections_firm_today(), 10, 'cash', v_creator);

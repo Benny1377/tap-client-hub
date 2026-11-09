@@ -22,6 +22,25 @@ begin
 end;
 $$;
 
+-- Client creation must retain the creator while avoiding contact-detail PII
+-- in the generic audit log.
+do $$
+declare
+  v_client uuid := gen_random_uuid();
+  v_actor uuid := '00000000-0000-4000-8000-000000000001';
+  v_detail jsonb;
+begin
+  insert into tap_hub_project.clients(id,name,type,status,created_by)
+    values (v_client,'Synthetic Audit Client','business','active',v_actor);
+  select detail into v_detail from tap_hub_project.audit_log
+    where entity='clients' and entity_id=v_client::text and actor=v_actor and action='insert';
+  if v_detail is null or v_detail->>'name'<>'Synthetic Audit Client'
+    or v_detail ? 'emails' or v_detail ? 'phones' or v_detail ? 'ein' or v_detail ? 'address' then
+    raise exception 'Client creation audit was missing, misattributed, or included contact PII';
+  end if;
+end;
+$$;
+
 -- A reviewer may correct an unrecognized report header only before invoice
 -- review begins; the before/after values are retained and the corrector cannot
 -- approve the same batch.
@@ -82,7 +101,7 @@ begin
     '00000000-0000-4000-8000-000000000001',true);
   insert into tap_hub_project.invoice_lines(invoice_id,description,quantity,unit_amount,amount,created_by)
   values (v_invoice,'Synthetic discrepancy test',1,125,125,'00000000-0000-4000-8000-000000000001');
-  update tap_hub_project.invoices set status='issued', invoice_number='LOCAL-DISCREPANCY-'||v_invoice::text, issue_date=v_as_of-40, due_date=v_as_of-10 where id=v_invoice;
+  update tap_hub_project.invoices set status='issued', invoice_number='LOCAL-DISCREPANCY-'||v_invoice::text, issue_date=v_as_of-40, due_date=v_as_of-10, presentation_snapshot='{"firmName":"Synthetic fixture"}'::jsonb where id=v_invoice;
   insert into tap_hub_project.collection_source_invoice_identities
     (source_invoice_id,client_id,linked_invoice_id,selected_source,canonical_collection_identity)
   values (v_source,'10000000-0000-4000-8000-000000000001',v_invoice,'billing','billing:'||v_invoice::text);
@@ -213,8 +232,8 @@ begin
   insert into tap_hub_project.invoice_lines(invoice_id,description,quantity,unit_amount,amount,created_by)
   values(v_invoice_one,'Synthetic first invoice',1,125,125,'00000000-0000-4000-8000-000000000001'),
         (v_invoice_two,'Synthetic second invoice',1,50,50,'00000000-0000-4000-8000-000000000001');
-  update tap_hub_project.invoices set status='issued', invoice_number='LOCAL-MULTI-001', issue_date=v_as_of-35, due_date=v_as_of-10 where id=v_invoice_one;
-  update tap_hub_project.invoices set status='issued', invoice_number='LOCAL-MULTI-002', issue_date=v_as_of-30, due_date=v_as_of-5 where id=v_invoice_two;
+  update tap_hub_project.invoices set status='issued', invoice_number='LOCAL-MULTI-001', issue_date=v_as_of-35, due_date=v_as_of-10, presentation_snapshot='{"firmName":"Synthetic fixture"}'::jsonb where id=v_invoice_one;
+  update tap_hub_project.invoices set status='issued', invoice_number='LOCAL-MULTI-002', issue_date=v_as_of-30, due_date=v_as_of-5, presentation_snapshot='{"firmName":"Synthetic fixture"}'::jsonb where id=v_invoice_two;
   insert into tap_hub_project.payments(id,client_id,received_on,amount,method,status,created_by)
   values(v_payment,'10000000-0000-4000-8000-000000000001',v_as_of-2,30,'ach','recorded','00000000-0000-4000-8000-000000000001');
   insert into tap_hub_project.payment_allocations(payment_id,invoice_id,amount,created_by,created_at)
@@ -302,9 +321,15 @@ declare
   v_detail uuid := gen_random_uuid();
   v_source uuid := gen_random_uuid();
   v_row uuid := gen_random_uuid();
+  v_credit_row uuid := gen_random_uuid();
+  v_unreviewed_row uuid := gen_random_uuid();
+  v_unstaged_invoice_row uuid := gen_random_uuid();
   v_as_of date := tap_hub_project.collections_firm_today();
   v_check jsonb;
   v_blocked boolean := false;
+  v_missing_evidence_blocked boolean := false;
+  v_unreviewed_blocked boolean := false;
+  v_unstaged_invoice_blocked boolean := false;
 begin
   insert into tap_hub_project.collection_import_batches
     (id,file_sha256,storage_path,original_filename,content_type,file_size_bytes,report_type,source_as_of,status,uploaded_by)
@@ -315,19 +340,192 @@ begin
     values (v_source,'10000000-0000-4000-8000-000000000001');
   insert into tap_hub_project.collection_import_rows(id,batch_id,source_invoice_id,page_number,row_number,raw_text,review_disposition)
     values (v_row,v_detail,v_source,1,1,'synthetic cross-check row','invoice');
+  insert into tap_hub_project.collection_import_rows(id,batch_id,page_number,row_number,raw_text,parsed_fields,review_disposition)
+    values (v_credit_row,v_detail,1,2,'Payment | synthetic credit',
+      '{"cells":["Payment"],"auto_suggestion":{"disposition":"ignored","fields":{"transaction_type":"Payment"}}}'::jsonb,'ignored');
+  insert into tap_hub_project.collection_import_rows(id,batch_id,page_number,row_number,raw_text,parsed_fields,review_disposition)
+    values (v_unreviewed_row,v_detail,1,3,'Synthetic unresolved invoice row',
+      '{"auto_suggestion":{"disposition":"invoice","confidence":"low"}}'::jsonb,'unreviewed');
   insert into tap_hub_project.collection_import_invoices
     (source_invoice_id,batch_id,invoice_number,customer_name,open_balance,source_as_of,source_row_key,review_status)
     values (v_source,v_detail,'SYN-XCHECK','Synthetic Orchard',42,v_as_of,'1:1','ready');
-  v_check := tap_hub_project.cross_check_collection_import_reports(v_summary,v_detail,40,'Reviewed total differs; reconcile rows','00000000-0000-4000-8000-000000000003');
+  begin
+    perform tap_hub_project.cross_check_collection_import_reports(v_summary,v_detail,40,'Unreviewed row must block','00000000-0000-4000-8000-000000000003');
+  exception when sqlstate 'P0001' then
+    v_unreviewed_blocked := position('every invoice source row must be reviewed' in sqlerrm) > 0;
+  end;
+  if not v_unreviewed_blocked then raise exception 'Cross-check did not refuse while a source invoice row was unreviewed'; end if;
+  update tap_hub_project.collection_import_rows set review_disposition='header' where id=v_unreviewed_row;
+  insert into tap_hub_project.collection_import_rows(id,batch_id,page_number,row_number,raw_text,parsed_fields,review_disposition)
+    values (v_unstaged_invoice_row,v_detail,1,4,'Synthetic invoice suggestion without staged identity',
+      '{"auto_suggestion":{"disposition":"invoice","confidence":"high"}}'::jsonb,'invoice');
+  begin
+    perform tap_hub_project.cross_check_collection_import_reports(v_summary,v_detail,40,'Unstaged invoice must block','00000000-0000-4000-8000-000000000003');
+  exception when sqlstate 'P0001' then
+    v_unstaged_invoice_blocked := position('every invoice source row must be reviewed' in sqlerrm) > 0;
+  end;
+  if not v_unstaged_invoice_blocked then raise exception 'Cross-check did not refuse an invoice row without a staged identity'; end if;
+  update tap_hub_project.collection_import_rows set review_disposition='header' where id=v_unstaged_invoice_row;
+  begin
+    perform tap_hub_project.cross_check_collection_import_reports(v_summary,v_detail,40,'Missing amount must block','00000000-0000-4000-8000-000000000003');
+  exception when sqlstate 'P0001' then v_missing_evidence_blocked := true;
+  end;
+  if not v_missing_evidence_blocked then raise exception 'Cross-check did not fail closed when a recognized payment lacked an amount'; end if;
+  update tap_hub_project.collection_import_rows set parsed_fields =
+    '{"cells":["Payment"],"auto_suggestion":{"disposition":"ignored","fields":{"transaction_type":"Payment","open_balance":"-2.00"}}}'::jsonb
+    where id=v_credit_row;
+  v_check := tap_hub_project.cross_check_collection_import_reports(v_summary,v_detail,38,'Reviewed total differs; reconcile rows','00000000-0000-4000-8000-000000000003');
   if v_check->>'status' <> 'mismatch' or v_check->>'difference' <> '-2.00' then raise exception 'Summary/detail mismatch math is incorrect'; end if;
+  if v_check->>'detail_invoice_subtotal' <> '42.00' or v_check->>'detail_non_invoice_adjustments' <> '-2.00' or v_check->>'detail_net_total' <> '40.00' then
+    raise exception 'Detail reconciliation did not show invoice and non-invoice math';
+  end if;
   begin
     perform tap_hub_project.approve_collection_import_batch(v_detail,'00000000-0000-4000-8000-000000000003');
   exception when sqlstate 'P0001' then v_blocked := true;
   end;
   if not v_blocked then raise exception 'Detail approval was not blocked by mismatched summary report'; end if;
-  v_check := tap_hub_project.cross_check_collection_import_reports(v_summary,v_detail,42,'Reviewed corrected total and confirmed','00000000-0000-4000-8000-000000000003');
+  v_check := tap_hub_project.cross_check_collection_import_reports(v_summary,v_detail,40,'Reviewed corrected total and confirmed','00000000-0000-4000-8000-000000000003');
   if v_check->>'status' <> 'matched' or v_check->>'difference' <> '0.00' then raise exception 'Corrected summary/detail match was not recorded'; end if;
   perform tap_hub_project.approve_collection_import_batch(v_detail,'00000000-0000-4000-8000-000000000003');
+end;
+$$;
+
+-- OCR/field corrections to summary rows are audited and create a separate approver barrier.
+do $$
+declare
+  v_batch uuid := gen_random_uuid();
+  v_row uuid := gen_random_uuid();
+  v_result jsonb;
+  v_blocked boolean := false;
+begin
+  insert into tap_hub_project.collection_import_batches
+    (id,file_sha256,storage_path,original_filename,content_type,file_size_bytes,report_type,source_as_of,status,uploaded_by)
+  values(v_batch,repeat('6',64),v_batch::text||'/summary-corrected.pdf','summary-corrected.pdf','application/pdf',100,'aging_summary',tap_hub_project.collections_firm_today(),'needs_review','00000000-0000-4000-8000-000000000001');
+  insert into tap_hub_project.collection_import_rows(id,batch_id,page_number,row_number,raw_text,parsed_fields,review_disposition)
+  values(v_row,v_batch,1,1,'Synthetic summary correction',
+    '{"auto_suggestion":{"disposition":"summary","fields":{"kind":"customer","customer_name":"Example Orchard LLC","total_open_balance":"40.00"}}}'::jsonb,'summary');
+  v_result := tap_hub_project.review_collection_import_summary_row(v_batch,v_row,'00000000-0000-4000-8000-000000000003',
+    'Example Orchard LLC','{"current":"42.00","days_1_30":"0.00","days_31_60":"0.00","days_61_90":"0.00","over_90":"0.00","total_open_balance":"42.00"}'::jsonb);
+  if v_result->>'customer_name'<>'Example Orchard LLC' or v_result#>>'{fields,total_open_balance}'<>'42.00'
+    or not exists(select 1 from tap_hub_project.collection_import_audit where batch_id=v_batch and actor='00000000-0000-4000-8000-000000000003' and action='pdf_summary_row_corrected') then
+    raise exception 'Summary row correction did not persist with its actor audit';
+  end if;
+  perform set_config('tap_hub.actor_id','00000000-0000-4000-8000-000000000003',true);
+  begin
+    update tap_hub_project.collection_import_batches set status='approved' where id=v_batch;
+  exception when raise_exception then
+    v_blocked := position('batch corrector' in sqlerrm)>0;
+  end;
+  if not v_blocked then raise exception 'Summary row corrector was allowed to approve the report'; end if;
+end;
+$$;
+
+-- Final approval matches summary customer balances to detail customer subtotals,
+-- then approves both batches atomically. An Admin uploader may self-approve.
+do $$
+declare
+  v_summary uuid := gen_random_uuid();
+  v_detail uuid := gen_random_uuid();
+  v_source uuid := gen_random_uuid();
+  v_summary_row uuid := gen_random_uuid();
+  v_detail_row uuid := gen_random_uuid();
+  v_as_of date := tap_hub_project.collections_firm_today();
+  v_result jsonb;
+  v_detail_status text;
+  v_summary_status text;
+begin
+  insert into tap_hub_project.collection_import_batches
+    (id,file_sha256,storage_path,original_filename,content_type,file_size_bytes,report_type,source_as_of,status,uploaded_by)
+  values
+    (v_summary,repeat('1',64),v_summary::text||'/summary.pdf','summary.pdf','application/pdf',100,'aging_summary',v_as_of,'needs_review','00000000-0000-4000-8000-000000000003'),
+    (v_detail,repeat('2',64),v_detail::text||'/detail.pdf','detail.pdf','application/pdf',100,'aging_detail',v_as_of,'needs_review','00000000-0000-4000-8000-000000000003');
+  insert into tap_hub_project.collection_source_invoice_identities(source_invoice_id,client_id)
+    values(v_source,'10000000-0000-4000-8000-000000000001');
+  insert into tap_hub_project.collection_import_rows(id,batch_id,source_invoice_id,page_number,row_number,raw_text,parsed_fields,review_disposition)
+    values(v_detail_row,v_detail,v_source,1,1,'Synthetic invoice row',
+      '{"auto_suggestion":{"disposition":"invoice","fields":{"customer_name":"Example Orchard LLC","open_balance":"42.00"}}}'::jsonb,'invoice');
+  insert into tap_hub_project.collection_import_invoices
+    (source_invoice_id,batch_id,invoice_number,customer_name,open_balance,source_as_of,source_row_key,review_status)
+    values(v_source,v_detail,'SYN-PAIR-1','Example Orchard LLC',42,v_as_of,'1:1','ready');
+  insert into tap_hub_project.collection_import_rows(id,batch_id,page_number,row_number,raw_text,parsed_fields,review_disposition)
+    values(v_summary_row,v_summary,1,1,'Example Orchard LLC | 42.00 | 0.00 | 0.00 | 0.00 | 0.00 | 42.00',
+      '{"cells":["Example Orchard LLC","42.00","0.00","0.00","0.00","0.00","42.00"],"auto_suggestion":{"disposition":"summary","fields":{"kind":"customer","customer_name":"Example Orchard LLC","current":"42.00","days_1_30":"0.00","days_31_60":"0.00","days_61_90":"0.00","over_90":"0.00","total_open_balance":"42.00"}}}'::jsonb,'summary');
+
+  v_result := tap_hub_project.approve_collection_import_pair(v_detail,v_summary,'00000000-0000-4000-8000-000000000003');
+  select status into v_detail_status from tap_hub_project.collection_import_batches where id=v_detail;
+  select status into v_summary_status from tap_hub_project.collection_import_batches where id=v_summary;
+  if v_result->>'status'<>'approved' or v_detail_status<>'approved' or v_summary_status<>'approved' then
+    raise exception 'Admin uploader was not able to atomically approve a matched report pair';
+  end if;
+  if v_result#>>'{reconciliation,customers,0,status}'<>'matched' then
+    raise exception 'Matched customer math was not returned for the reviewer UI';
+  end if;
+  if (select count(*) from tap_hub_project.collection_import_audit where batch_id in (v_detail,v_summary) and actor='00000000-0000-4000-8000-000000000003' and action='batch_approved')<>2 then
+    raise exception 'Both report approvals were not audited to the Admin actor';
+  end if;
+end;
+$$;
+
+-- A mismatch is persisted as row-level conflict evidence, but approves neither batch.
+do $$
+declare
+  v_summary uuid := gen_random_uuid();
+  v_detail uuid := gen_random_uuid();
+  v_source uuid := gen_random_uuid();
+  v_summary_row uuid := gen_random_uuid();
+  v_detail_row uuid := gen_random_uuid();
+  v_as_of date := tap_hub_project.collections_firm_today();
+  v_result jsonb;
+  v_detail_status text;
+  v_summary_status text;
+  v_row_status text;
+begin
+  insert into tap_hub_project.collection_import_batches
+    (id,file_sha256,storage_path,original_filename,content_type,file_size_bytes,report_type,source_as_of,status,uploaded_by)
+  values
+    (v_summary,repeat('3',64),v_summary::text||'/summary.pdf','summary.pdf','application/pdf',100,'aging_summary',v_as_of,'needs_review','00000000-0000-4000-8000-000000000001'),
+    (v_detail,repeat('4',64),v_detail::text||'/detail.pdf','detail.pdf','application/pdf',100,'aging_detail',v_as_of,'needs_review','00000000-0000-4000-8000-000000000001');
+  insert into tap_hub_project.collection_source_invoice_identities(source_invoice_id,client_id)
+    values(v_source,'10000000-0000-4000-8000-000000000001');
+  insert into tap_hub_project.collection_import_rows(id,batch_id,source_invoice_id,page_number,row_number,raw_text,review_disposition)
+    values(v_detail_row,v_detail,v_source,1,1,'Synthetic mismatch invoice','invoice');
+  insert into tap_hub_project.collection_import_invoices
+    (source_invoice_id,batch_id,invoice_number,customer_name,open_balance,source_as_of,source_row_key,review_status)
+    values(v_source,v_detail,'SYN-PAIR-2','Example Orchard LLC',42,v_as_of,'1:1','ready');
+  insert into tap_hub_project.collection_import_rows(id,batch_id,page_number,row_number,raw_text,parsed_fields,review_disposition)
+    values(v_summary_row,v_summary,1,1,'Example Orchard LLC | 0.00 | 0.00 | 0.00 | 0.00 | 0.00 | 40.00',
+      '{"auto_suggestion":{"disposition":"summary","fields":{"kind":"customer","customer_name":"Example Orchard LLC","current":"41.00","days_1_30":"0.00","days_31_60":"0.00","days_61_90":"0.00","over_90":"0.00","total_open_balance":"40.00"}}}'::jsonb,'summary');
+  insert into tap_hub_project.collection_import_rows(batch_id,page_number,row_number,raw_text,parsed_fields,review_disposition)
+    values(v_summary,1,2,'Grand Total | 42.00',
+      '{"auto_suggestion":{"disposition":"summary","fields":{"kind":"grand_total","customer_name":null,"total_open_balance":"42.00"}}}'::jsonb,'summary');
+  v_result := tap_hub_project.approve_collection_import_pair(v_detail,v_summary,'00000000-0000-4000-8000-000000000003');
+  select status into v_detail_status from tap_hub_project.collection_import_batches where id=v_detail;
+  select status into v_summary_status from tap_hub_project.collection_import_batches where id=v_summary;
+  select parsed_fields#>>'{auto_suggestion,reconciliation,status}' into v_row_status from tap_hub_project.collection_import_rows where id=v_summary_row;
+  if v_result->>'status'<>'mismatch' or v_detail_status<>'needs_review' or v_summary_status<>'needs_review' or v_row_status<>'conflict'
+    or v_result#>>'{reconciliation,customers,0,buckets_consistent}'<>'false'
+    or v_result#>>'{reconciliation,printed_summary_total_matches}'<>'false' then
+    raise exception 'Mismatched report pair did not remain unapproved with a visible customer conflict';
+  end if;
+end;
+$$;
+
+-- Non-Admin uploaders remain unable to self-approve at the database trigger boundary.
+do $$
+declare
+  v_batch uuid := gen_random_uuid();
+  v_blocked boolean := false;
+begin
+  insert into tap_hub_project.collection_import_batches
+    (id,file_sha256,storage_path,original_filename,content_type,file_size_bytes,report_type,source_as_of,status,uploaded_by)
+  values (v_batch,repeat('5',64),v_batch::text||'/owner.pdf','owner.pdf','application/pdf',100,'aging_detail',tap_hub_project.collections_firm_today(),'needs_review','00000000-0000-4000-8000-000000000001');
+  perform set_config('tap_hub.actor_id','00000000-0000-4000-8000-000000000001',true);
+  begin
+    update tap_hub_project.collection_import_batches set status='approved' where id=v_batch;
+  exception when raise_exception then
+    v_blocked := position('non-admin uploader' in sqlerrm)>0;
+  end;
+  if not v_blocked then raise exception 'Owner who uploaded the report was allowed to self-approve'; end if;
 end;
 $$;
 rollback;

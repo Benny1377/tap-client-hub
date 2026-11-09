@@ -16,3 +16,27 @@ test("retrying an old failed batch with saved rows takes the non-destructive ref
   const destructiveReplace = parseRoute.indexOf('.from("collection_import_rows").delete()');
   assert.ok(refreshBranch > -1 && destructiveReplace > refreshBranch, "saved review rows are handled before any initial-parse replacement");
 });
+
+test("a successful retry explicitly restores failed batch status to needs_review", () => {
+  const refreshBranch = parseRoute.slice(parseRoute.indexOf("if (refreshingReview) {"), parseRoute.indexOf("const { error: clearError }"));
+  assert.match(refreshBranch, /update\(\{ status: "needs_review", metadata: refreshedMetadata/);
+  assert.match(refreshBranch, /\.eq\("status", batch\.status\)\.select\("id"\)\.maybeSingle\(\)/,
+    "the update must target the status observed at request start and prove a row was changed");
+  assert.match(refreshBranch, /metadataError \|\| !updatedBatch/);
+});
+
+test("failed row inserts log only sanitized diagnostics", () => {
+  const insertFailure = parseRoute.slice(parseRoute.indexOf('if (rowError || !data)'), parseRoute.indexOf("const firstByText"));
+  assert.match(insertFailure, /database_code: rowError\?\.code/);
+  assert.match(insertFailure, /row_count: rows\.length/);
+  assert.match(insertFailure, /chunk_size: chunk\.length/);
+  assert.match(insertFailure, /partial_rows_cleanup_failed: Boolean\(cleanupError\)/);
+  assert.doesNotMatch(insertFailure, /rowError\.(message|details|hint)|raw_text|customer_name/);
+});
+
+test("initial extraction inserts bounded chunks and removes partial rows on failure", () => {
+  assert.match(parseRoute, /const chunkSize = 200/);
+  assert.match(parseRoute, /for \(let offset = 0; offset < rows\.length; offset \+= chunkSize\)/);
+  assert.match(parseRoute, /\.insert\(chunk\)\.select\("id,page_number,row_number,raw_text"\)/);
+  assert.match(parseRoute, /\.from\("collection_import_rows"\)\.delete\(\)\.eq\("batch_id", id\)/);
+});

@@ -1,6 +1,6 @@
 // Phase 4 A/R PDF intake: response shapes of /api/collections/imports and the pure
-// helpers the review screen uses. The parser never infers invoice fields, so every
-// value here is something a reviewer typed or picked from an extracted cell.
+// helpers the review screen uses. Parser output is a suggestion/evidence snapshot;
+// explicit reviewer confirmation is still required before an invoice is staged.
 
 export type ImportReportType = "aging_detail" | "aging_summary" | "unknown";
 export type ImportBatchStatus = "uploaded" | "parsing" | "needs_review" | "approved" | "rejected" | "superseded" | "failed";
@@ -18,7 +18,7 @@ export interface ImportBatch {
   approved_by: string | null;
   approved_at: string | null;
   supersedes_batch_id: string | null;
-  metadata?: { page_count?: number; extracted_line_count?: number; suggestion_parser?: string; auto_classified_count?: number; high_confidence_invoice_suggestions?: number; detail_cross_check?: Partial<CrossCheckResult> } | null;
+  metadata?: { page_count?: number; extracted_line_count?: number; suggestion_parser?: string; auto_classified_count?: number; high_confidence_invoice_suggestions?: number; summary_backed_customer_suggestions?: number; summary_context_batch_id?: string | null; detail_cross_check?: Partial<CrossCheckResult> } | null;
   created_at: string;
   updated_at: string;
 }
@@ -89,10 +89,14 @@ export interface CrossCheckResult {
   source_as_of: string;
   summary_reported_total: string;
   detail_invoice_total: string;
+  detail_net_total?: string;
+  detail_invoice_subtotal?: string;
+  detail_non_invoice_adjustments?: string;
   /** Summary minus detail. */
   difference: string;
   status: "matched" | "mismatch";
   invoice_count: number;
+  non_invoice_evidence_count?: number;
   note: string;
 }
 
@@ -336,4 +340,90 @@ export function togglePolicy(policy: ImportPolicy, action: ImportAction, role: I
   const next = { ...policy, [action]: on ? Array.from(new Set([...(policy[action] || []), role])) : (policy[action] || []).filter((item) => item !== role) };
   for (const key of Object.keys(next) as ImportAction[]) next[key] = Array.from(new Set(["owner", "admin", ...next[key]])) as ImportPolicyRole[];
   return next;
+}
+
+// ---- Paired detail + summary approval (owner-approved 2026-11-09) ----
+
+export const SUMMARY_BUCKETS = [
+  { key: "current", label: "Current" },
+  { key: "days_1_30", label: "1–30" },
+  { key: "days_31_60", label: "31–60" },
+  { key: "days_61_90", label: "61–90" },
+  { key: "over_90", label: "Over 90" },
+  { key: "total_open_balance", label: "Total" },
+] as const;
+export type SummaryBucket = (typeof SUMMARY_BUCKETS)[number]["key"];
+
+export interface SummaryRowCorrection {
+  row_id: string;
+  customer_name: string;
+  balances: Record<SummaryBucket, string>;
+}
+
+export interface CustomerReconciliation {
+  customer_key?: string;
+  summary_customer: string | null;
+  detail_customer: string | null;
+  summary_balance: string | null;
+  detail_balance: string | null;
+  difference: string | null;
+  buckets_consistent: boolean;
+  status: "matched" | "conflict";
+}
+
+export interface PairReconciliation {
+  status: "matched" | "mismatch";
+  summary_batch_id: string;
+  detail_batch_id: string;
+  source_as_of?: string | null;
+  summary_total: string;
+  detail_invoice_total: string;
+  detail_non_invoice_adjustments: string;
+  detail_total: string;
+  difference: string;
+  printed_summary_total: string | null;
+  printed_summary_total_matches: boolean;
+  customers: CustomerReconciliation[];
+  conflict_customer_count?: number;
+  matched_customer_count?: number;
+}
+
+/** The reconciliation inside a 409 IMPORT_RECONCILIATION_MISMATCH, or a stored one, if it has the expected shape. */
+export function reconciliationOf(value: unknown): PairReconciliation | null {
+  const candidate = value && typeof value === "object" && "reconciliation" in value ? (value as { reconciliation: unknown }).reconciliation : value;
+  if (!candidate || typeof candidate !== "object") return null;
+  const item = candidate as Partial<PairReconciliation>;
+  return (item.status === "matched" || item.status === "mismatch") && Array.isArray(item.customers) ? (item as PairReconciliation) : null;
+}
+
+export type SummaryRowKind = "customer" | "grand_total" | "other";
+/** A summary row is balance evidence: pending until the pair is reconciled, then matched or in conflict. Never "ignored". */
+export function summaryRowView(row: ImportRow): { kind: SummaryRowKind; status: "pending" | "matched" | "conflict" | "review"; fields: Record<string, string | null>; reconciliation: Partial<CustomerReconciliation> | null } {
+  const suggestion = row.parsed_fields.auto_suggestion as (ImportRow["parsed_fields"]["auto_suggestion"] & { reconciliation?: Partial<CustomerReconciliation> }) | undefined;
+  const fields = (suggestion?.fields || {}) as Record<string, string | null>;
+  const kind: SummaryRowKind = fields.kind === "customer" ? "customer" : fields.kind === "grand_total" ? "grand_total" : "other";
+  if (row.review_disposition === "unreviewed") return { kind, status: "review", fields, reconciliation: null };
+  const reconciliation = suggestion?.reconciliation || null;
+  const status = reconciliation?.status === "matched" ? "matched" : reconciliation?.status === "conflict" ? "conflict" : "pending";
+  return { kind, status, fields, reconciliation };
+}
+
+/**
+ * What the paired Approve needs. The server re-checks all of it; this explains it before the click.
+ * An Admin may approve a pair they uploaded; any other uploader may not. Whoever corrected either report can't approve
+ * (the server enforces that from the audit trail, which the browser doesn't load).
+ */
+export function pairApprovalChecklist(detail: ImportBatchDetail, summary: ImportBatchDetail | null, viewer: { id?: string; role: string } | null): ApprovalCheck[] {
+  const checks = approvalChecklist(detail, null);
+  checks.push({ id: "summary", label: summary ? "The same-date summary report is uploaded" : "Upload the summary report for the same date", ok: Boolean(summary) });
+  if (summary) {
+    const open = reviewProgress(summary.rows).unreviewed;
+    checks.push({ id: "summary_lines", label: open === 0 ? "Every summary row is readable" : `${open} summary row${open === 1 ? "" : "s"} still to review`, ok: open === 0 });
+    checks.push({ id: "summary_open", label: "The summary report is still in review", ok: summary.batch.status === "needs_review" });
+  }
+  if (viewer?.id && viewer.role !== "admin") {
+    const uploaded = detail.batch.uploaded_by === viewer.id || summary?.batch.uploaded_by === viewer.id;
+    checks.push({ id: "uploader", label: uploaded ? "You uploaded one of these reports; only an Admin may approve their own upload" : "You didn't upload either report", ok: !uploaded });
+  }
+  return checks;
 }

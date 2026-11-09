@@ -137,4 +137,88 @@ check("drafts and voids say linked candidates go back to Ready", () => {
   assert.doesNotMatch(detail(invoice(), staff, granted), /go back to Ready/);
 });
 
+const work = loadTs("lib/billing-ui/workbench.ts");
+check("billing runs fall on month ends, across a year end", () => {
+  assert.deepEqual(work.nextRunDates("2026-11-06"), ["2026-11-30", "2026-12-31", "2027-01-31"]);
+  assert.deepEqual(work.nextRunDates("2028-01-15", 2), ["2028-01-31", "2028-02-29"]);
+});
+check("the firm date is Houston's, not the browser's", () => {
+  assert.equal(work.firmToday(new Date("2026-11-07T03:00:00Z")), "2026-11-06");
+  assert.equal(work.firmToday(new Date("2026-03-08T07:59:00Z")), "2026-03-08");
+});
+check("runs place work by month and show a package once", () => {
+  const runs = ["2026-11-30", "2026-12-31"];
+  const item = (id, date, amount = "300.00") => ({ clientServiceId: id, candidateDate: date, description: `Service ${id}`, unitAmount: amount });
+  const rows = work.runRows([item("s-1", "2026-11-30"), item("s-2", "2026-11-30"), item("s-9", "2026-12-05", null)], runs, [bundle()]);
+  assert.equal(rows.length, 2);
+  const pack = rows.find((row) => row.packaged);
+  assert.equal(pack.description, "Monthly package");
+  assert.equal(pack.cells["2026-11-30"].amount, "300.00");
+  const other = rows.find((row) => !row.packaged);
+  assert.equal(other.cells["2026-12-31"].amount, null);
+  assert.match(work.whyItMoves(other, runs), /No price yet/);
+  assert.match(work.whyItMoves(other, runs), /Bills in 31 Dec only/);
+});
+check("priced how follows the server's order", () => {
+  const override = { id: "o", clientServiceId: "s-1", unitAmount: "1.00", effectiveFrom: "2026-01-01" };
+  assert.equal(work.pricedHow("s-1", "2026-11-30", [override], [bundle()]), "Package");
+  assert.equal(work.pricedHow("s-1", "2026-11-30", [override], []), "Own price");
+  assert.equal(work.pricedHow("s-1", "2025-11-30", [override], []), "Rate card");
+});
+check("client rows count, and never add money", () => {
+  const [row] = work.clientRows([{ id: "c-1", name: "A" }], [{ client_id: "c-1", balance: "10.00", days_past_due: 4 }, { client_id: "c-1", balance: "0.00", days_past_due: 90 }], [candidate("a", "s-1")], []);
+  assert.deepEqual({ open: row.openInvoices, past: row.daysPastDue, ready: row.ready, none: row.noPrice }, { open: 1, past: 4, ready: 1, none: 0 });
+});
+
+check("a package row in the firm schedule is known by its source", () => {
+  assert.equal(work.isPackageRow("bundle:b-1:2026-11-30"), true);
+  assert.equal(work.isPackageRow("schedule:s-1:2026-11"), false);
+});
+
+check("the monthly note never reads a partial total as complete", () => {
+  assert.equal(work.monthlyNote(true, 0), "average month");
+  assert.match(work.monthlyNote(false, 2), /partial · 2 services have no price/);
+  assert.match(work.monthlyNote(false, 1), /1 service has no price/);
+  assert.match(work.monthlyNote(false, 0), /partial/);
+});
+
+check("a draft follows firm details, and an issued invoice keeps what was saved on it", () => {
+  const { InvoiceDocument } = loadTs("components/billing/invoice-document.tsx");
+  const presentation = { firmName: "Firm Now", tagline: "Tag now", invoiceFooter: "Foot now", invoiceNumberPrefix: "TAP", updatedAt: null };
+  const remittance = { payeeName: "Saved Payee", address: null, instructions: null };
+  const render = (status, presentation_snapshot) => renderToStaticMarkup(h(InvoiceDocument, { invoice: { id: "i-1", client_id: "c-1", status, invoice_number: status === "draft" ? null : "TAP-1", invoice_lines: [], presentation_snapshot }, clientName: "Client", receivable: null, remittance, presentation }));
+  const draft = render("draft");
+  assert.match(draft, /Firm Now/); assert.match(draft, /Tag now/); assert.match(draft, /Foot now/);
+  const issued = render("issued");
+  assert.match(issued, /Saved Payee/); assert.doesNotMatch(issued, /Firm Now|Tag now|Foot now/);
+  const saved = render("issued", { firmName: "Firm Then", tagline: "Tag then", invoiceFooter: "Foot then" });
+  assert.match(saved, /Firm Then/); assert.match(saved, /Tag then/); assert.match(saved, /Foot then/); assert.doesNotMatch(saved, /Firm Now|Tag now|Foot now/);
+});
+
+check("the firm date follows Houston across a month end and both clock changes", () => {
+  assert.equal(work.firmToday(new Date("2026-12-01T05:30:00Z")), "2026-11-30");
+  assert.equal(work.firmToday(new Date("2026-12-01T06:30:00Z")), "2026-12-01");
+  assert.equal(work.firmToday(new Date("2026-03-08T07:59:00Z")), "2026-03-08");
+  assert.equal(work.firmToday(new Date("2026-03-08T04:59:00Z")), "2026-03-07");
+  assert.equal(work.firmToday(new Date("2026-11-01T05:30:00Z")), "2026-11-01");
+  assert.equal(work.firmToday(new Date("2026-11-02T05:30:00Z")), "2026-11-01");
+});
+
+check("run dates land on real month ends, over a year end and a leap February", () => {
+  assert.deepEqual(work.nextRunDates("2026-12-31"), ["2026-12-31", "2027-01-31", "2027-02-28"]);
+  assert.deepEqual(work.nextRunDates("2028-01-31"), ["2028-01-31", "2028-02-29", "2028-03-31"]);
+  assert.deepEqual(work.nextRunDates("2026-11-30"), ["2026-11-30", "2026-12-31", "2027-01-31"]);
+});
+
+{
+  const pages = [{ items: [1, 2], nextCursor: "a" }, { items: [3], nextCursor: null }];
+  const seen = [];
+  const whole = await logic.readPages(async (cursor) => { seen.push(cursor); return { ok: true, status: 200, data: pages[seen.length - 1] }; });
+  check("reading on collects every page in order", () => { assert.deepEqual(whole.data, { items: [1, 2, 3], nextCursor: null }); assert.deepEqual(seen, [null, "a"]); });
+  const capped = await logic.readPages(async () => ({ ok: true, status: 200, data: { items: [1], nextCursor: "more" } }), 2);
+  check("the page limit keeps the cursor so the UI can say there is more", () => { assert.equal(capped.data.items.length, 2); assert.equal(capped.data.nextCursor, "more"); });
+  const failed = await logic.readPages(async () => ({ ok: false, status: 500, kind: "server", message: "x" }));
+  check("a failed page is returned as the failure", () => assert.equal(failed.ok, false));
+}
+
 console.log(`billing UI candidate checks passed (${passed})`);

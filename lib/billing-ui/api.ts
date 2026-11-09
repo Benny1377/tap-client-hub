@@ -11,6 +11,9 @@ import type {
 } from "@/lib/collections-api";
 import type {
   BillingBundle,
+  BillingPresentation,
+  ClientBillingSummary,
+  FirmSchedule,
   ClientOption,
   BillingCandidate,
   CollectionEvent,
@@ -24,7 +27,7 @@ import type {
   Viewer,
 } from "./types";
 import type { DeliveriesQuery, DeliveriesResponse, DeliverySetup, DeliveryTestRunResult } from "./delivery";
-import type { ClassifyDisposition, CrossCheckResult, DiscrepancyResolution, ImportBatch, ImportBatchDetail, ImportInvoice, ImportInvoiceInput, ImportPolicy } from "./imports";
+import type { ClassifyDisposition, CrossCheckResult, DiscrepancyResolution, ImportBatch, ImportBatchDetail, ImportInvoice, ImportInvoiceInput, ImportPolicy, SummaryRowCorrection } from "./imports";
 
 /** Source-aware invoice target accepted by the hold and event routes (Phase 4 addendum). */
 export type InvoiceTarget = { source: "billing"; invoice_id: string } | { source: "pdf_import"; source_invoice_id: string };
@@ -40,7 +43,7 @@ export type ApiErrorKind = "unauthorized" | "forbidden" | "not_found" | "conflic
 
 export type ApiResult<T> =
   | { ok: true; status: number; data: T }
-  | { ok: false; status: number; kind: ApiErrorKind; message: string; code?: string };
+  | { ok: false; status: number; kind: ApiErrorKind; message: string; code?: string; details?: unknown };
 
 export type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
 
@@ -72,7 +75,7 @@ async function request<T>(fetchImpl: FetchLike, url: string, init?: RequestInit)
     body = null;
   }
   if (!response.ok) {
-    const payload = body && typeof body === "object" ? (body as { error?: unknown; code?: unknown }) : {};
+    const payload = body && typeof body === "object" ? (body as { error?: unknown; code?: unknown; result?: unknown }) : {};
     const failure: ApiResult<T> = {
       ok: false,
       status: response.status,
@@ -81,6 +84,8 @@ async function request<T>(fetchImpl: FetchLike, url: string, init?: RequestInit)
     };
     // Stable machine-readable code from the server, when it sends one.
     if (typeof payload.code === "string") failure.code = payload.code;
+    // Some refusals carry the evidence behind them, such as a failed A/R reconciliation.
+    if (payload.result !== undefined && failure.ok === false) failure.details = payload.result;
     return failure;
   }
   // A success with no JSON body (for example an HTML page from a dev-server reload)
@@ -162,6 +167,13 @@ export function createBillingApi(fetchImpl: FetchLike) {
       const query = new URLSearchParams(params);
       return request<{ projection: "projected"; items: Array<Record<string, unknown>> }>(fetchImpl, `/api/billing/candidates/schedule?${query}`);
     },
+    /** Read-only, across all clients, one bounded page at a time. */
+    firmSchedule: (params: { from: string; to: string; limit?: number; cursor?: string | null }) => {
+      const query = new URLSearchParams({ from: params.from, to: params.to, limit: String(params.limit ?? 50) });
+      if (params.cursor) query.set("cursor", params.cursor);
+      return request<FirmSchedule>(fetchImpl, `/api/billing/candidates/firm-schedule?${query}`);
+    },
+    clientSummary: (clientId: string) => request<ClientBillingSummary>(fetchImpl, `/api/billing/clients/summary?${new URLSearchParams({ clientId })}`),
     generateCandidates: (input: { from: string; to: string; clientId: string }) =>
       post<{ created: number; unpriced: number; existing: number; skipped: number; skippedByReason: Record<string, number>; candidateIds: string[] }>(fetchImpl, "/api/billing/candidates/generate", input),
     createRateCard: (input: Record<string, unknown>) => post<Record<string, unknown>>(fetchImpl, "/api/billing/rate-cards", input),
@@ -180,6 +192,9 @@ export function createBillingApi(fetchImpl: FetchLike) {
     updateTermsOverride: (id: string, input: Record<string, unknown>) => patch<Record<string, unknown>>(fetchImpl, `/api/billing/settings/terms/overrides/${encodeURIComponent(id)}`, input),
     remittance: () => request<{ remittance: { payeeName: string | null; address: string | null; instructions: string | null }; updatedAt: string | null }>(fetchImpl, "/api/billing/settings/remittance"),
     updateRemittance: (input: Record<string, unknown>) => patch<Record<string, unknown>>(fetchImpl, "/api/billing/settings/remittance", input),
+    presentation: () => request<BillingPresentation>(fetchImpl, "/api/billing/settings/presentation"),
+    /** Full replacement: all four fields go every time. */
+    updatePresentation: (input: { firmName: string; tagline: string | null; invoiceFooter: string | null; reason: string }) => patch<BillingPresentation>(fetchImpl, "/api/billing/settings/presentation", input),
     completionMaps: (clientServiceId?: string) => request<{ items: Array<Record<string, unknown>> }>(fetchImpl, `/api/billing/completion-source-maps${clientServiceId ? `?clientServiceId=${encodeURIComponent(clientServiceId)}` : ""}`),
     createCompletionMap: (input: Record<string, unknown>) => post<Record<string, unknown>>(fetchImpl, "/api/billing/completion-source-maps", input),
     updateCompletionMap: (id: string, input: Record<string, unknown>) => patch<Record<string, unknown>>(fetchImpl, `/api/billing/completion-source-maps/${encodeURIComponent(id)}`, input),
@@ -287,7 +302,7 @@ export function createBillingApi(fetchImpl: FetchLike) {
     },
     /** Extracts page/row text only. Parsing never confirms an invoice. */
     parseImport: (id: string, refreshSuggestions = false) =>
-      request<{ batch_id: string; status: string; report_type: string; source_as_of: string | null; page_count: number; extracted_line_count: number; auto_classified_count: number; high_confidence_invoice_suggestions: number; updated_suggestions?: number }>(fetchImpl, `/api/collections/imports/${encodeURIComponent(id)}/parse`, {
+      request<{ batch_id: string; status: string; report_type: string; source_as_of: string | null; page_count: number; extracted_line_count: number; auto_classified_count: number; high_confidence_invoice_suggestions: number; summary_backed_customer_suggestions?: number; updated_suggestions?: number }>(fetchImpl, `/api/collections/imports/${encodeURIComponent(id)}/parse`, {
         method: "POST", ...(refreshSuggestions ? { body: JSON.stringify({ refresh_suggestions: true }) } : {}),
       }),
     autoMatchImports: (batchId: string) =>
@@ -299,8 +314,15 @@ export function createBillingApi(fetchImpl: FetchLike) {
     /** Reviewer-confirmed report type and as-of date when parsing couldn't read them (before any invoice is reviewed). */
     correctImportMetadata: (batchId: string, input: { report_type: "aging_detail" | "aging_summary"; source_as_of: string }) =>
       patch<{ batch: { id: string; status: string; report_type: string; source_as_of: string } }>(fetchImpl, `/api/collections/imports/${encodeURIComponent(batchId)}/metadata`, { ...input, confirmed: true }),
-    approveImport: (batchId: string) =>
-      post<{ batch: { batch_id: string; status: "approved"; invoice_count: number } }>(fetchImpl, `/api/collections/imports/${encodeURIComponent(batchId)}/approve`, {}),
+    approveImport: (batchId: string, summaryBatchId?: string) =>
+      post<{ result: { status: "approved"; detail_batch: { batch_id: string; status: "approved"; invoice_count: number }; summary_batch_id: string; summary_status: "approved"; reconciliation: Record<string, unknown> } }>(
+        fetchImpl,
+        `/api/collections/imports/${encodeURIComponent(batchId)}/approve`,
+        summaryBatchId ? { summary_batch_id: summaryBatchId } : {},
+      ),
+    /** A person's correction of one summary customer row. Whoever corrects either report can't approve the pair. */
+    correctSummaryRow: (summaryBatchId: string, input: SummaryRowCorrection) =>
+      patch<{ row: { row_id: string; customer_name: string; fields: Record<string, string>; review_disposition: string } }>(fetchImpl, `/api/collections/imports/${encodeURIComponent(summaryBatchId)}/summary-row`, { ...input, confirmed: true }),
     crossCheckImport: (summaryBatchId: string, input: { detail_batch_id: string; summary_total: number; note: string }) =>
       post<{ cross_check: CrossCheckResult }>(fetchImpl, `/api/collections/imports/${encodeURIComponent(summaryBatchId)}/cross-check`, input),
     /** Choosing the balance that drives collection actions; needs approve permission. */

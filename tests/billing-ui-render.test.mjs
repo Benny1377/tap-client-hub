@@ -56,9 +56,9 @@ check("pages render every section as loading before the API responds", () => {
   for (const label of ["invoices", "payments", "receivables"]) assert.match(billing, new RegExp(`Loading ${label}…`));
   for (const label of ["What bills next", "Clients & prices", "Settings"]) assert.match(billing, new RegExp(label.replaceAll("&", "&amp;")));
   assert.match(billing, /Your access does not include generating candidates/);
-  assert.match(billing, /Projected items/);
+  assert.match(billing, /Coming up, all clients/);
   const collectionsHtml = render(h(CollectionsPage));
-  for (const label of ["AR insights", "call list", "Collections activity", "holds"]) assert.match(collectionsHtml, new RegExp(`Loading ${label}…`));
+  for (const label of ["AR insights", "Collections activity", "holds"]) assert.match(collectionsHtml, new RegExp(`Loading ${label}…`));
 });
 
 check("Collections rule controls are Owner/Admin-only and explicitly delivery-disabled", () => {
@@ -596,7 +596,7 @@ check("Collections has the demo's three views plus Phase 4 A/R reports, opening 
   const html = render(h(CollectionsPage));
   assert.match(html, /role="tablist"/);
   assert.equal((html.match(/role="tab"/g) || []).length, 4);
-  for (const label of ["AR Insights", "Pipeline", "A/R reports", "Setup &amp; rules"]) assert.match(html, new RegExp(`role="tab"[^>]*>${label}`));
+  for (const label of ["AR Insights", "Pipeline", "A/R reports", "Setup and rules"]) assert.match(html, new RegExp(`role="tab"[^>]*>${label}`));
   // Opening the report list is an audited read, so it waits until the tab is first opened.
   assert.doesNotMatch(html, /data-imports-panel/);
   assert.match(html, /id="collections-tab-insights"[^>]*aria-selected="true"/);

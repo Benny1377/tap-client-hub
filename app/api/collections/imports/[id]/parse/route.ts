@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { requireCollectionsAccess } from "@/lib/billing-access";
 import { canUseCollectionsImport, recordImportAudit } from "@/lib/collections-import";
 import { parseCollectionsPdf } from "@/lib/collections-pdf-parser";
-import { COLLECTIONS_PDF_SUGGESTION_PARSER_VERSION, suggestCollectionsPdfRows } from "@/lib/collections-pdf-suggestions";
+import { COLLECTIONS_PDF_SUGGESTION_PARSER_VERSION, suggestCollectionsPdfRows, suggestCollectionsSummaryRows } from "@/lib/collections-pdf-suggestions";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 export const runtime = "nodejs";
@@ -46,11 +46,57 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     return NextResponse.json({ error: "PDF text extraction failed; the stored report remains available for manual review", code: "PDF_EXTRACTION_FAILED" }, { status: 422, headers: NO_STORE });
   }
 
-  const suggestions = parsed.report_type === "aging_detail"
-    ? suggestCollectionsPdfRows(parsed.lines)
+  let summaryLines: Array<{ page: number; text: string; cells: string[]; cell_positions?: number[] }> = [];
+  let summaryContextBatchId: string | null = null;
+  if (parsed.report_type === "aging_detail" && parsed.source_as_of) {
+    const { data: summaryBatches } = await db.from("collection_import_batches")
+      .select("id").eq("report_type", "aging_summary").eq("source_as_of", parsed.source_as_of)
+      .eq("status", "needs_review").neq("id", id).limit(2);
+    // Use a companion summary only when exactly one same-date report is available.
+    // Ambiguous or unreadable context leaves the customer name for manual review.
+    if (summaryBatches?.length === 1) {
+      const { data: sourceRows } = await db.from("collection_import_rows")
+        .select("page_number,raw_text,parsed_fields").eq("batch_id", summaryBatches[0].id)
+        .order("page_number").order("row_number");
+      if (sourceRows?.length) {
+        try {
+          await recordImportAudit({ batchId: summaryBatches[0].id, actor: access.identity!.id, action: "pdf_summary_matching_context_read", detail: { detail_batch_id: id } });
+        } catch {
+          return NextResponse.json({ error: "Unable to record summary report access", code: "IMPORT_AUDIT_WRITE_FAILED" }, { status: 500, headers: NO_STORE });
+        }
+        summaryContextBatchId = summaryBatches[0].id;
+        summaryLines = sourceRows.map((row) => {
+          const fields = row.parsed_fields as { cells?: unknown; cell_positions?: unknown } | null;
+          return {
+            page: row.page_number,
+            text: row.raw_text,
+            cells: Array.isArray(fields?.cells) ? fields.cells.filter((cell): cell is string => typeof cell === "string") : [],
+            ...(Array.isArray(fields?.cell_positions) ? { cell_positions: fields.cell_positions.filter((position): position is number => typeof position === "number") } : {}),
+          };
+        });
+      }
+    }
+  }
+  const extractedSuggestions = parsed.report_type === "aging_detail"
+    ? suggestCollectionsPdfRows(parsed.lines, summaryLines)
     : parsed.report_type === "aging_summary"
-      ? parsed.lines.map(() => ({ disposition: "ignored" as const, confidence: "high" as const, reason: "Summary reports are aggregate cross-check evidence, not invoice rows" }))
+      ? suggestCollectionsSummaryRows(parsed.lines)
       : parsed.lines.map(() => ({ disposition: "unreviewed" as const, confidence: "low" as const, reason: "Automatic invoice mapping is available only for recognized QuickBooks layouts" }));
+  const textCounts = new Map<string, number>();
+  for (const line of parsed.lines) {
+    const key = line.text.normalize("NFKC").replace(/\s+/g, " ").trim().toLocaleLowerCase();
+    if (key) textCounts.set(key, (textCounts.get(key) || 0) + 1);
+  }
+  const suggestions = extractedSuggestions.map((suggestion, index) => {
+    const line = parsed.lines[index];
+    const key = line.text.normalize("NFKC").replace(/\s+/g, " ").trim().toLocaleLowerCase();
+    if (suggestion.disposition !== "invoice" || (textCounts.get(key) || 0) < 2) return suggestion;
+    return {
+      ...suggestion,
+      confidence: "low" as const,
+      reason: "This invoice text appears more than once in the report; inspect the row before matching",
+    };
+  });
   const pageRows = new Map<number, number>();
   const rows = parsed.lines.map((line, index) => {
     const rowNumber = (pageRows.get(line.page) || 0) + 1;
@@ -60,17 +106,20 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     return {
       batch_id: id, page_number: line.page, row_number: rowNumber, raw_text: line.text,
       parsed_fields: { cells: line.cells, cell_positions: line.cell_positions, auto_suggestion: suggestion },
-      ...(autoClassified ? { review_disposition: suggestion.disposition } : {}),
+      // The database column is NOT NULL; every extracted line needs an explicit
+      // state, including invoice suggestions and rows needing human review.
+      review_disposition: autoClassified ? suggestion.disposition : "unreviewed",
     };
   });
   const autoClassifiedCount = suggestions.filter((suggestion) => suggestion.disposition === "header" || suggestion.disposition === "summary" || suggestion.disposition === "ignored").length;
   const highConfidenceInvoiceCount = suggestions.filter((suggestion) => suggestion.disposition === "invoice" && suggestion.confidence === "high").length;
+  const summaryBackedCustomerCount = suggestions.filter((suggestion) => suggestion.disposition === "invoice" && suggestion.reason.includes("unique summary name")).length;
   if (refreshingReview) {
     if (batch.report_type !== parsed.report_type || batch.source_as_of !== parsed.source_as_of) {
       return NextResponse.json({ error: "The refreshed read disagrees with the report details already confirmed. Nothing was changed.", code: "IMPORT_REFRESH_METADATA_CONFLICT" }, { status: 409, headers: NO_STORE });
     }
     const { data: existingRows, error: existingRowsError } = await db.from("collection_import_rows")
-      .select("id,page_number,row_number,source_invoice_id,review_disposition").eq("batch_id", id).order("page_number").order("row_number");
+      .select("id,page_number,row_number,raw_text,source_invoice_id,review_disposition,duplicate_of,exact_duplicate").eq("batch_id", id).order("page_number").order("row_number");
     if (existingRowsError || !existingRows) return NextResponse.json({ error: "Unable to safely refresh existing report rows", code: "IMPORT_REFRESH_READ_FAILED" }, { status: 500, headers: NO_STORE });
     if (existingRows.length !== rows.length || existingRows.some((row, index) => row.page_number !== rows[index].page_number || row.row_number !== rows[index].row_number)) {
       return NextResponse.json({ error: "The refreshed extraction has different line boundaries. Existing review was preserved.", code: "IMPORT_REFRESH_SHAPE_CHANGED" }, { status: 409, headers: NO_STORE });
@@ -78,10 +127,47 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     let updatedSuggestions = 0;
     for (let index = 0; index < existingRows.length; index += 1) {
       const existing = existingRows[index];
-      if (existing.source_invoice_id || existing.review_disposition === "duplicate") continue;
+      if (existing.source_invoice_id) continue;
       const suggestion = suggestions[index];
-      const parsedFields = rows[index].parsed_fields;
+      const parsedFields = { ...rows[index].parsed_fields } as Record<string, unknown>;
       const update: Record<string, unknown> = { parsed_fields: parsedFields };
+      const fingerprint = existing.raw_text.normalize("NFKC").replace(/\s+/g, " ").trim().toLocaleLowerCase();
+      const confirmedSameText = Boolean(fingerprint) && existingRows.some((other, otherIndex) =>
+        otherIndex !== index && other.source_invoice_id !== null
+        && other.raw_text.normalize("NFKC").replace(/\s+/g, " ").trim().toLocaleLowerCase() === fingerprint,
+      );
+      // Older builds marked repeated raw text as duplicate without enough
+      // evidence to distinguish a repeated transaction from a repeated line.
+      // These were machine-only flags (the review API never writes duplicate_of).
+      if (existing.review_disposition === "duplicate" && existing.duplicate_of && existing.exact_duplicate) {
+        // Restored invoice rows need an explicit person to inspect them: the
+        // earlier auto-duplicate may have been another genuine transaction.
+        // Low confidence keeps them out of the exact-match batch operation.
+        const priorSuggestion = parsedFields.auto_suggestion as Record<string, unknown> | undefined;
+        if (suggestion.disposition === "invoice") {
+          parsedFields.auto_suggestion = {
+            ...priorSuggestion,
+            confidence: "low",
+            reason: "Repeated source text was previously marked as a duplicate; confirm this invoice row manually",
+          };
+          update.review_disposition = "unreviewed";
+        } else {
+          update.review_disposition = suggestion.disposition;
+        }
+        update.duplicate_of = null;
+        update.exact_duplicate = false;
+      }
+      // Repair rows already restored by v4: if the same source text is already
+      // attached to a confirmed invoice, require a person to distinguish a
+      // second transaction from a duplicate before automatic matching.
+      if (suggestion.disposition === "invoice" && confirmedSameText) {
+        parsedFields.auto_suggestion = {
+          ...(parsedFields.auto_suggestion as Record<string, unknown>),
+          confidence: "low",
+          reason: "This invoice text is already attached to another confirmed row; inspect before matching",
+        };
+        update.review_disposition = "unreviewed";
+      }
       if (existing.review_disposition === "unreviewed" && (suggestion.disposition === "header" || suggestion.disposition === "summary" || suggestion.disposition === "ignored")) {
         update.review_disposition = suggestion.disposition;
       }
@@ -90,31 +176,38 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       if (refreshError) return NextResponse.json({ error: "Some suggestions may have refreshed. Retry to continue; existing review decisions were preserved.", code: "IMPORT_REFRESH_PARTIAL", updated_suggestions: updatedSuggestions }, { status: 500, headers: NO_STORE });
       updatedSuggestions += 1;
     }
-    const refreshedMetadata = { ...(batch.metadata || {}), suggestion_parser: COLLECTIONS_PDF_SUGGESTION_PARSER_VERSION, auto_classified_count: autoClassifiedCount, high_confidence_invoice_suggestions: highConfidenceInvoiceCount };
-    const { error: metadataError } = await db.from("collection_import_batches").update({ metadata: refreshedMetadata, updated_at: new Date().toISOString() }).eq("id", id).eq("status", "needs_review");
-    if (metadataError) return NextResponse.json({ error: "Rows were refreshed, but parser-version metadata could not be saved", code: "IMPORT_BATCH_UPDATE_FAILED" }, { status: 500, headers: NO_STORE });
+    const refreshedMetadata = { ...(batch.metadata || {}), suggestion_parser: COLLECTIONS_PDF_SUGGESTION_PARSER_VERSION, auto_classified_count: autoClassifiedCount, high_confidence_invoice_suggestions: highConfidenceInvoiceCount, summary_backed_customer_suggestions: summaryBackedCustomerCount, summary_context_batch_id: summaryContextBatchId };
+    const { data: updatedBatch, error: metadataError } = await db.from("collection_import_batches")
+      .update({ status: "needs_review", metadata: refreshedMetadata, updated_at: new Date().toISOString() })
+      .eq("id", id).eq("status", batch.status).select("id").maybeSingle();
+    if (metadataError || !updatedBatch) return NextResponse.json({ error: "Rows were refreshed, but the batch status could not be restored", code: "IMPORT_BATCH_UPDATE_FAILED" }, { status: 500, headers: NO_STORE });
     try { await recordImportAudit({ batchId: id, actor: access.identity!.id, action: "pdf_suggestions_refreshed", detail: { updated_suggestions: updatedSuggestions, auto_classified_count: autoClassifiedCount, high_confidence_invoice_suggestions: highConfidenceInvoiceCount } }); }
     catch { return NextResponse.json({ error: "Suggestions refreshed, but the audit record failed", code: "IMPORT_AUDIT_WRITE_FAILED" }, { status: 500, headers: NO_STORE }); }
-    return NextResponse.json({ batch_id: id, status: "needs_review", report_type: parsed.report_type, source_as_of: parsed.source_as_of, page_count: parsed.page_count, extracted_line_count: rows.length, updated_suggestions: updatedSuggestions, auto_classified_count: autoClassifiedCount, high_confidence_invoice_suggestions: highConfidenceInvoiceCount, requires_human_confirmation: true }, { headers: NO_STORE });
+    return NextResponse.json({ batch_id: id, status: "needs_review", report_type: parsed.report_type, source_as_of: parsed.source_as_of, page_count: parsed.page_count, extracted_line_count: rows.length, updated_suggestions: updatedSuggestions, auto_classified_count: autoClassifiedCount, high_confidence_invoice_suggestions: highConfidenceInvoiceCount, summary_backed_customer_suggestions: summaryBackedCustomerCount, requires_human_confirmation: true }, { headers: NO_STORE });
   }
   const { error: clearError } = await db.from("collection_import_rows").delete().eq("batch_id", id);
   if (clearError) return NextResponse.json({ error: "Unable to replace the previous extraction", code: "IMPORT_ROWS_RESET_FAILED" }, { status: 500, headers: NO_STORE });
   if (rows.length) {
-    const { data: savedRows, error: rowError } = await db.from("collection_import_rows").insert(rows).select("id,page_number,row_number,raw_text");
-    if (rowError || !savedRows) return NextResponse.json({ error: "Unable to save extracted report rows", code: "IMPORT_ROWS_WRITE_FAILED" }, { status: 500, headers: NO_STORE });
-    const firstByText = new Map<string, string>();
-    const duplicates = new Map<string, string[]>();
-    for (const row of savedRows) {
-      const fingerprint = row.raw_text.normalize("NFKC").replace(/\s+/g, " ").trim().toLocaleLowerCase();
-      if (!fingerprint) continue;
-      const firstId = firstByText.get(fingerprint);
-      if (firstId) duplicates.set(firstId, [...(duplicates.get(firstId) || []), row.id]);
-      else firstByText.set(fingerprint, row.id);
+    const chunkSize = 200;
+    for (let offset = 0; offset < rows.length; offset += chunkSize) {
+      const chunk = rows.slice(offset, offset + chunkSize);
+      const { data, error: rowError } = await db.from("collection_import_rows").insert(chunk).select("id,page_number,row_number,raw_text");
+      if (rowError || !data) {
+        const { error: cleanupError } = await db.from("collection_import_rows").delete().eq("batch_id", id);
+        // Keep diagnostics useful without logging customer names, raw PDF text, or PostgREST details.
+        console.error("[collections-import] row insert failed", {
+          database_code: rowError?.code || "unknown",
+          row_count: rows.length,
+          chunk_size: chunk.length,
+          failed_chunk: Math.floor(offset / chunkSize) + 1,
+          payload_bytes: Buffer.byteLength(JSON.stringify(chunk)),
+          partial_rows_cleanup_failed: Boolean(cleanupError),
+        });
+        return NextResponse.json({ error: "Unable to save extracted report rows", code: "IMPORT_ROWS_WRITE_FAILED" }, { status: 500, headers: NO_STORE });
+      }
     }
-    for (const [firstId, duplicateIds] of duplicates) {
-      const { error: duplicateError } = await db.from("collection_import_rows").update({ duplicate_of: firstId, exact_duplicate: true, review_disposition: "duplicate" }).in("id", duplicateIds);
-      if (duplicateError) return NextResponse.json({ error: "Rows extracted, but duplicate markers could not be saved", code: "IMPORT_DUPLICATE_MARK_FAILED" }, { status: 500, headers: NO_STORE });
-    }
+    // Do not infer duplicates from identical PDF text. Repeated payment and
+    // invoice rows can be legitimate and participate in report reconciliation.
   }
   const status = parsed.report_type === "unknown" || !parsed.source_as_of ? "needs_review" : "needs_review";
   const { error: updateError } = await db.from("collection_import_batches").update({
@@ -122,7 +215,8 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     metadata: {
       page_count: parsed.page_count, extracted_line_count: rows.length, parser: "pdfjs-dist",
       suggestion_parser: COLLECTIONS_PDF_SUGGESTION_PARSER_VERSION, auto_classified_count: autoClassifiedCount,
-      high_confidence_invoice_suggestions: highConfidenceInvoiceCount, requires_human_confirmation: true,
+      high_confidence_invoice_suggestions: highConfidenceInvoiceCount, summary_backed_customer_suggestions: summaryBackedCustomerCount,
+      summary_context_batch_id: summaryContextBatchId, requires_human_confirmation: true,
     },
   }).eq("id", id);
   if (updateError) return NextResponse.json({ error: "Unable to update import status", code: "IMPORT_BATCH_UPDATE_FAILED" }, { status: 500, headers: NO_STORE });
@@ -130,7 +224,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     await recordImportAudit({ batchId: id, actor: access.identity!.id, action: "pdf_parsed", detail: {
       report_type: parsed.report_type, source_as_of: parsed.source_as_of, page_count: parsed.page_count,
       extracted_line_count: rows.length, auto_classified_count: autoClassifiedCount,
-      high_confidence_invoice_suggestions: highConfidenceInvoiceCount,
+      high_confidence_invoice_suggestions: highConfidenceInvoiceCount, summary_backed_customer_suggestions: summaryBackedCustomerCount,
     } });
   } catch {
     return NextResponse.json({ error: "Extraction saved, but its audit record failed", code: "IMPORT_AUDIT_WRITE_FAILED" }, { status: 500, headers: NO_STORE });
@@ -138,6 +232,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
   return NextResponse.json({
     batch_id: id, status, report_type: parsed.report_type, source_as_of: parsed.source_as_of,
     page_count: parsed.page_count, extracted_line_count: rows.length, auto_classified_count: autoClassifiedCount,
-    high_confidence_invoice_suggestions: highConfidenceInvoiceCount, requires_human_confirmation: true,
+    high_confidence_invoice_suggestions: highConfidenceInvoiceCount, summary_backed_customer_suggestions: summaryBackedCustomerCount,
+    requires_human_confirmation: true,
   }, { headers: NO_STORE });
 }

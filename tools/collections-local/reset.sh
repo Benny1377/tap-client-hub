@@ -31,10 +31,19 @@ for migration in \
   20261019120000_collections_reblock_multi_invoice_payments.sql \
   20261019130000_collections_import_batch_metadata_correction.sql \
   20261019140000_collections_test_delivery_source_discrepancy.sql \
+  20261104160000_collections_guard_auto_match_review_state.sql \
+  20261107120000_collections_reconcile_noninvoice_pdf_rows.sql \
+  20261107130000_audit_client_creation.sql \
+  20261107132830_collections_require_review_before_cross_check.sql \
+  20261109121124_collections_atomic_summary_detail_approval.sql \
+  20261109134439_operations_client_data_import.sql \
   20261020100000_billing_ledger_database_invariants.sql \
   20261105100000_billing_phase2_core.sql \
   20261105110000_billing_manual_confirmation_guard.sql \
-  20261106100000_billing_rpc_auth_and_candidate_audit_id.sql; do
+  20261106100000_billing_rpc_auth_and_candidate_audit_id.sql \
+  20261106110000_billing_presentation_settings.sql \
+  20261107140000_billing_firm_schedule_paging.sql \
+  20261107150120_billing_issue_presentation_snapshot.sql; do
   psql "$db_url" -X -v ON_ERROR_STOP=1 -f "$project_root/supabase/migrations/$migration" >/dev/null
 done
 psql "$db_url" -X -v ON_ERROR_STOP=1 -f "$local_root/seed.sql" >/dev/null

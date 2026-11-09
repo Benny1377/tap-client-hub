@@ -1,6 +1,6 @@
 import type { PdfTextLine } from "@/lib/collections-pdf-parser";
 
-export const COLLECTIONS_PDF_SUGGESTION_PARSER_VERSION = "quickbooks-aging-detail-v2";
+export const COLLECTIONS_PDF_SUGGESTION_PARSER_VERSION = "quickbooks-aging-summary-match-v7";
 
 export type SuggestedInvoiceFields = {
   transaction_type: string;
@@ -14,9 +14,29 @@ export type SuggestedInvoiceFields = {
   open_balance: string;
 };
 
+export type SuggestedNonInvoiceFields = {
+  transaction_type: string;
+  transaction_number: string;
+  transaction_date: string;
+  customer_name: string;
+  open_balance: string;
+};
+
+export type SuggestedAgingSummaryFields = {
+  kind: "customer" | "grand_total";
+  customer_name: string | null;
+  current: string | null;
+  days_1_30: string | null;
+  days_31_60: string | null;
+  days_61_90: string | null;
+  over_90: string | null;
+  total_open_balance: string;
+};
+
 export type PdfRowSuggestion =
-  | { disposition: "header" | "summary"; confidence: "high"; reason: string }
-  | { disposition: "invoice"; confidence: "high"; reason: string; fields: SuggestedInvoiceFields }
+  | { disposition: "header" | "summary"; confidence: "high"; reason: string; fields?: SuggestedAgingSummaryFields }
+  | { disposition: "ignored"; confidence: "high"; reason: string; fields: SuggestedNonInvoiceFields }
+  | { disposition: "invoice"; confidence: "high" | "low"; reason: string; fields: SuggestedInvoiceFields }
   | { disposition: "unreviewed"; confidence: "low"; reason: string };
 
 type HeaderMap = Partial<Record<keyof SuggestedInvoiceFields | "po_number", number>>;
@@ -66,9 +86,14 @@ const read = (cells: string[], index: number | undefined) => index === undefined
 
 function customerGroupLabel(text: string): boolean {
   const value = text.trim();
-  if (!value || /\b(aging|quickzoom|tap associates|page|as of|invoice|payment|total|current|over 90)\b/i.test(value)) return false;
+  if (!value || isKnownReportHeading(value) || /^(aging|quickzoom|invoice|payment|total|current|over 90)$/i.test(value)) return false;
   if (/\d{1,2}:\d{2}\s*(am|pm)|\b\d{1,2}\/\d{1,2}\/\d{2,4}\b/i.test(value)) return false;
-  return /[\p{L}]/u.test(value) && !/[\d$]/.test(value);
+  // QuickBooks customer headings can contain digits (for example numbered
+  // entities). Keep dates, amounts, and obvious transaction IDs out, but do
+  // not reject a customer name merely because it includes a digit.
+  if (/[$]/.test(value) || /^\d+(?:[.,]\d+)?$/.test(value)) return false;
+  if (/^(?:inv(?:oice)?|pmt|pay(?:ment)?|chk|check|jrn|je)[\s#-]*\w+$/i.test(value)) return false;
+  return /[\p{L}]/u.test(value);
 }
 
 function isTruncatedCustomerName(value: string): boolean {
@@ -76,20 +101,115 @@ function isTruncatedCustomerName(value: string): boolean {
 }
 
 function isKnownReportHeading(text: string): boolean {
-  return /\b(?:tap associates|a\/r aging quickzoom|page\s+\d+)\b/i.test(text)
+  return /\b(?:tap associates|a\/r aging quickzoom|a\/r aging summary|page\s+\d+)\b/i.test(text)
     || /^\s*\d{1,2}:\d{2}\s*(?:am|pm)\b/i.test(text)
     || /^\s*as of\s+(?:\w+\s+)?\d{1,2},?\s+\d{4}\s*$/i.test(text);
 }
 
+function summaryCustomerBalances(lines: PdfTextLine[]): Array<{ name: string; balance: string }> {
+  return lines.flatMap((line) => {
+    if (line.cells.length !== 7) return [];
+    const [name, ...agingBuckets] = line.cells.map((cell) => cell.trim());
+    if (!name || /^total\b/i.test(name) || agingBuckets.some((value) => amountValue(value) === null)) return [];
+    const balance = amountValue(agingBuckets[agingBuckets.length - 1]);
+    return balance ? [{ name, balance }] : [];
+  });
+}
+
+/** Recognizes customer-level rows in the companion A/R aging summary. Each
+ * amount remains evidence only; it never creates an invoice or billing row. */
+export function suggestCollectionsSummaryRows(lines: PdfTextLine[]): PdfRowSuggestion[] {
+  return lines.map((line) => {
+    const cells = line.cells.map((cell) => cell.trim());
+    const normalized = norm(line.text);
+    const totalLabel = /^(grand )?total(?: open balance)?\b/i.test(normalized);
+    if (totalLabel) {
+      const total = amountValue(cells[cells.length - 1] || "");
+      if (total) return {
+        disposition: "summary", confidence: "high",
+        reason: "Recognized report total for final reconciliation",
+        fields: { kind: "grand_total", customer_name: null, current: null, days_1_30: null, days_31_60: null, days_61_90: null, over_90: null, total_open_balance: total },
+      };
+    }
+    if (cells.length === 7 && cells[0] && !/^total\b/i.test(cells[0])) {
+      const amounts = cells.slice(1).map(amountValue);
+      if (amounts.every((amount): amount is string => amount !== null)) {
+        return {
+          disposition: "summary", confidence: "high",
+          reason: "Recognized customer aging row; awaiting match to detail subtotals",
+          fields: {
+            kind: "customer", customer_name: cells[0], current: amounts[0], days_1_30: amounts[1],
+            days_31_60: amounts[2], days_61_90: amounts[3], over_90: amounts[4], total_open_balance: amounts[5],
+          },
+        };
+      }
+    }
+    if (isKnownReportHeading(line.text) || /^(customer|current|1-30|31-60|61-90|over 90|total)\b/i.test(normalized)) {
+      return { disposition: "header", confidence: "high", reason: "Recognized A/R summary column or report heading" };
+    }
+    return { disposition: "unreviewed", confidence: "low", reason: "A/R summary row needs a readable customer and aging amounts" };
+  });
+}
+
+function detailCustomerTotals(lines: PdfTextLine[]): Array<{ name: string; balance: string }> {
+  return lines.flatMap((line) => {
+    const match = /^\s*total\s+(.+?)\s+(-?\$?[\d,]+(?:\.\d{1,2})?|\([\d,]+(?:\.\d{1,2})?\))\s*$/i.exec(line.text);
+    if (!match || /^open balance$/i.test(match[1])) return [];
+    const balance = amountValue(match[2]);
+    return balance ? [{ name: match[1].trim(), balance }] : [];
+  });
+}
+
+function summaryBackedCustomerNames(lines: PdfTextLine[], summaryLines: PdfTextLine[]): Map<number, string> {
+  const summaries = summaryCustomerBalances(summaryLines);
+  const totals = detailCustomerTotals(lines);
+  const resolved = new Map<number, string>();
+  if (!summaries.length || !totals.length) return resolved;
+
+  let columns: HeaderMap | null = null;
+  let headerPositions: number[] | null = null;
+  for (const [lineIndex, line] of lines.entries()) {
+    const foundHeader = headerMap(line.cells);
+    if (foundHeader) { columns = foundHeader; headerPositions = line.cell_positions || null; continue; }
+    if (!columns) continue;
+    const positions = line.cell_positions;
+    const columnIndex = columns.customer_name;
+    if (columnIndex === undefined || columnIndex < 0) continue;
+    let rawName = read(line.cells, columnIndex);
+    if (headerPositions && positions && positions.length === line.cells.length && columnIndex < headerPositions.length) {
+      const anchors = Object.values(columns).map((index) => ({ index, x: headerPositions?.[index] }))
+        .filter((item) => Number.isFinite(item.x)).sort((left, right) => (left.x as number) - (right.x as number));
+      const current = anchors.find((item) => item.index === columnIndex);
+      if (current) {
+        const order = anchors.indexOf(current);
+        const lower = order > 0 ? ((anchors[order - 1].x as number) + (current.x as number)) / 2 : Number.NEGATIVE_INFINITY;
+        const upper = order < anchors.length - 1 ? ((current.x as number) + (anchors[order + 1].x as number)) / 2 : Number.POSITIVE_INFINITY;
+        rawName = line.cells.filter((_cell, index) => positions[index] >= lower && positions[index] < upper).join(" ").trim();
+      }
+    }
+    if (!isTruncatedCustomerName(rawName)) continue;
+    const prefix = normalizeImportedCustomerName(rawName.replace(/[.…]+$/g, ""));
+    if (prefix.length < 5) continue;
+    const nameCandidates = summaries.filter((candidate) => normalizeImportedCustomerName(candidate.name).startsWith(prefix));
+    if (nameCandidates.length !== 1) continue;
+    const customerKey = normalizeImportedCustomerName(nameCandidates[0].name);
+    const matchingDetailTotals = totals.filter((total) => normalizeImportedCustomerName(total.name) === customerKey
+      && total.balance === nameCandidates[0].balance);
+    if (matchingDetailTotals.length === 1) resolved.set(lineIndex, nameCandidates[0].name);
+  }
+  return resolved;
+}
+
 /** QuickBooks A/R Aging QuickZoom classifier. It uses the report's column positions and adjacent
- * customer-group labels to complete abbreviated customer names. Payment rows stay unresolved because
- * this report does not identify which invoice(s) those credits should reduce. */
-export function suggestCollectionsPdfRows(lines: PdfTextLine[]): PdfRowSuggestion[] {
+ * customer-group labels to complete abbreviated customer names. Non-invoice transactions are retained
+ * as ignored source evidence: they affect report reconciliation, but never become collection invoices. */
+export function suggestCollectionsPdfRows(lines: PdfTextLine[], summaryLines: PdfTextLine[] = []): PdfRowSuggestion[] {
   let columns: HeaderMap | null = null;
   let headerPositions: number[] | null = null;
   let currentPage: number | null = null;
   let customerGroup = "";
-  return lines.map((line) => {
+  const summaryBackedNames = summaryBackedCustomerNames(lines, summaryLines);
+  return lines.map((line, lineIndex) => {
     if (currentPage !== line.page) {
       currentPage = line.page;
       customerGroup = "";
@@ -134,6 +254,21 @@ export function suggestCollectionsPdfRows(lines: PdfTextLine[]): PdfRowSuggestio
       };
       const type = atColumn("transaction_type");
       const kind = norm(type);
+      if (/^(payment|general journal|check)$/.test(kind)) {
+        const amount = amountValue(atColumn("open_balance"));
+        if (amount) return {
+          disposition: "ignored", confidence: "high",
+          reason: `Non-invoice ${type} transaction retained as report evidence; it is not allocated to an invoice`,
+          fields: {
+            transaction_type: type,
+            transaction_number: atColumn("invoice_number"),
+            transaction_date: dateValue(atColumn("transaction_date")) || "",
+            customer_name: atColumn("customer_name"),
+            open_balance: amount,
+          },
+        };
+        return { disposition: "unreviewed", confidence: "low", reason: "Non-invoice transaction has no readable amount for report reconciliation" };
+      }
       if (/^invoice$/.test(kind)) {
         const agingText = atColumn("reported_aging").replace(/\s*(days?)$/i, "").trim();
         const agingValue = /^\d{1,4}$/.test(agingText) ? Number(agingText) : null;
@@ -142,7 +277,9 @@ export function suggestCollectionsPdfRows(lines: PdfTextLine[]): PdfRowSuggestio
           transaction_type: type,
           transaction_date: dateValue(atColumn("transaction_date")) || "",
           invoice_number: atColumn("invoice_number"),
-          customer_name: isTruncatedCustomerName(rawCustomerName) && customerGroup ? customerGroup : rawCustomerName,
+          customer_name: isTruncatedCustomerName(rawCustomerName)
+            ? customerGroup || summaryBackedNames.get(lineIndex) || rawCustomerName
+            : rawCustomerName,
           terms: atColumn("terms") || null,
           po_number: atColumn("po_number") || null,
           due_date: dateValue(atColumn("due_date")) || "",
@@ -151,7 +288,13 @@ export function suggestCollectionsPdfRows(lines: PdfTextLine[]): PdfRowSuggestio
         };
         if (fields.transaction_date && fields.invoice_number && fields.customer_name && !isTruncatedCustomerName(fields.customer_name) && fields.due_date
           && agingValue !== null && fields.open_balance) {
-          return { disposition: "invoice", confidence: "high", reason: "Invoice row matches all required report columns", fields };
+          return {
+            disposition: "invoice", confidence: "high",
+            reason: summaryBackedNames.has(lineIndex) && !customerGroup
+              ? "Invoice customer matched to a unique summary name with an exact detail subtotal"
+              : "Invoice row matches all required report columns",
+            fields,
+          };
         }
         return { disposition: "unreviewed", confidence: "low", reason: "Invoice row has missing or ambiguous required fields" };
       }

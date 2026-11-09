@@ -46,8 +46,14 @@ async function openBilling(page) {
   const sel = await page.evaluateHandle((id) => [...document.querySelectorAll("select")].find((s) => [...s.options].some((o) => o.value === id)), C1);
   await sel.asElement().select(C1);
   await wait(500);
+  await page.evaluate(() => { [...document.querySelectorAll("[role=tab]")].find((t) => t.textContent.trim().startsWith("Invoices")).click(); });
+  await wait(800);
 }
-const filter = async (page, label) => { await page.waitForSelector("[data-candidates-panel]", { timeout: 20000 }); await page.evaluate((l) => { [...document.querySelectorAll("[data-candidates-panel] button")].find((b) => b.textContent.trim() === l).click(); }, label); await wait(2000); };
+const back = async (page) => { await page.evaluate(() => document.querySelector("section[aria-label='Invoice detail'] .bk").click()); await wait(1500); };
+const openInvoice = async (page, id) => { await page.evaluate((i) => document.querySelector(`[data-invoice-row="${i}"] button`).click(), id); await wait(1000); };
+const pickFilter = async (page, label) => { await page.waitForSelector("[data-candidates-panel]", { timeout: 20000 }); await page.evaluate((l) => { [...document.querySelectorAll("[data-candidates-panel] button")].find((b) => b.textContent.trim() === l).click(); }, label); await wait(2000); };
+const loadAll = async (page) => { for (let i = 0; i < 8; i += 1) { const more = await page.evaluate(() => { const b = [...document.querySelectorAll("[data-candidates-panel] button")].find((x) => /Load more/.test(x.textContent)); if (b) b.click(); return !!b; }); if (!more) return; await wait(1800); } };
+const filter = async (page, label) => { await pickFilter(page, label); await loadAll(page); };
 const rows = (page) => page.evaluate(() => [...document.querySelectorAll("[data-candidate-row]")].map((tr) => ({ text: tr.innerText.replace(/\s+/g, " "), checkbox: !!tr.querySelector("input[type=checkbox]"), disabled: !!tr.querySelector("input[type=checkbox]:disabled") })));
 const has = (list, text) => list.find((row) => row.text.includes(text));
 async function reasonAction(page, rowText, action, reason) {
@@ -111,12 +117,17 @@ try {
   rec("S8", "the server builds the draft: two lines, one package line at the package price", inv?.status === "draft" && inv.invoice_lines.length === 2 && Number(pkgLine?.amount) === 300, `lines=${inv?.invoice_lines.length} package=${pkgLine?.amount}`);
   const detail = await page.evaluate(() => { const d = document.querySelector("[data-invoice-detail]"); return d ? { locked: d.querySelectorAll("[data-line-locked]").length, edit: /Save line/.test(d.innerHTML), rows: d.querySelectorAll("[data-line-row]").length } : null; });
   rec("S9", "the new draft opens and its linked lines are locked", detail?.rows === 2 && detail.locked === 2 && !detail.edit, JSON.stringify(detail));
+  await back(page);
   list = await rows(page);
   rec("S10", "drafted candidates leave Ready", !has(list, `REC ${tag}`) && !has(list, `Package ${tag}`));
 
   const recLine = inv.invoice_lines.find((l) => l.description !== `Package ${tag}`);
+  await openInvoice(page, inv.id);
   await page.evaluate((id) => { [...document.querySelector(`[data-line-row="${id}"]`).querySelectorAll("button")].find((b) => /Remove and return/.test(b.textContent)).click(); }, recLine.id); await wait(3000);
-  rec("S11", "removing a linked line returns its candidate to Ready", !!has(await rows(page), `REC ${tag}`) && (await page.$$("[data-line-row]")).length === 1);
+  const linesLeft = (await page.$$("[data-line-row]")).length;
+  await back(page);
+  rec("S11", "removing a linked line returns its candidate to Ready", !!has(await rows(page), `REC ${tag}`) && linesLeft === 1, `lines=${linesLeft}`);
+  await openInvoice(page, inv.id);
 
   if (!permanentRows) {
     await page.evaluate(() => { document.querySelector("[data-delete-draft]").open = true; }); await wait(200);
@@ -135,12 +146,13 @@ ${results.length - failedEarly}/${results.length} passed`); process.exit(failedE
   rec("S14", "no page errors as Billing staff", page.errors.length === 0, page.errors.join("; "));
 
   await openBilling(admin); await wait(1500);
-  await admin.evaluate((id) => document.querySelector(`[data-invoice-row="${id}"] button`).click(), inv.id); await wait(800);
+  await openInvoice(admin, inv.id);
   await admin.evaluate(() => { document.querySelector("[data-void-control]").open = true; });
   const vbox = await admin.$("[data-void-control] textarea"); await vbox.type("Synthetic void");
   admin.calls.length = 0;
   await admin.evaluate(() => document.querySelector("[data-void-control] button[type=submit]").click()); await wait(3500);
   const voided = (await rest("GET", `invoices?select=status&id=eq.${inv.id}`))[0];
+  await back(admin);
   await filter(admin, "Ready");
   rec("S15", "void uses the explicit endpoint and the package returns to Ready", voided.status === "void" && admin.calls.some((c) => c.endsWith(`/invoices/${inv.id}/void`)) && !!has(await rows(admin), `Package ${tag}`), `${voided.status} ${admin.calls.join(" ")}`);
   rec("S16", "no page errors as Admin", admin.errors.length === 0, admin.errors.join("; "));
