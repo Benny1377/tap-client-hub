@@ -4,6 +4,7 @@ import { SERVICE_META } from "@/lib/data";
 import { randomUUID } from "crypto";
 import { requireClientDataEditAccess } from "@/lib/access-server";
 import { calculatePayrollStartDate, normalizePayDay } from "@/lib/payroll-schedule";
+import { getPayrollSchedules } from "@/lib/payroll-run-progress";
 
 // ── Helper: create a Supabase client ──
 async function getSupabase() {
@@ -399,6 +400,7 @@ export async function GET(request: Request) {
         activeUpdatedAt: db.active_updated_at || null,
         activeUpdatedBy: db.active_updated_by || null,
         services: mergedSvcs,
+        payrollSchedules: getPayrollSchedules(services),
       };
     });
 

@@ -128,6 +128,19 @@ export async function POST(request: Request) {
     // through the service-role Auth Admin API after the server-side capability
     // check above has authorized this request.
     const adminSupabase = createAdminClient();
+    const { data: profileMatches, error: profileLookupError } = await adminSupabase
+      .from("profiles")
+      .select("id")
+      .ilike("email", normalizedEmail)
+      .limit(2);
+    if (profileLookupError) {
+      return NextResponse.json({ error: profileLookupError.message }, { status: 500 });
+    }
+    if (profileMatches && profileMatches.length > 1) {
+      return NextResponse.json({ error: "More than one profile matches this email" }, { status: 409 });
+    }
+    const existingProfile = profileMatches?.[0] || null;
+
     const { data: authData, error: authError } = await adminSupabase.auth.admin.createUser({
       email: normalizedEmail,
       password,
@@ -161,10 +174,9 @@ export async function POST(request: Request) {
       }
     }
 
-    // 3. Create profile record with the same admin client so RLS cannot turn
-    // this authorized write into a silent no-op.
-    const { error: profileError } = await adminSupabase.from("profiles").insert({
-      id: authData.user.id,
+    // Keep legacy profile IDs stable: client assignments may refer to them.
+    // Reconcile a pre-existing profile by email; insert only when none exists.
+    const profilePayload = {
       full_name,
       email: normalizedEmail,
       role: role || "staff",
@@ -172,18 +184,26 @@ export async function POST(request: Request) {
       reporting_manager: mgrId,
       modules: sanitizeModulesForRole(role || "staff", modules),
       active: true,
-      invite_status: "active",
       email_2fa_enabled: email_2fa_enabled === true,
       allow_edit_client_data: allow_edit_client_data === true,
-    });
+    };
+    const profileResult = existingProfile
+      ? await adminSupabase.from("profiles").update(profilePayload).eq("id", existingProfile.id).select("id").maybeSingle()
+      : await adminSupabase.from("profiles").insert({ id: authData.user.id, ...profilePayload }).select("id").maybeSingle();
+    const profileError = profileResult.error;
 
-    if (profileError) {
+    if (profileError || !profileResult.data) {
       // Keep Auth and profiles consistent if profile provisioning fails.
       await adminSupabase.auth.admin.deleteUser(authData.user.id);
-      return NextResponse.json({ error: profileError.message }, { status: 500 });
+      return NextResponse.json({ error: profileError?.message || "Profile record was not saved" }, { status: 500 });
     }
 
-    return NextResponse.json({ success: true, userId: authData.user.id }, { status: 201 });
+    return NextResponse.json({
+      success: true,
+      userId: authData.user.id,
+      profileId: profileResult.data.id,
+      linkedExistingProfile: Boolean(existingProfile),
+    }, { status: 201 });
   } catch (err: any) {
     return NextResponse.json(
       { error: err.message || "Internal server error" },

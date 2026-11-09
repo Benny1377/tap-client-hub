@@ -3,11 +3,12 @@
 import { useMemo, useState, useCallback, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { formatPayrollStartDate, getPayrollStartDate } from "@/lib/payroll-schedule";
+import { adjustPayrollRunCount, getPayrollScheduleCountKey, getPayrollSchedules } from "@/lib/payroll-run-progress";
 import { COMMENT_CATEGORIES, normalizeCommentCategory, type CommentCategory } from "@/lib/comment-category";
 
 import type { Client, ServiceConfig, ServiceKey, MonthStatus } from "@/lib/types";
 import { MONTHS_SHORT } from "@/lib/data";
-import { filterWorklistKpi, type WorklistKpi } from "@/lib/worklist-kpi-filter";
+import { filterWorklistKpi, payrollMonthCategories, type WorklistKpi } from "@/lib/worklist-kpi-filter";
 import { collectAssignmentOptions, matchesAssignmentFilter } from "@/lib/worklist-assignment-filter";
 import { exportClientCsv, serviceLabel } from "@/lib/export-csv";
 
@@ -75,6 +76,16 @@ const STAGE_STYLES: Record<
   na: { bg: "var(--red-soft)", fg: "var(--red)", border: "#e8c4bf", cls: "na", label: "N/A" },
 };
 const STAGE_CYCLE: WorklistStage[] = ["", "ip", "wc", "pp", "dl", "dn", "na"];
+
+// Sticky header cells — every <th> stays pinned above the body when the table
+// scrolls, with a solid card background so body cells never bleed through.
+const TH_STICKY: React.CSSProperties = {
+  position: "sticky",
+  top: 0,
+  zIndex: 20,
+  background: "var(--card)",
+  borderBottom: "2px solid var(--line)",
+};
 
 // Single-click cycling: advances to next stage, wraps from na back to blank
 function nextStage(current: WorklistStage): WorklistStage {
@@ -435,9 +446,9 @@ export default function WorklistTable({
       if (cadenceFilter !== "All") {
         if (variant === "payroll") {
           list = list.filter((c) => {
-            const svc = c.services?.find((s: any) => s.key === "payroll");
-            const cadence = normalizePayrollCadence(svc?.frequency);
-            return cadence === cadenceFilter;
+            return getPayrollSchedules(c.payrollSchedules?.length ? c.payrollSchedules : c.services).some((schedule) =>
+              normalizePayrollCadence(schedule.frequency || schedule.payPeriodFrequency) === cadenceFilter,
+            );
           });
         } else {
           // financials, sales_tax — filter by frequency directly
@@ -746,10 +757,17 @@ export default function WorklistTable({
         setPrCounts((prev) => {
           const next = { ...prev };
           for (const client of serviceClients) {
-            const svc = client.services?.find((s: any) => s.key === "payroll");
-            if (!svc?.csId) continue;
-            const key = `${client.id}:payroll`;
-            if (countsByCsId[svc.csId]) next[key] = countsByCsId[svc.csId];
+            const schedules = getPayrollSchedules(client.payrollSchedules?.length ? client.payrollSchedules : client.services);
+            if (schedules.length === 0) continue;
+            const aggregate = Array(12).fill(0);
+            for (const schedule of schedules) {
+              const serviceId = String(schedule.csId);
+              const key = getPayrollScheduleCountKey(client.id, serviceId);
+              const counts = countsByCsId[serviceId] || schedule.periodCounts || Array(12).fill(0);
+              next[key] = counts;
+              for (let month = 0; month < 12; month++) aggregate[month] += Number(counts[month]) || 0;
+            }
+            next[`${client.id}:payroll`] = aggregate;
           }
           return next;
         });
@@ -789,9 +807,9 @@ export default function WorklistTable({
   }, [variant, serviceClients, year]);
 
   // ── Payroll: get real cadence from client service ──
-  function getClientPayrollCadence(client: any): PayrollCadence {
-    const svc = client.services?.find((s: any) => s.key === "payroll");
-    const freq = svc?.frequency || "Monthly";
+  function getClientPayrollCadence(client: any, schedule?: any): PayrollCadence {
+    const svc = schedule || getPayrollSchedules(client.payrollSchedules?.length ? client.payrollSchedules : client.services)[0] || client.services?.find((s: any) => s.key === "payroll");
+    const freq = svc?.frequency || svc?.payPeriodFrequency || "Monthly";
     if (freq === "Weekly") return "Weekly";
     if (freq === "Bi-Weekly" || freq === "Bi-Weekly A") return "Bi-Weekly A";
     if (freq === "Bi-Weekly B") return "Bi-Weekly B";
@@ -800,71 +818,36 @@ export default function WorklistTable({
   }
 
   // ── Payroll bump handler ──
-  const prBump = useCallback((clientId: string, monthIdx: number, ev: React.MouseEvent) => {
-    if (isHistorical) return;
+  const prBump = useCallback((clientId: string, clientServiceId: string, monthIdx: number, delta: number) => {
+    if (isHistorical || readOnly) return;
     const client = serviceClients.find((c: any) => c.id === clientId);
     if (!client) return;
-    const svc = client.services?.find((s: any) => s.key === "payroll");
-    const maxRuns = getMaxRunsPerMonth(getClientPayrollCadence(client));
-    const key = `${clientId}:payroll`;
-    setPrCounts((prev) => {
-      const counts = [...(prev[key] ?? Array(12).fill(0))];
-      const current = counts[monthIdx] || 0;
-      // Regular click: if count > 0, decrement; if 0, increment (toggle)
-      // Shift-click: always decrement (same behavior for non-zero cells)
-      const next = ev.shiftKey
-        ? Math.max(0, current - 1)
-        : current > 0
-          ? Math.max(0, current - 1)
-          : Math.min(maxRuns, current + 1);
-      counts[monthIdx] = next;
-      // Persist
-      if (svc?.csId) {
-        const period = `${year}-${String(monthIdx + 1).padStart(2, "0")}`;
-        fetch("/api/period-counts", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ client_service_id: svc.csId, period, processed: next }),
-        }).catch(() => {});
-      }
-      return { ...prev, [key]: counts };
-    });
-  }, [isHistorical, serviceClients, year]);
-
-  // ── Payroll start edit ──
-  const [editingPr, setEditingPr] = useState<string | null>(null);
-  const [editPrValue, setEditPrValue] = useState("");
-
-  const prStartEdit = useCallback((clientId: string, monthIdx: number, currentVal: number) => {
-    if (isHistorical) return;
-    setEditingPr(`${clientId}:${monthIdx}`);
-    setEditPrValue(String(currentVal || 0));
-  }, [isHistorical]);
-
-  const prCommitEdit = useCallback((clientId: string, monthIdx: number) => {
-    const client = serviceClients.find((c: any) => c.id === clientId);
-    if (!client) return;
-    const svc = client.services?.find((s: any) => s.key === "payroll");
-    const maxRuns = getMaxRunsPerMonth(getClientPayrollCadence(client));
-    let val = parseInt(editPrValue) || 0;
-    val = Math.max(0, Math.min(maxRuns, val));
-    const key = `${clientId}:payroll`;
-    setPrCounts((prev) => {
-      const counts = [...(prev[key] ?? Array(12).fill(0))];
-      counts[monthIdx] = val;
-      // Persist
-      if (svc?.csId) {
-        const period = `${year}-${String(monthIdx + 1).padStart(2, "0")}`;
-        fetch("/api/period-counts", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ client_service_id: svc.csId, period, processed: val }),
-        }).catch(() => {});
-      }
-      return { ...prev, [key]: counts };
-    });
-    setEditingPr(null);
-  }, [editPrValue, serviceClients, year]);
+    const schedule = getPayrollSchedules(client.payrollSchedules?.length ? client.payrollSchedules : client.services).find((item) => String(item.csId) === clientServiceId);
+    if (!schedule?.csId) return;
+    const maxRuns = getMaxRunsPerMonth(getClientPayrollCadence(client, schedule));
+    const scheduleKey = getPayrollScheduleCountKey(clientId, clientServiceId);
+    const aggregateKey = `${clientId}:payroll`;
+    const current = prCounts[scheduleKey]?.[monthIdx] ?? Number(schedule.periodCounts?.[monthIdx]) ?? 0;
+    const nextCount = adjustPayrollRunCount(current, maxRuns, delta);
+    if (nextCount === current) return;
+    const scheduleCounts = [...(prCounts[scheduleKey] ?? schedule.periodCounts ?? Array(12).fill(0))];
+    scheduleCounts[monthIdx] = nextCount;
+    const aggregate = Array(12).fill(0);
+    for (const item of getPayrollSchedules(client.payrollSchedules?.length ? client.payrollSchedules : client.services)) {
+      const itemKey = getPayrollScheduleCountKey(clientId, String(item.csId));
+      const counts = String(item.csId) === clientServiceId
+        ? scheduleCounts
+        : prCounts[itemKey] ?? item.periodCounts ?? Array(12).fill(0);
+      for (let month = 0; month < 12; month++) aggregate[month] += Number(counts[month]) || 0;
+    }
+    setPrCounts((prev) => ({ ...prev, [scheduleKey]: scheduleCounts, [aggregateKey]: aggregate }));
+    const period = `${year}-${String(monthIdx + 1).padStart(2, "0")}`;
+    fetch("/api/period-counts", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ client_service_id: schedule.csId, period, processed: nextCount }),
+    }).catch(() => {});
+  }, [isHistorical, readOnly, serviceClients, year, prCounts]);
 
   // ── Cell click handler — opens stage picker dropdown ──
   const handleCellClick = useCallback(
@@ -1041,27 +1024,40 @@ export default function WorklistTable({
     }
 
     if (variant === "payroll") {
-      const isCur = !isHistorical;
+      // Keep totalRuns/totalMax so the parent onPayrollMissingRuns callback keeps
+      // working, but surface workflow-category counts on the cards instead of the
+      // legacy run KPIs.
       let totalRuns = 0;
       let totalMax = 0;
-      let monthRuns = 0;
+      const workflow = { completed: 0, inProgress: 0, notStarted: 0, delayed: 0, waiting: 0 };
       for (const client of serviceClients) {
-        const cadence = getClientPayrollCadence(client);
-        const maxRuns = getMaxRunsPerMonth(cadence);
+        const schedules = getPayrollSchedules(client.payrollSchedules?.length ? client.payrollSchedules : client.services);
+        const maxRuns = schedules.length
+          ? schedules.reduce((total, schedule) => total + getMaxRunsPerMonth(getClientPayrollCadence(client, schedule)), 0)
+          : getMaxRunsPerMonth(getClientPayrollCadence(client));
         totalMax += maxRuns * 12;
         const key = `${client.id}:payroll`;
         const counts = prCounts[key] ?? Array(12).fill(0);
         for (let m = 0; m < 12; m++) {
           totalRuns += (counts[m] || 0);
         }
-        if (isCur) {
-          monthRuns += (counts[currentMonth] || 0);
-        }
+        // Current selected month only — one client lands in at most one card.
+        const categories = payrollMonthCategories(client, serviceKey, prCounts, worklistState);
+        const category = categories[currentMonth];
+        if (category === "completed") workflow.completed++;
+        else if (category === "in_progress") workflow.inProgress++;
+        else if (category === "not_started") workflow.notStarted++;
+        else if (category === "delayed") workflow.delayed++;
+        else if (category === "waiting") workflow.waiting++;
       }
-      const pct = totalMax > 0 ? Math.round((totalRuns / totalMax) * 100) : 0;
       return {
-        totalRuns, totalMax, pct,
-        monthRuns, currentMonthName: MONTHS_SHORT[currentMonth], isCur,
+        totalRuns,
+        totalMax,
+        completed: workflow.completed,
+        inProgress: workflow.inProgress,
+        notStarted: workflow.notStarted,
+        delayed: workflow.delayed,
+        waiting: workflow.waiting,
       };
     }
 
@@ -1176,11 +1172,11 @@ export default function WorklistTable({
         </div>
       ) : variant === "payroll" ? (
         <div className="stats" style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 16 }}>
-          <StatCard label="Total Clients" value={serviceClients.length} color="var(--ink)" active={kpiFilter === "all"} onClick={() => setKpiFilter("all")} />
-          <StatCard label="Total Runs" value={stats.totalRuns ?? 0} color="var(--blue)" active={kpiFilter === "runs"} onClick={() => setKpiFilter("runs")} />
-          <StatCard label="Max Runs" value={stats.totalMax ?? 0} color="var(--muted)" active={kpiFilter === "max_runs"} onClick={() => setKpiFilter("max_runs")} />
-          <StatCard label="Completion" value={(stats.pct ?? 0) + "%"} color="var(--green)" active={kpiFilter === "incomplete"} onClick={() => setKpiFilter("incomplete")} />
-          <StatCard label={stats.isCur ? `In ${stats.currentMonthName}` : `Month runs`} value={stats.monthRuns ?? 0} color="var(--amber)" active={kpiFilter === "month_runs"} onClick={() => setKpiFilter("month_runs")} />
+          <StatCard label="Completed" value={stats.completed ?? 0} color="var(--green)" active={kpiFilter === "done"} onClick={() => setKpiFilter("done")} />
+          <StatCard label="In Progress" value={stats.inProgress ?? 0} color="var(--blue)" active={kpiFilter === "in_progress"} onClick={() => setKpiFilter("in_progress")} />
+          <StatCard label="Not Started" value={stats.notStarted ?? 0} color="var(--red)" active={kpiFilter === "not_started"} onClick={() => setKpiFilter("not_started")} />
+          <StatCard label="Delayed" value={stats.delayed ?? 0} color="var(--red)" active={kpiFilter === "delayed"} onClick={() => setKpiFilter("delayed")} />
+          <StatCard label="Waiting on Client" value={stats.waiting ?? 0} color="var(--amber)" active={kpiFilter === "waiting"} onClick={() => setKpiFilter("waiting")} />
         </div>
       ) : (
       <div className="stats" style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 16 }}>
@@ -1317,40 +1313,41 @@ export default function WorklistTable({
           style={{ background: "var(--card)", color: "var(--ink)", fontSize: 14, lineHeight: 1 }}
           aria-label="Scroll left"
         >{'\u2039'}</button>
-      <div id={`table-scroll-${serviceKey}`} style={{ overflowX: "auto", borderRadius: 14, border: "1px solid var(--line)", scrollBehavior: "smooth" }}>
-      <table style={{ width: "max-content", minWidth: "100%", borderCollapse: "collapse" }}>
+      <div id={`table-scroll-${serviceKey}`} style={{ overflowX: "auto", overflowY: "clip", borderRadius: 14, border: "1px solid var(--line)", scrollBehavior: "smooth" }}>
+      <table style={{ width: "max-content", minWidth: "100%", borderCollapse: "separate", borderSpacing: 0 }}>
         <thead>
           <tr style={{ background: "var(--card)", borderBottom: "2px solid var(--line)" }}>
-             <th className="text-left text-[10px] font-semibold text-[var(--muted)] uppercase tracking-wider px-1.5 py-2" style={{ width: 160, minWidth: 120, maxWidth: 220 }}>Client / Line Item</th>
+             <th className="text-left text-[10px] font-semibold text-[var(--muted)] uppercase tracking-wider px-1.5 py-2" style={{ ...TH_STICKY, width: 160, minWidth: 120, maxWidth: 220 }}>Client / Line Item</th>
             {variant === "payroll" && (
             <>
-              <th className="text-left text-[10px] font-semibold text-[var(--muted)] uppercase tracking-wider px-1 py-2" style={{ width: 80, maxWidth: 100 }}>Pay Day</th>
+              <th className="text-left text-[10px] font-semibold text-[var(--muted)] uppercase tracking-wider px-1 py-2" style={{ ...TH_STICKY, width: 80, maxWidth: 100 }}>Pay Day</th>
             </>
             )}
             {variant === "tax_returns" && (
             <>
-              <th className="text-left text-[10px] font-semibold text-[var(--muted)] uppercase tracking-wider px-1 py-2" style={{ width: 70, maxWidth: 80 }}>Filing St</th>
-              <th className="text-left text-[10px] font-semibold text-[var(--muted)] uppercase tracking-wider px-1 py-2" style={{ width: 80, maxWidth: 100 }}>Filing Type</th>
+              <th className="text-left text-[10px] font-semibold text-[var(--muted)] uppercase tracking-wider px-1 py-2" style={{ ...TH_STICKY, width: 70, maxWidth: 80 }}>Filing St</th>
+              <th className="text-left text-[10px] font-semibold text-[var(--muted)] uppercase tracking-wider px-1 py-2" style={{ ...TH_STICKY, width: 80, maxWidth: 100 }}>Filing Type</th>
             </>
             )}
             {((serviceKey === "renditions" || serviceKey === "annual_reports")) && showRenewalColumns && (
             <>
-              <th className="text-left text-[10px] font-semibold text-[var(--muted)] uppercase tracking-wider px-1 py-2" style={{ width: 50, maxWidth: 60 }}>State</th>
-              <th className="text-left text-[10px] font-semibold text-[var(--muted)] uppercase tracking-wider px-1 py-2" style={{ width: 70, maxWidth: 80 }}>Due</th>
+              <th className="text-left text-[10px] font-semibold text-[var(--muted)] uppercase tracking-wider px-1 py-2" style={{ ...TH_STICKY, width: 50, maxWidth: 60 }}>State</th>
+              <th className="text-left text-[10px] font-semibold text-[var(--muted)] uppercase tracking-wider px-1 py-2" style={{ ...TH_STICKY, width: 70, maxWidth: 80 }}>Due</th>
             </>
             )}
-            <th className="text-left text-[10px] font-semibold text-[var(--muted)] uppercase tracking-wider px-1 py-2" style={{ width: 120, maxWidth: 150 }}>Assigned</th>
+            <th className="text-left text-[10px] font-semibold text-[var(--muted)] uppercase tracking-wider px-1 py-2" style={{ ...TH_STICKY, width: 120, maxWidth: 150 }}>Assigned</th>
             {serviceKey !== "renditions" && serviceKey !== "annual_reports" && serviceKey !== "tax_returns" && variant !== "t9" && (
-            <th className="text-left text-[10px] font-semibold text-[var(--muted)] uppercase tracking-wider px-1 py-2" style={{ width: 90, maxWidth: 100 }}>Cadence</th>
+            <th className="text-left text-[10px] font-semibold text-[var(--muted)] uppercase tracking-wider px-1 py-2" style={{ ...TH_STICKY, width: 90, maxWidth: 100 }}>Cadence</th>
             )}
             {variant === "t9" && (
-            <th className="text-center text-[10px] font-semibold text-[var(--muted)] uppercase tracking-wider px-1 py-2" style={{ width: 60, minWidth: 60 }}>Expected</th>
+            <th className="text-center text-[10px] font-semibold text-[var(--muted)] uppercase tracking-wider px-1 py-2" style={{ ...TH_STICKY, width: 60, minWidth: 60 }}>Expected</th>
             )}
             {MONTHS_SHORT.map((m, mi) => {
               return (
                 <th key={m}
                   className="text-center text-[10px] font-semibold text-[var(--muted)] uppercase tracking-wider px-0.5 py-2"
                   style={{
+                    ...TH_STICKY,
                     width: variant === "t9" ? 44 : 30,
                   }}
                 >{m}</th>
@@ -1358,7 +1355,7 @@ export default function WorklistTable({
             })}
             {variant === "t9" && (
             <>
-              <th className="text-center text-[10px] font-semibold text-[var(--muted)] uppercase tracking-wider px-0.5 py-2" style={{ width: 60, minWidth: 60 }}>Left</th>
+              <th className="text-center text-[10px] font-semibold text-[var(--muted)] uppercase tracking-wider px-0.5 py-2" style={{ ...TH_STICKY, width: 60, minWidth: 60 }}>Left</th>
             </>
             )}
           </tr>
@@ -1694,9 +1691,21 @@ export default function WorklistTable({
                   {serviceKey !== "renditions" && serviceKey !== "annual_reports" && serviceKey !== "tax_returns" && (
                   <td className="px-1 py-1 text-[11px] text-[var(--ink)] whitespace-nowrap truncate" style={{ width: 90, maxWidth: 100 }}>
                     {(() => {
-                      const raw = variant === "payroll"
-                        ? (svc.frequency || "Monthly")
-                        : isStxItem
+                      if (variant === "payroll") {
+                        const schedules = getPayrollSchedules(client.payrollSchedules?.length ? client.payrollSchedules : client.services);
+                        const labels = schedules.map((schedule, index) => {
+                          const label = normalizePayrollCadence(schedule.frequency || schedule.payPeriodFrequency);
+                          const duplicateCount = schedules.filter((item) =>
+                            normalizePayrollCadence(item.frequency || item.payPeriodFrequency) === label,
+                          ).length;
+                          const occurrence = schedules.slice(0, index + 1).filter((item) =>
+                            normalizePayrollCadence(item.frequency || item.payPeriodFrequency) === label,
+                          ).length;
+                          return duplicateCount > 1 ? `${label} ${occurrence}` : label;
+                        });
+                        return labels.join(" · ") || "Monthly";
+                      }
+                      const raw = isStxItem
                         ? (stxItem.frequency || svc.frequency || "Monthly")
                         : (svc.frequency || "Monthly");
                       // Normalize to display labels matching the slideover dropdowns
@@ -1782,16 +1791,52 @@ export default function WorklistTable({
                           } as React.CSSProperties}
                           title={`${MONTHS_SHORT[i]} — ${getStageLabel(stage, variant)}${isHistorical ? ` (${year})` : ""}${isFilingMonth ? " · Filing month" : ""}`}
                         >{isActive || lockHist ? t : ""}</div>
+                        {variant === "payroll" && isActive && getPayrollSchedules(client.payrollSchedules?.length ? client.payrollSchedules : client.services).map((schedule) => {
+                          const clientServiceId = String(schedule.csId);
+                          const countKey = getPayrollScheduleCountKey(client.id, clientServiceId);
+                          const frequency = getClientPayrollCadence(client, schedule);
+                          const expectedRuns = getMaxRunsPerMonth(frequency);
+                          const completedRuns = Math.max(0, Number(prCounts[countKey]?.[i] ?? schedule.periodCounts?.[i]) || 0);
+                          return (
+                            <button
+                              key={clientServiceId}
+                              type="button"
+                              disabled={cellReadOnly}
+                              aria-label={`${frequency} payroll runs completed for ${client.name} in ${MONTHS_SHORT[i]}: ${completedRuns} of ${expectedRuns}`}
+                              title={`${frequency}: ${completedRuns}/${expectedRuns} runs complete. Click to add one; Shift-click to remove one.`}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                prBump(client.id, clientServiceId, i, event.shiftKey ? -1 : 1);
+                              }}
+                              style={{
+                                display: "flex",
+                                justifyContent: "center",
+                                width: "100%",
+                                margin: "2px auto 0",
+                                padding: "1px 0",
+                                border: "1px solid var(--line)",
+                                borderRadius: 3,
+                                background: completedRuns >= expectedRuns ? "var(--green-soft)" : "var(--card)",
+                                color: completedRuns >= expectedRuns ? "var(--green)" : "var(--muted)",
+                                fontSize: 8,
+                                lineHeight: 1.1,
+                                cursor: cellReadOnly ? "default" : "pointer",
+                              }}
+                            >{completedRuns}/{expectedRuns}</button>
+                          );
+                        })}
                         {/* ── Payroll: next pay date MM/DD in current month cell ── */}
                         {variant === "payroll" && isCurrentMonth && (
                           <div style={{ fontSize: 10, textAlign: "center", marginTop: 2, lineHeight: 1, whiteSpace: "nowrap" }}>
-                            <span style={{ color: "var(--ink)" }}>
-                              {formatPayrollStartDate(getPayrollStartDate(
-                                svc?.frequency || svc?.payPeriodFrequency || "",
-                                svc?.paydate || "",
-                                svc?.pay_start_date || svc?.payStartDate,
-                              ))}
-                            </span>
+                            {getPayrollSchedules(client.payrollSchedules?.length ? client.payrollSchedules : client.services).map((schedule, index) => (
+                              <span key={String(schedule.csId)} style={{ display: "block", color: "var(--ink)" }}>
+                                {index + 1}: {formatPayrollStartDate(getPayrollStartDate(
+                                  schedule?.frequency || schedule?.payPeriodFrequency || "",
+                                  schedule?.paydate || "",
+                                  schedule?.payStartDate,
+                                ))}
+                              </span>
+                            ))}
                           </div>
                         )}
                         {hasCmt && (
