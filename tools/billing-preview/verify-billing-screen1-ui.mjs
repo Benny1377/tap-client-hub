@@ -56,6 +56,8 @@ const loadAll = async (page) => { for (let i = 0; i < 8; i += 1) { const more = 
 const filter = async (page, label) => { await pickFilter(page, label); await loadAll(page); };
 const rows = (page) => page.evaluate(() => [...document.querySelectorAll("[data-candidate-row]")].map((tr) => ({ text: tr.innerText.replace(/\s+/g, " "), checkbox: !!tr.querySelector("input[type=checkbox]"), disabled: !!tr.querySelector("input[type=checkbox]:disabled") })));
 const has = (list, text) => list.find((row) => row.text.includes(text));
+// Hosted lists reload after each action, and a long list needs every page; wait for the expected state instead of reading at once.
+const until = async (page, text, present) => { for (let i = 0; i < 12; i += 1) { await loadAll(page); const found = !!has(await rows(page), text); if (found === present) return true; await wait(1500); } return false; };
 async function reasonAction(page, rowText, action, reason) {
   const details = await page.evaluateHandle((t, a) => { const tr = [...document.querySelectorAll("[data-candidate-row]")].find((r) => r.innerText.includes(t)); const d = tr.querySelector(`[data-candidate-action="${a}"]`); d.open = true; return d; }, rowText, action);
   const box = await details.asElement().$("textarea"); await box.type(reason);
@@ -95,16 +97,16 @@ try {
   rec("S4", "an unpriced candidate shows No price and cannot be selected", has(list, `UNP ${tag}`) && !has(list, `UNP ${tag}`).checkbox && /No price/.test(has(list, `UNP ${tag}`).text), has(list, `UNP ${tag}`)?.text);
   must(await call(admin, "POST", `/api/billing/rate-cards/${rc}/entries`, { serviceCode: `S1${tag}-UNP`, unit: "service", unitAmount: "50.00", effectiveFrom: "2026-01-01", reason: "Synthetic" }), "unp entry");
   await reasonAction(page, `UNP ${tag}`, "Reprice", "Price added");
-  const afterReprice = await rows(page);
-  await filter(page, "Ready"); list = await rows(page);
-  rec("S5", "repricing moves it to Ready at the server's price", !has(afterReprice, `UNP ${tag}`) && has(list, `UNP ${tag}`)?.text.includes("$50.00"), has(list, `UNP ${tag}`)?.text);
+  const leftUnpriced = await until(page, `UNP ${tag}`, false);
+  await filter(page, "Ready"); await until(page, `UNP ${tag}`, true); list = await rows(page);
+  rec("S5", "repricing moves it to Ready at the server's price", leftUnpriced && has(list, `UNP ${tag}`)?.text.includes("$50.00"), has(list, `UNP ${tag}`)?.text);
 
   await reasonAction(page, `ALT ${tag}`, "Dismiss", "Client on hold");
-  list = await rows(page); const gone = !has(list, `ALT ${tag}`);
-  await filter(page, "Dismissed"); const dismissed = has(await rows(page), `ALT ${tag}`);
+  const gone = await until(page, `ALT ${tag}`, false);
+  await filter(page, "Dismissed"); const dismissed = await until(page, `ALT ${tag}`, true);
   await reasonAction(page, `ALT ${tag}`, "Reopen", "Hold resolved");
   await filter(page, "Ready");
-  rec("S6", "dismiss and reopen move a candidate between lists", gone && !!dismissed && !!has(await rows(page), `ALT ${tag}`));
+  rec("S6", "dismiss and reopen move a candidate between lists", gone && dismissed && await until(page, `ALT ${tag}`, true));
 
   await tick(page, `REC ${tag}`); await tick(page, `Package ${tag}`); await wait(400);
   const summary = await page.evaluate(() => document.querySelector("[data-candidate-draft] h3")?.innerText || "");
@@ -126,13 +128,13 @@ try {
   await page.evaluate((id) => { [...document.querySelector(`[data-line-row="${id}"]`).querySelectorAll("button")].find((b) => /Remove and return/.test(b.textContent)).click(); }, recLine.id); await wait(3000);
   const linesLeft = (await page.$$("[data-line-row]")).length;
   await back(page);
-  rec("S11", "removing a linked line returns its candidate to Ready", !!has(await rows(page), `REC ${tag}`) && linesLeft === 1, `lines=${linesLeft}`);
+  rec("S11", "removing a linked line returns its candidate to Ready", await until(page, `REC ${tag}`, true) && linesLeft === 1, `lines=${linesLeft}`);
   await openInvoice(page, inv.id);
 
   if (!permanentRows) {
     await page.evaluate(() => { document.querySelector("[data-delete-draft]").open = true; }); await wait(200);
     await clickText(page, "[data-delete-draft]", "Delete this draft"); await wait(3500);
-    rec("S12", "deleting the draft removes it and returns the package to Ready", (await rest("GET", `invoices?select=id&id=eq.${inv.id}`)).length === 0 && !!has(await rows(page), `Package ${tag}`));
+    rec("S12", "deleting the draft removes it and returns the package to Ready", (await rest("GET", `invoices?select=id&id=eq.${inv.id}`)).length === 0 && await until(page, `Package ${tag}`, true));
     rec("S14", "no page errors as Billing staff", page.errors.length === 0, page.errors.join("; "));
     const failedEarly = results.filter((x) => !x).length; await browser.close();
     console.log(`
