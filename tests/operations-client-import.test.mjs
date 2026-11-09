@@ -32,7 +32,7 @@ test("Operations CSV refuses inconsistent client rows and unsupported input", ()
 test("Operations client import is sandbox-only, Owner/Admin-only and uses the transactional RPC", async () => {
   const fs = await import("node:fs");
   const route = fs.readFileSync(new URL("../app/api/clients/operations-import/route.ts", import.meta.url), "utf8");
-  const migration = fs.readFileSync(new URL("../supabase/migrations/20261109133522_operations_client_data_import.sql", import.meta.url), "utf8");
+  const migration = fs.readFileSync(new URL("../supabase/migrations/20261109134439_operations_client_data_import.sql", import.meta.url), "utf8");
   assert.match(route, /vuqgxotdccxivjmavsoj\.supabase\.co/);
   assert.match(route, /identity\.role !== "owner" && identity\.role !== "admin"/);
   assert.match(route, /import_operations_client_data/);

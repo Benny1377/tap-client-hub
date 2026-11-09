@@ -36,7 +36,7 @@ for migration in \
   20261107130000_audit_client_creation.sql \
   20261107132830_collections_require_review_before_cross_check.sql \
   20261109121124_collections_atomic_summary_detail_approval.sql \
-  20261109133522_operations_client_data_import.sql \
+  20261109134439_operations_client_data_import.sql \
   20261020100000_billing_ledger_database_invariants.sql \
   20261105100000_billing_phase2_core.sql \
   20261105110000_billing_manual_confirmation_guard.sql \
