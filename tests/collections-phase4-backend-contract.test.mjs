@@ -80,7 +80,25 @@ test("customer group headings may contain digits without treating transaction ID
 
 test("parser behavior changes use a new version so existing batches can refresh", () => {
   const suggestions = source("lib/collections-pdf-suggestions.ts");
-  assert.match(suggestions, /COLLECTIONS_PDF_SUGGESTION_PARSER_VERSION = "quickbooks-aging-detail-v5"/);
+  assert.match(suggestions, /COLLECTIONS_PDF_SUGGESTION_PARSER_VERSION = "quickbooks-aging-summary-match-v6"/);
+});
+
+test("paired A/R approval requires a same-date summary and commits both batches together", () => {
+  const approve = source("app/api/collections/imports/[id]/approve/route.ts");
+  const summaryCorrection = source("app/api/collections/imports/[id]/summary-row/route.ts");
+  const migration = source("supabase/migrations/20261109121124_collections_atomic_summary_detail_approval.sql");
+  const parse = source("app/api/collections/imports/[id]/parse/route.ts");
+  assert.match(approve, /summary_batch_id/);
+  assert.match(approve, /approve_collection_import_pair/);
+  assert.match(approve, /IMPORT_RECONCILIATION_MISMATCH/);
+  assert.match(summaryCorrection, /canUseCollectionsImport\(access\.identity!, "review"\)/);
+  assert.match(summaryCorrection, /review_collection_import_summary_row/);
+  assert.match(migration, /pdf_summary_row_corrected/);
+  assert.match(parse, /suggestCollectionsSummaryRows/);
+  assert.match(migration, /status = 'approved',approved_by = p_actor/);
+  assert.match(migration, /summary and detail reports do not match|status','mismatch/);
+  assert.match(migration, /non-admin uploader cannot approve/);
+  assert.match(migration, /batch corrector cannot approve/);
 });
 
 test("approved import source identities carry across actions and block stale or conflicting balances", () => {

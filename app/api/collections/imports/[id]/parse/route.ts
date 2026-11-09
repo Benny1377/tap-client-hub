@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { requireCollectionsAccess } from "@/lib/billing-access";
 import { canUseCollectionsImport, recordImportAudit } from "@/lib/collections-import";
 import { parseCollectionsPdf } from "@/lib/collections-pdf-parser";
-import { COLLECTIONS_PDF_SUGGESTION_PARSER_VERSION, suggestCollectionsPdfRows } from "@/lib/collections-pdf-suggestions";
+import { COLLECTIONS_PDF_SUGGESTION_PARSER_VERSION, suggestCollectionsPdfRows, suggestCollectionsSummaryRows } from "@/lib/collections-pdf-suggestions";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 export const runtime = "nodejs";
@@ -80,7 +80,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
   const extractedSuggestions = parsed.report_type === "aging_detail"
     ? suggestCollectionsPdfRows(parsed.lines, summaryLines)
     : parsed.report_type === "aging_summary"
-      ? parsed.lines.map(() => ({ disposition: "ignored" as const, confidence: "high" as const, reason: "Summary reports are aggregate cross-check evidence, not invoice rows" }))
+      ? suggestCollectionsSummaryRows(parsed.lines)
       : parsed.lines.map(() => ({ disposition: "unreviewed" as const, confidence: "low" as const, reason: "Automatic invoice mapping is available only for recognized QuickBooks layouts" }));
   const textCounts = new Map<string, number>();
   for (const line of parsed.lines) {
