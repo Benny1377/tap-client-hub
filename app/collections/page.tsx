@@ -5,9 +5,10 @@ import { invoiceTargetFields, mutateThenRefresh, type ApiResult } from "@/lib/bi
 import { readyData } from "@/lib/billing-ui/ledger";
 import { approvalRequests, noticesAwaitingSend, stageLabelsFrom, todayIso, viewerIsPowerUser } from "@/lib/billing-ui/view-model";
 import { useLedger } from "@/components/billing/use-ledger";
-import { ClientPicker, OwnerAdminOnly, SectionView } from "@/components/billing/ui";
+import { ClientPicker, ErrorBanner, OwnerAdminOnly, SectionView } from "@/components/billing/ui";
 import { ActiveHoldBanner, ActivityPanel, DecisionsPanel, HoldsPanel, PDF_OPTION_PREFIX, type InvoiceOption } from "@/components/billing/collections-panels";
-import { AutomationPreviewPanel, LadderRungs, LadderSummary, MoneyByStage, PipelineBanner, PipelineTiles, WhoIsWhere, WorklistSummary, WorklistTable } from "@/components/billing/worklist-panels";
+import { AutomationPreviewPanel, LadderRungs, LadderSummary, MoneyByStage, PipelineBanner, PipelineTiles } from "@/components/billing/worklist-panels";
+import { AccountsWhoIsWhere, ArInsights, useWholeBook } from "@/components/billing/ar-insights";
 import { CollectionsRulesEditor } from "@/components/billing/collections-rules-editor";
 import { DeliveryHistoryPanel, DeliverySetupPanel } from "@/components/billing/delivery-panels";
 import { ImportPermissionsPanel, ImportsPanel } from "@/components/billing/import-panels";
@@ -39,8 +40,11 @@ export default function CollectionsPage() {
   const { api, viewer, clients, state } = ledger;
   const refreshLedger = ledger.refresh;
   const refreshCalls = calls.refresh;
+  // The insights and "Who's where" read every page of the book, so they reload after any change too.
+  const [bookVersion, setBookVersion] = useState(0);
+  const { book, failed: bookFailed } = useWholeBook(api, clientId, bookVersion);
   const mutate = useCallback(<T,>(mutation: () => Promise<ApiResult<T>>) =>
-    mutateThenRefresh(mutation, () => Promise.all([refreshLedger(), refreshCalls()])), [refreshLedger, refreshCalls]);
+    mutateThenRefresh(mutation, () => { setBookVersion((version) => version + 1); return Promise.all([refreshLedger(), refreshCalls()]); }), [refreshLedger, refreshCalls]);
   const clientNames = useMemo(() => Object.fromEntries(clients.map((client) => [client.id, client.name])), [clients]);
   const worklistState = calls.state.worklist;
   const worklist = readyData(worklistState, null);
@@ -120,36 +124,23 @@ export default function CollectionsPage() {
 
       <TabPanel id="insights" active={tab}>
         <section aria-label="AR insights">
-          <SectionView state={worklistState} label="AR insights">
-            {(data) => <WorklistSummary worklist={data} minimumBalance={state.rules.status === "ready" ? ruleSettings.settings.minimum_balance : null} />}
-          </SectionView>
+          {book ? <ArInsights book={book} rules={rules} /> : bookFailed ? <ErrorBanner kind="server" message={bookFailed} /> : <p className="sub" role="status">Loading the book…</p>}
         </section>
-        <section className="bc-inscard" aria-label="Call list" style={{ marginTop: 16 }}>
-          <div className="bc-eyebrow">Where to focus first · ranked by priority</div>
-          <div className="ins-h" style={{ marginBottom: 4 }}>The accounts that need you now</div>
-          <div className="ins-b" style={{ marginBottom: 14 }}>Ranked by dollars, <b>weighted up the older they get</b>, so the most expensive and most overdue rise first. Start at the top. Open a score to see how it was built; pick a client to filter the page.</div>
-          <SectionView state={worklistState} label="call list">
-            {(data) => <WorklistTable worklist={data} onSelectClient={selectClient} onPage={setWorklistOffset} stageLabels={stageLabels} rules={rules} firmTimezone={firmTimezone} selectedClientId={clientId} />}
-          </SectionView>
-        </section>
-        <p className="bc-foot" style={{ marginTop: 18 }}><b>No guessed recovery rate.</b> Every figure here comes from Billing or an approved A/R report; nothing is estimated.</p>
       </TabPanel>
 
       <TabPanel id="pipeline" active={tab}>
         <SectionView state={worklistState} label="pipeline">
           {(data) => (
             <>
-              <PipelineBanner worklist={data} />
-              <PipelineTiles worklist={data} decisions={decisions} />
-              <MoneyByStage worklist={data} rules={rules} />
+              <PipelineBanner worklist={book || data} />
+              <PipelineTiles worklist={book || data} decisions={decisions} />
+              <MoneyByStage worklist={book || data} rules={rules} />
             </>
           )}
         </SectionView>
         <h3 className="bc-sect" style={{ marginTop: 26 }}>The five-touch ladder <span style={{ color: "var(--muted)", fontWeight: 400, fontSize: 11.5, fontFamily: "inherit" }}>— click any touch to read its wording</span></h3>
         <LadderRungs rules={rules} />
-        <SectionView state={worklistState} label="invoice positions">
-          {(data) => <WhoIsWhere worklist={data} rules={rules} stageLabels={stageLabels} firmTimezone={firmTimezone} onSelectClient={selectClient} />}
-        </SectionView>
+        {book ? <AccountsWhoIsWhere book={book} rules={rules} /> : <p className="sub" role="status">{bookFailed || "Loading every account…"}</p>}
         <section className="bc-cfgsec" aria-label="Needs your decision" style={{ marginTop: 26 }}>
           <h3 className="bc-sect">Needs your decision</h3>
           <p className="bc-hint">Touches 4 and 5 hand off to an Owner or Admin. Escalations and formal notices wait here.</p>

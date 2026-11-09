@@ -47,7 +47,7 @@ export function ClientsPrices({ api, active, clients, receivables, canView, vers
   return (
     <div data-clients-prices>
       <BillingChain now="pricing" onGo={onGo} />
-      <div className="note brand"><span className="ni">→</span><div><b>One client list, and the price sits on it.</b> Names and services come from <b>Operations</b>. What is Billing&apos;s own is the <b>price</b>: the rate card is a starting point, a client can have their own price, and a package is one fee for several services.</div></div>
+      <div className="po-note brand"><span className="ni">→</span><div><b>One client list, and the price sits on it.</b> Names and services come from <b>Operations</b>. What is Billing&apos;s own is the <b>price</b>: the rate card is a starting point, a client can have their own price, and a package is one fee for several services.</div></div>
       <div className="g4" style={{ marginBottom: 14 }}>
         <div className="stat"><div className="k">Clients</div><div className="v num">{rows.length}</div><div className="d">from Operations</div></div>
         <div className="stat"><div className="k">Ready to bill</div><div className="v num" style={{ color: open.length ? "var(--amber)" : undefined }}>{open.length}</div><div className="d">candidates, not invoiced</div></div>
