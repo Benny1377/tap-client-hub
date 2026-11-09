@@ -6,6 +6,7 @@ import { useClients } from "@/hooks/use-clients-context";
 import VaultModal from "@/components/vault-modal";
 import User2faList from "@/components/user-2fa-list";
 import { PageSkeleton } from "@/components/loading-skeleton";
+import { resolveBankPortalUrl } from "@/lib/vault-bank-link";
 
 export default function VaultPage() {
   const [unlocked, setUnlocked] = useState(false);
@@ -250,7 +251,7 @@ export default function VaultPage() {
                     const isBank = entry.isBank || entry.site === "TAP Bank";
                     // Bank credentials stay in the separate TAP Bank system. Prefer
                     // a per-entry URL, then the deployment-level portal URL.
-                    const bankUrl = entry.url?.trim() || process.env.NEXT_PUBLIC_TAP_BANK_URL?.trim() || "";
+                    const bankUrl = resolveBankPortalUrl(entry.url, process.env.NEXT_PUBLIC_TAP_BANK_URL);
                     const pwKey = entry.id;
                     const pwVisible = visiblePws.has(pwKey);
                     return (

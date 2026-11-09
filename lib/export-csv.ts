@@ -11,6 +11,13 @@ const SERVICE_LABELS: Partial<Record<ServiceKey, string>> = {
   "1099s": "1099s",
 };
 
+type ClientCsvOptions = {
+  serviceKey?: ServiceKey;
+  filenamePrefix?: string;
+  year?: number;
+  monthStatuses?: Record<string, readonly unknown[]>;
+};
+
 function csvCell(value: unknown): string {
   return `"${String(value ?? "").replace(/"/g, '""')}"`;
 }
@@ -19,19 +26,11 @@ function serviceFor(client: Client, serviceKey?: ServiceKey): ClientService | un
   return serviceKey ? client.services?.find((service) => service.key === serviceKey) : undefined;
 }
 
-export function exportClientCsv(
-  clients: Client[],
-  options: {
-    serviceKey?: ServiceKey;
-    filenamePrefix?: string;
-    year?: number;
-    monthStatuses?: Record<string, readonly unknown[]>;
-  },
-): void {
-  const { serviceKey, filenamePrefix = serviceKey ? SERVICE_LABELS[serviceKey] : "TAP Clients" } = options;
+export function buildClientCsv(clients: Client[], options: ClientCsvOptions = {}): string {
+  const { serviceKey } = options;
   const includeFinancialMonths = serviceKey === "financials";
   const headers = [
-    "Name", "CID", "Type", "Group", "City", "State", "Assigned Staff", "Service",
+    "Name", "CID", "Type", "Group", "Address", "City", "State", "ZIP", "Assigned Staff", "Service",
     "Cadence", "Filing Type", "Filing Month", "Email", "Phone",
     ...(includeFinancialMonths ? financialsExportHeaders() : []),
   ];
@@ -42,8 +41,10 @@ export function exportClientCsv(
       client.cid,
       client.type,
       client.group,
+      client.address,
       client.city,
       client.state,
+      client.zip,
       service?.assignedTo || client.assignedStaff || "",
       serviceKey ? (SERVICE_LABELS[serviceKey] || serviceKey) : client.services?.filter((service) => service.enabled).map((service) => service.label || service.key).join(", "),
       service?.frequency || "",
@@ -61,7 +62,12 @@ export function exportClientCsv(
     }
     return row.map(csvCell).join(",");
   });
-  const csv = [headers.map(csvCell).join(","), ...rows].join("\n");
+  return [headers.map(csvCell).join(","), ...rows].join("\n");
+}
+
+export function exportClientCsv(clients: Client[], options: ClientCsvOptions): void {
+  const { serviceKey, filenamePrefix = serviceKey ? SERVICE_LABELS[serviceKey] : "TAP Clients" } = options;
+  const csv = buildClientCsv(clients, options);
   const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement("a");

@@ -71,6 +71,7 @@ export interface ClientService {
   eftps?: string;
   payrollPassword?: string;
   paydate?: string;
+  periodCounts?: number[];
   currentStage?: string;
   // 7/2 redesign fields
   biweeklyCode?: string; // "1 - ODD" | "2 - EVEN" | group codes
@@ -97,6 +98,11 @@ export interface ClientService {
   svcNotes?: string;
 }
 
+export type PayrollSchedule = Pick<
+  ClientService,
+  "csId" | "key" | "frequency" | "payPeriodFrequency" | "paydate" | "payStartDate" | "periodCounts" | "financialsMonth"
+> & { csId?: string | number };
+
 export interface Client {
   id: string;
   cid: string;
@@ -117,6 +123,8 @@ export interface Client {
   emails: string[];
   phones: string[];
   services: ClientService[];
+  /** Every payroll client-service row; clients may have multiple cadences. */
+  payrollSchedules?: PayrollSchedule[];
   assignedStaff?: string;
   ein?: string;
   notes?: string;
