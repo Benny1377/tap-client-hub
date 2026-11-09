@@ -596,7 +596,7 @@ check("Collections has the demo's three views plus Phase 4 A/R reports, opening 
   const html = render(h(CollectionsPage));
   assert.match(html, /role="tablist"/);
   assert.equal((html.match(/role="tab"/g) || []).length, 4);
-  for (const label of ["AR Insights", "Pipeline", "A/R reports", "Setup &amp; rules"]) assert.match(html, new RegExp(`role="tab"[^>]*>${label}`));
+  for (const label of ["AR Insights", "Pipeline", "A/R reports", "Setup and rules"]) assert.match(html, new RegExp(`role="tab"[^>]*>${label}`));
   // Opening the report list is an audited read, so it waits until the tab is first opened.
   assert.doesNotMatch(html, /data-imports-panel/);
   assert.match(html, /id="collections-tab-insights"[^>]*aria-selected="true"/);

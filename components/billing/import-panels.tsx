@@ -168,6 +168,7 @@ export function ImportsPanel({ api, viewer, clients, billingInvoices, onCollecti
 function UploadForm({ api, onUploaded }: { api: BillingApi; onUploaded: (batchId: string) => Promise<void> }) {
   const inputId = useId();
   const [file, setFile] = useState<File | null>(null);
+  const [inputKey, setInputKey] = useState(0);
   const [busy, setBusy] = useState<"uploading" | "reading" | null>(null);
   const [error, setError] = useState<Failure | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -193,6 +194,7 @@ function UploadForm({ api, onUploaded }: { api: BillingApi; onUploaded: (batchId
     }
     setBusy(null);
     setFile(null);
+    setInputKey((current) => current + 1);
     await onUploaded(batchId);
   }
 
@@ -202,7 +204,9 @@ function UploadForm({ api, onUploaded }: { api: BillingApi; onUploaded: (batchId
         <span>PDF report (up to 25 MB)</span>
       </label>
       <div className="bc-inline">
-        <input id={inputId} key={file ? "chosen" : "empty"} type="file" accept="application/pdf,.pdf" onChange={(event) => setFile(event.target.files?.[0] || null)} style={{ fontSize: 13, maxWidth: "100%" }} />
+        {/* The key changes only after an upload, to clear the box. Changing it on every pick would swap in an empty input
+            and show "No file chosen" while the file is still held, so people picked the file twice. */}
+        <input id={inputId} key={inputKey} type="file" accept="application/pdf,.pdf" onChange={(event) => setFile(event.target.files?.[0] || null)} style={{ fontSize: 13, maxWidth: "100%" }} />
         <button type="submit" className="bc-btn" disabled={busy !== null}>
           {busy === "uploading" ? "Uploading…" : busy === "reading" ? "Reading text…" : "Upload and read"}
         </button>

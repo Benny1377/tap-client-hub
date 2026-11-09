@@ -7,7 +7,8 @@ import { approvalRequests, noticesAwaitingSend, stageLabelsFrom, todayIso, viewe
 import { useLedger } from "@/components/billing/use-ledger";
 import { ClientPicker, ErrorBanner, OwnerAdminOnly, SectionView } from "@/components/billing/ui";
 import { ActiveHoldBanner, ActivityPanel, DecisionsPanel, HoldsPanel, PDF_OPTION_PREFIX, type InvoiceOption } from "@/components/billing/collections-panels";
-import { AutomationPreviewPanel, LadderRungs, LadderSummary, MoneyByStage, PipelineBanner, PipelineTiles } from "@/components/billing/worklist-panels";
+import { AutomationPreviewPanel, LadderSummary } from "@/components/billing/worklist-panels";
+import { FiveTouchLadder, PipelineOverview } from "@/components/billing/pipeline-design";
 import { AccountsWhoIsWhere, ArInsights, useWholeBook } from "@/components/billing/ar-insights";
 import { CollectionsRulesEditor } from "@/components/billing/collections-rules-editor";
 import { DeliveryHistoryPanel, DeliverySetupPanel } from "@/components/billing/delivery-panels";
@@ -18,7 +19,7 @@ const TABS = [
   { id: "insights", label: "AR Insights" },
   { id: "pipeline", label: "Pipeline" },
   { id: "imports", label: "A/R reports" },
-  { id: "setup", label: "Setup & rules" },
+  { id: "setup", label: "Setup and rules" },
 ] as const;
 type TabId = (typeof TABS)[number]["id"];
 
@@ -132,14 +133,11 @@ export default function CollectionsPage() {
         <SectionView state={worklistState} label="pipeline">
           {(data) => (
             <>
-              <PipelineBanner worklist={book || data} />
-              <PipelineTiles worklist={book || data} decisions={decisions} />
-              <MoneyByStage worklist={book || data} rules={rules} />
+              <PipelineOverview book={book || data} rules={rules} />
+              <FiveTouchLadder book={book || data} rules={rules} />
             </>
           )}
         </SectionView>
-        <h3 className="bc-sect" style={{ marginTop: 26 }}>The five-touch ladder <span style={{ color: "var(--muted)", fontWeight: 400, fontSize: 11.5, fontFamily: "inherit" }}>— click any touch to read its wording</span></h3>
-        <LadderRungs rules={rules} />
         {book ? <AccountsWhoIsWhere book={book} rules={rules} /> : <p className="sub" role="status">{bookFailed || "Loading every account…"}</p>}
         <section className="bc-cfgsec" aria-label="Needs your decision" style={{ marginTop: 26 }}>
           <h3 className="bc-sect">Needs your decision</h3>

@@ -32,7 +32,7 @@ export function useWholeBook(api: BillingApi, clientId: string | null, version: 
 
 function Phone({ phone }: { phone: string | null }) {
   return phone
-    ? <a className="lnk" style={{ whiteSpace: "nowrap" }} href={`tel:${phone.replace(/[^0-9+]/g, "")}`} onClick={(event) => event.stopPropagation()}>{phone}</a>
+    ? <a className="lnk" style={{ whiteSpace: "nowrap", textDecoration: "underline" }} href={`tel:${phone.replace(/[^0-9+]/g, "")}`} onClick={(event) => event.stopPropagation()}>{phone}</a>
     : <span style={{ color: "var(--red)", fontSize: 11.5, fontWeight: 600 }}>&#9888; no phone</span>;
 }
 
