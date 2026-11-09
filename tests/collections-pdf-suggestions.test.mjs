@@ -1,6 +1,21 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { normalizeImportedCustomerName, suggestCollectionsPdfRows } from "../lib/collections-pdf-suggestions.ts";
+import { normalizeImportedCustomerName, suggestCollectionsPdfRows, suggestCollectionsSummaryRows } from "../lib/collections-pdf-suggestions.ts";
+
+test("recognized A/R summary rows retain customer aging totals for detail matching", () => {
+  const [customer, reportTotal, header, unreadable] = suggestCollectionsSummaryRows([
+    { page: 1, text: "Example Orchard LLC | 10.00 | 20.00 | 30.00 | 40.00 | 50.00 | 150.00", cells: ["Example Orchard LLC", "10.00", "20.00", "30.00", "40.00", "50.00", "150.00"] },
+    { page: 1, text: "TOTAL | 10.00 | 20.00 | 30.00 | 40.00 | 50.00 | 150.00", cells: ["TOTAL", "10.00", "20.00", "30.00", "40.00", "50.00", "150.00"] },
+    { page: 1, text: "Customer | Current | 1-30 | 31-60 | 61-90 | Over 90 | Total", cells: ["Customer", "Current", "1-30", "31-60", "61-90", "Over 90", "Total"] },
+    { page: 1, text: "Malformed customer row", cells: ["Malformed customer row"] },
+  ]);
+  assert.equal(customer.disposition, "summary");
+  assert.equal(customer.fields?.kind, "customer");
+  assert.equal(customer.fields?.total_open_balance, "150.00");
+  assert.equal(reportTotal.fields?.kind, "grand_total");
+  assert.equal(header.disposition, "header");
+  assert.equal(unreadable.disposition, "unreviewed");
+});
 
 test("recognized QuickBooks detail layout extracts only complete invoice rows by PDF column position", () => {
   const lines = [

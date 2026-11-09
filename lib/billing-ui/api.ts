@@ -312,8 +312,12 @@ export function createBillingApi(fetchImpl: FetchLike) {
     /** Reviewer-confirmed report type and as-of date when parsing couldn't read them (before any invoice is reviewed). */
     correctImportMetadata: (batchId: string, input: { report_type: "aging_detail" | "aging_summary"; source_as_of: string }) =>
       patch<{ batch: { id: string; status: string; report_type: string; source_as_of: string } }>(fetchImpl, `/api/collections/imports/${encodeURIComponent(batchId)}/metadata`, { ...input, confirmed: true }),
-    approveImport: (batchId: string) =>
-      post<{ batch: { batch_id: string; status: "approved"; invoice_count: number } }>(fetchImpl, `/api/collections/imports/${encodeURIComponent(batchId)}/approve`, {}),
+    approveImport: (batchId: string, summaryBatchId?: string) =>
+      post<{ result: { status: "approved"; detail_batch: { batch_id: string; status: "approved"; invoice_count: number }; summary_batch_id: string; summary_status: "approved"; reconciliation: Record<string, unknown> } }>(
+        fetchImpl,
+        `/api/collections/imports/${encodeURIComponent(batchId)}/approve`,
+        summaryBatchId ? { summary_batch_id: summaryBatchId } : {},
+      ),
     crossCheckImport: (summaryBatchId: string, input: { detail_batch_id: string; summary_total: number; note: string }) =>
       post<{ cross_check: CrossCheckResult }>(fetchImpl, `/api/collections/imports/${encodeURIComponent(summaryBatchId)}/cross-check`, input),
     /** Choosing the balance that drives collection actions; needs approve permission. */

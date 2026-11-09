@@ -1,6 +1,6 @@
 import type { PdfTextLine } from "@/lib/collections-pdf-parser";
 
-export const COLLECTIONS_PDF_SUGGESTION_PARSER_VERSION = "quickbooks-aging-detail-v5";
+export const COLLECTIONS_PDF_SUGGESTION_PARSER_VERSION = "quickbooks-aging-summary-match-v6";
 
 export type SuggestedInvoiceFields = {
   transaction_type: string;
@@ -22,8 +22,19 @@ export type SuggestedNonInvoiceFields = {
   open_balance: string;
 };
 
+export type SuggestedAgingSummaryFields = {
+  kind: "customer" | "grand_total";
+  customer_name: string | null;
+  current: string | null;
+  days_1_30: string | null;
+  days_31_60: string | null;
+  days_61_90: string | null;
+  over_90: string | null;
+  total_open_balance: string;
+};
+
 export type PdfRowSuggestion =
-  | { disposition: "header" | "summary"; confidence: "high"; reason: string }
+  | { disposition: "header" | "summary"; confidence: "high"; reason: string; fields?: SuggestedAgingSummaryFields }
   | { disposition: "ignored"; confidence: "high"; reason: string; fields: SuggestedNonInvoiceFields }
   | { disposition: "invoice"; confidence: "high" | "low"; reason: string; fields: SuggestedInvoiceFields }
   | { disposition: "unreviewed"; confidence: "low"; reason: string };
@@ -102,6 +113,41 @@ function summaryCustomerBalances(lines: PdfTextLine[]): Array<{ name: string; ba
     if (!name || /^total\b/i.test(name) || agingBuckets.some((value) => amountValue(value) === null)) return [];
     const balance = amountValue(agingBuckets[agingBuckets.length - 1]);
     return balance ? [{ name, balance }] : [];
+  });
+}
+
+/** Recognizes customer-level rows in the companion A/R aging summary. Each
+ * amount remains evidence only; it never creates an invoice or billing row. */
+export function suggestCollectionsSummaryRows(lines: PdfTextLine[]): PdfRowSuggestion[] {
+  return lines.map((line) => {
+    const cells = line.cells.map((cell) => cell.trim());
+    const normalized = norm(line.text);
+    const totalLabel = /^(grand )?total(?: open balance)?\b/i.test(normalized);
+    if (totalLabel) {
+      const total = amountValue(cells[cells.length - 1] || "");
+      if (total) return {
+        disposition: "summary", confidence: "high",
+        reason: "Recognized report total for final reconciliation",
+        fields: { kind: "grand_total", customer_name: null, current: null, days_1_30: null, days_31_60: null, days_61_90: null, over_90: null, total_open_balance: total },
+      };
+    }
+    if (cells.length === 7 && cells[0] && !/^total\b/i.test(cells[0])) {
+      const amounts = cells.slice(1).map(amountValue);
+      if (amounts.every((amount): amount is string => amount !== null)) {
+        return {
+          disposition: "summary", confidence: "high",
+          reason: "Recognized customer aging row; awaiting match to detail subtotals",
+          fields: {
+            kind: "customer", customer_name: cells[0], current: amounts[0], days_1_30: amounts[1],
+            days_31_60: amounts[2], days_61_90: amounts[3], over_90: amounts[4], total_open_balance: amounts[5],
+          },
+        };
+      }
+    }
+    if (isKnownReportHeading(line.text) || /^(customer|current|1-30|31-60|61-90|over 90|total)\b/i.test(normalized)) {
+      return { disposition: "header", confidence: "high", reason: "Recognized A/R summary column or report heading" };
+    }
+    return { disposition: "unreviewed", confidence: "low", reason: "A/R summary row needs a readable customer and aging amounts" };
   });
 }
 
