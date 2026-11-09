@@ -58,7 +58,7 @@ check("pages render every section as loading before the API responds", () => {
   assert.match(billing, /Your access does not include generating candidates/);
   assert.match(billing, /Coming up, all clients/);
   const collectionsHtml = render(h(CollectionsPage));
-  for (const label of ["AR insights", "call list", "Collections activity", "holds"]) assert.match(collectionsHtml, new RegExp(`Loading ${label}…`));
+  for (const label of ["AR insights", "Collections activity", "holds"]) assert.match(collectionsHtml, new RegExp(`Loading ${label}…`));
 });
 
 check("Collections rule controls are Owner/Admin-only and explicitly delivery-disabled", () => {

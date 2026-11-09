@@ -124,7 +124,7 @@ export default function CollectionsPage() {
 
       <TabPanel id="insights" active={tab}>
         <section aria-label="AR insights">
-          {book ? <ArInsights book={book} rules={rules} /> : bookFailed ? <ErrorBanner kind="server" message={bookFailed} /> : <p className="sub" role="status">Loading the book…</p>}
+          {book ? <ArInsights book={book} rules={rules} /> : bookFailed ? <ErrorBanner kind="server" message={bookFailed} /> : <p className="sub" role="status">Loading AR insights…</p>}
         </section>
       </TabPanel>
 
