@@ -3,12 +3,14 @@ import assert from "node:assert/strict";
 import { normalizeImportedCustomerName, suggestCollectionsPdfRows, suggestCollectionsSummaryRows } from "../lib/collections-pdf-suggestions.ts";
 
 test("recognized A/R summary rows retain customer aging totals for detail matching", () => {
-  const [customer, reportTotal, header, unreadable] = suggestCollectionsSummaryRows([
+  const [reportTitle, customer, reportTotal, header, unreadable] = suggestCollectionsSummaryRows([
+    { page: 1, text: "A/R Aging Summary", cells: ["A/R Aging Summary"] },
     { page: 1, text: "Example Orchard LLC | 10.00 | 20.00 | 30.00 | 40.00 | 50.00 | 150.00", cells: ["Example Orchard LLC", "10.00", "20.00", "30.00", "40.00", "50.00", "150.00"] },
     { page: 1, text: "TOTAL | 10.00 | 20.00 | 30.00 | 40.00 | 50.00 | 150.00", cells: ["TOTAL", "10.00", "20.00", "30.00", "40.00", "50.00", "150.00"] },
     { page: 1, text: "Customer | Current | 1-30 | 31-60 | 61-90 | Over 90 | Total", cells: ["Customer", "Current", "1-30", "31-60", "61-90", "Over 90", "Total"] },
     { page: 1, text: "Malformed customer row", cells: ["Malformed customer row"] },
   ]);
+  assert.equal(reportTitle.disposition, "header");
   assert.equal(customer.disposition, "summary");
   assert.equal(customer.fields?.kind, "customer");
   assert.equal(customer.fields?.total_open_balance, "150.00");

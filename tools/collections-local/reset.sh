@@ -31,6 +31,7 @@ for migration in \
   20261019120000_collections_reblock_multi_invoice_payments.sql \
   20261019130000_collections_import_batch_metadata_correction.sql \
   20261019140000_collections_test_delivery_source_discrepancy.sql \
+  20261104160000_collections_guard_auto_match_review_state.sql \
   20261107120000_collections_reconcile_noninvoice_pdf_rows.sql \
   20261107130000_audit_client_creation.sql \
   20261107132830_collections_require_review_before_cross_check.sql \

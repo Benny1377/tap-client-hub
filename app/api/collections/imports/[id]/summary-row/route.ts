@@ -13,7 +13,7 @@ function money(value: unknown): string | null {
   if (typeof value !== "string" && typeof value !== "number") return null;
   const match = MONEY.exec(String(value).trim());
   if (!match) return null;
-  if (BigInt(match[2]) > 9999999999n) return null;
+  // MONEY already caps the integer part at ten digits, which is the supported maximum.
   return `${match[1]}${match[2]}.${(match[3] || "").padEnd(2, "0")}`;
 }
 

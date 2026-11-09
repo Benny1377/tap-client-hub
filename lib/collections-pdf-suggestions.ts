@@ -1,6 +1,6 @@
 import type { PdfTextLine } from "@/lib/collections-pdf-parser";
 
-export const COLLECTIONS_PDF_SUGGESTION_PARSER_VERSION = "quickbooks-aging-summary-match-v6";
+export const COLLECTIONS_PDF_SUGGESTION_PARSER_VERSION = "quickbooks-aging-summary-match-v7";
 
 export type SuggestedInvoiceFields = {
   transaction_type: string;
@@ -101,7 +101,7 @@ function isTruncatedCustomerName(value: string): boolean {
 }
 
 function isKnownReportHeading(text: string): boolean {
-  return /\b(?:tap associates|a\/r aging quickzoom|page\s+\d+)\b/i.test(text)
+  return /\b(?:tap associates|a\/r aging quickzoom|a\/r aging summary|page\s+\d+)\b/i.test(text)
     || /^\s*\d{1,2}:\d{2}\s*(?:am|pm)\b/i.test(text)
     || /^\s*as of\s+(?:\w+\s+)?\d{1,2},?\s+\d{4}\s*$/i.test(text);
 }

@@ -80,7 +80,7 @@ test("customer group headings may contain digits without treating transaction ID
 
 test("parser behavior changes use a new version so existing batches can refresh", () => {
   const suggestions = source("lib/collections-pdf-suggestions.ts");
-  assert.match(suggestions, /COLLECTIONS_PDF_SUGGESTION_PARSER_VERSION = "quickbooks-aging-summary-match-v6"/);
+  assert.match(suggestions, /COLLECTIONS_PDF_SUGGESTION_PARSER_VERSION = "quickbooks-aging-summary-match-v7"/);
 });
 
 test("paired A/R approval requires a same-date summary and commits both batches together", () => {
@@ -91,8 +91,11 @@ test("paired A/R approval requires a same-date summary and commits both batches 
   assert.match(approve, /summary_batch_id/);
   assert.match(approve, /approve_collection_import_pair/);
   assert.match(approve, /IMPORT_RECONCILIATION_MISMATCH/);
+  assert.match(approve, /IMPORT_SEPARATION_OF_DUTIES/);
+  assert.match(approve, /conflict \? 409/);
   assert.match(summaryCorrection, /canUseCollectionsImport\(access\.identity!, "review"\)/);
   assert.match(summaryCorrection, /review_collection_import_summary_row/);
+  assert.doesNotMatch(summaryCorrection, /\bBigInt\b|\d+n\b/);
   assert.match(migration, /pdf_summary_row_corrected/);
   assert.match(parse, /suggestCollectionsSummaryRows/);
   assert.match(migration, /status = 'approved',approved_by = p_actor/);
@@ -181,6 +184,7 @@ test("detail reconciliation includes recognized non-invoice evidence and fails c
   assert.match(migration, /detail_non_invoice_adjustments/);
   assert.match(migration, /detail_net_total/);
   assert.match(reset, /20261107120000_collections_reconcile_noninvoice_pdf_rows\.sql/);
+  assert.match(reset, /20261104160000_collections_guard_auto_match_review_state\.sql/);
   assert.match(parser, /transaction retained as report evidence/);
   assert.match(parser, /transaction_type: type,[\s\S]*open_balance: amount/);
 });
