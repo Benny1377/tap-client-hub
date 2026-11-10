@@ -38,6 +38,7 @@ for migration in \
   20261109134439_operations_client_data_import.sql \
   20261110131721_collections_atomic_summary_detail_approval.sql \
   20261110131729_operations_import_source_client_preflight.sql \
+  20261110135841_collections_audited_client_relink.sql \
   20261020100000_billing_ledger_database_invariants.sql \
   20261105100000_billing_phase2_core.sql \
   20261105110000_billing_manual_confirmation_guard.sql \
