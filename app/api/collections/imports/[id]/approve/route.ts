@@ -14,7 +14,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
   if (!await canUseCollectionsImport(access.identity!, "approve")) return NextResponse.json({ error: "You are not allowed to approve A/R reports", code: "IMPORT_APPROVE_FORBIDDEN" }, { status: 403, headers: NO_STORE });
   const { id } = await context.params;
   if (!UUID.test(id)) return NextResponse.json({ error: "Invalid batch id", code: "INVALID_BATCH_ID" }, { status: 422, headers: NO_STORE });
-  let body: { summary_batch_id?: unknown };
+  let body: { summary_batch_id?: unknown; complete_report_confirmed?: unknown };
   try {
     const parsed: unknown = await request.json();
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("invalid body");
@@ -23,11 +23,22 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
   if (typeof body.summary_batch_id !== "string" || !UUID.test(body.summary_batch_id)) {
     return NextResponse.json({ error: "Upload and select the matching A/R summary report before approving the detail report", code: "SUMMARY_REPORT_REQUIRED" }, { status: 422, headers: NO_STORE });
   }
+  if (body.complete_report_confirmed !== undefined && typeof body.complete_report_confirmed !== "boolean") {
+    return NextResponse.json({ error: "complete_report_confirmed must be a boolean", code: "INVALID_CONFIRMATION" }, { status: 422, headers: NO_STORE });
+  }
   const db = createAdminClient();
   const { data, error } = await db.rpc("approve_collection_import_pair", {
     p_detail_batch_id: id, p_summary_batch_id: body.summary_batch_id, p_actor: access.identity!.id,
+    p_complete_report_confirmed: body.complete_report_confirmed === true,
   });
   if (error) {
+    if (error.message.includes("clear_confirmation_required:")) {
+      const payload = error.message.split("clear_confirmation_required:")[1];
+      let wouldClear: unknown = null;
+      try { wouldClear = JSON.parse(payload); } catch { /* keep stable error response if message is malformed */ }
+      return NextResponse.json({ error: "Confirm this is a complete report before clearing omitted PDF invoices", code: "IMPORT_CLEAR_CONFIRMATION_REQUIRED", would_clear: wouldClear }, { status: 409, headers: NO_STORE });
+    }
+    if (error.message.includes("clear_in_flight:")) return NextResponse.json({ error: "A delivery is already in flight for an invoice this report would clear", code: "IMPORT_CLEAR_IN_FLIGHT_DELIVERY" }, { status: 409, headers: NO_STORE });
     const forbidden = /uploader cannot approve|non-admin uploader|corrector cannot approve|batch corrector cannot approve/i.test(error.message);
     const conflict = error.code === "P0001";
     return NextResponse.json({ error: forbidden ? "A non-Admin uploader or anyone who corrected either report cannot approve this pair" : conflict ? "Upload both same-date reports and finish review before approval" : "Unable to reconcile and approve the report pair", code: forbidden ? "IMPORT_SEPARATION_OF_DUTIES" : conflict ? "IMPORT_APPROVAL_BLOCKED" : "IMPORT_APPROVAL_FAILED" }, { status: error.code === "P0002" ? 404 : conflict ? 409 : 500, headers: NO_STORE });

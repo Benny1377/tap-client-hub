@@ -14,6 +14,7 @@ const MESSAGES: Record<string, string> = {
   INVOICE_NOT_ELIGIBLE: "This invoice is not open and eligible for collection.",
   OUTSIDE_SEND_WINDOW: "Outside the firm's configured send window.",
   SOURCE_DISCREPANCY_BLOCKED: "Imported balance differs from Billing; review required.",
+  SOURCE_CLEARED: "This invoice is absent from the latest complete report and was cleared.",
   DELIVERY_DISABLED: "Email delivery is disabled.",
   PROVIDER_KEY_MISSING: "Email provider is not configured.",
   SENDER_NOT_VERIFIED: "Sender address is not verified.",

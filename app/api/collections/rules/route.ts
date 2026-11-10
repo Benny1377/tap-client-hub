@@ -6,7 +6,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const NO_STORE = { "Cache-Control": "no-store" };
-const RULE_FIELDS = new Set(["stage", "label", "days_past_due", "automatic", "enabled", "subject_template", "body_template"]);
+const RULE_FIELDS = new Set(["stage", "label", "days_past_due", "min_days_since_previous", "automatic", "enabled", "subject_template", "body_template"]);
 const SETTING_FIELDS = new Set(["timezone", "send_start", "send_end", "weekdays_only", "minimum_balance", "direct_escalation_threshold"]);
 const TEMPLATE_TOKENS = new Set(["contact_name", "invoice_number", "balance", "due_date", "days_past_due"]);
 
@@ -22,7 +22,7 @@ async function loadRulesResponse() {
   const db = createAdminClient();
   const [{ data: rules, error: rulesError }, { data: settings, error: settingsError }] = await Promise.all([
     db.from("collection_ladder_rules")
-      .select("stage, label, days_past_due, automatic, enabled, subject_template, body_template")
+      .select("stage, label, days_past_due, min_days_since_previous, automatic, enabled, subject_template, body_template")
       .order("stage", { ascending: true }),
     db.from("collection_settings")
       .select("timezone, minimum_balance, direct_escalation_threshold, send_start, send_end, weekdays_only")
@@ -76,6 +76,7 @@ export async function PATCH(request: Request) {
     if (Object.keys(rule).some((key) => !RULE_FIELDS.has(key))) return false;
     if (rule.label !== undefined && (typeof rule.label !== "string" || !rule.label.trim() || rule.label.length > 80)) return false;
     if (rule.days_past_due !== undefined && (!Number.isInteger(rule.days_past_due) || Number(rule.days_past_due) < 1 || Number(rule.days_past_due) > 3650)) return false;
+    if (rule.min_days_since_previous !== undefined && (!Number.isInteger(rule.min_days_since_previous) || Number(rule.min_days_since_previous) < 0 || Number(rule.min_days_since_previous) > 3650)) return false;
     if (rule.automatic !== undefined && typeof rule.automatic !== "boolean") return false;
     if (rule.enabled !== undefined && typeof rule.enabled !== "boolean") return false;
     if (rule.subject_template !== undefined && (typeof rule.subject_template !== "string" || rule.subject_template.length > 240)) return false;
@@ -103,7 +104,7 @@ export async function PATCH(request: Request) {
   if (settings.weekdays_only !== undefined && typeof settings.weekdays_only !== "boolean") return invalid("weekdays_only must be a boolean");
 
   const db = createAdminClient();
-  const { error } = await db.rpc("update_collections_configuration", {
+  const { error } = await db.rpc("update_collections_configuration_phase5", {
     p_actor: access.identity!.id,
     p_rules: rules,
     p_settings: settings,

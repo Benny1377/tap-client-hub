@@ -24,11 +24,13 @@ export async function GET(request: NextRequest) {
   const offset = params.has("offset") ? Number(params.get("offset")) : 0;
   const invoiceId = params.get("invoice_id");
   const sourceInvoiceId = params.get("source_invoice_id");
+  const clientId = params.get("client_id");
   const status = params.get("status");
   if (!Number.isInteger(limit) || limit < 1 || limit > 200) return error("limit must be an integer from 1 to 200", "INVALID_LIMIT");
   if (!Number.isInteger(offset) || offset < 0 || offset > 100000) return error("offset must be a non-negative integer", "INVALID_OFFSET");
   if (invoiceId && !UUID.test(invoiceId)) return error("invoice_id must be a UUID", "INVALID_INVOICE_ID");
   if (sourceInvoiceId && !UUID.test(sourceInvoiceId)) return error("source_invoice_id must be a UUID", "INVALID_SOURCE_INVOICE_ID");
+  if (clientId && !UUID.test(clientId)) return error("client_id must be a UUID", "INVALID_CLIENT_ID");
   if (status && !STATUSES.has(status)) return error("status is not supported", "INVALID_STATUS");
 
   const db = createAdminClient();
@@ -37,6 +39,7 @@ export async function GET(request: NextRequest) {
     .order("created_at", { ascending: false }).order("id", { ascending: false }).range(offset, offset + limit - 1);
   if (invoiceId) query = query.eq("invoice_id", invoiceId);
   if (sourceInvoiceId) query = query.eq("source_invoice_id", sourceInvoiceId);
+  if (clientId) query = query.eq("client_id", clientId);
   if (status) query = query.eq("status", status);
   const { data, error: dbError, count } = await query;
   if (dbError) return NextResponse.json({ error: "Unable to load delivery history", code: "DELIVERY_HISTORY_READ_FAILED" }, { status: 500, headers: NO_STORE });

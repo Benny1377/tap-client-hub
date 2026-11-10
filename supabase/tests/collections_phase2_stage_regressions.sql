@@ -40,9 +40,9 @@ begin
   ) v(id,n,d1,d2) where i.id = v.id;
 
   v_ctx := tap_hub_project.collections_invoice_stage_context(v_client,v_catchup_invoice,v_today-20,v_today-14);
-  if (v_ctx->>'next_stage')::integer is distinct from 2 then raise exception 'Missed day-1 reminder did not catch up to stage 2'; end if;
+  if (v_ctx->>'next_stage')::integer is distinct from 1 then raise exception 'An untouched overdue invoice must begin at Friendly'; end if;
   v_ctx := tap_hub_project.collections_invoice_stage_context(v_client,v_catchup_invoice,v_today-20,v_today);
-  if (v_ctx->>'next_stage')::integer is distinct from 3 then raise exception 'Missed reminders did not catch up to stage 3'; end if;
+  if (v_ctx->>'next_stage')::integer is distinct from 1 then raise exception 'Age alone must not skip the first Friendly touch'; end if;
 
   -- An explicit higher stage logged early must be reflected as server truth;
   -- threshold-only UI inference would incorrectly offer an already completed step.
@@ -59,7 +59,7 @@ begin
   v_ctx := tap_hub_project.collections_invoice_stage_context(v_client,v_old_invoice,v_today-90,v_today);
   if (v_ctx->>'next_stage')::integer is distinct from 5 then raise exception 'Legacy client-level escalation was not applied to an already-due invoice'; end if;
   v_ctx := tap_hub_project.collections_invoice_stage_context(v_client,v_later_invoice,v_today-30,v_today);
-  if (v_ctx->>'next_stage')::integer is distinct from 3 then raise exception 'Legacy escalation leaked to a later invoice instead of the reminder catch-up stage'; end if;
+  if (v_ctx->>'next_stage')::integer is distinct from 1 then raise exception 'Legacy escalation leaked to an invoice due after that event'; end if;
 
   -- A pending request is not a completed stage and blocks later preview stages.
   insert into tap_hub_project.collection_events(client_id,invoice_id,event_type,actor)

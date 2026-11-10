@@ -7,7 +7,7 @@ type ImportedRow = {
   transaction_date: string | null; due_date: string | null; source_as_of: string; reported_aging: number | null;
   review_status: string; discrepancy_status: "none" | "blocked" | "resolved"; source_row_key: string;
 };
-type ImportIdentity = { source_invoice_id: string; client_id: string | null; linked_invoice_id: string | null; canonical_collection_identity: string | null; selected_source: "billing" | "pdf_import" };
+type ImportIdentity = { source_invoice_id: string; client_id: string | null; linked_invoice_id: string | null; canonical_collection_identity: string | null; selected_source: "billing" | "pdf_import"; cleared_as_of: string | null };
 
 const zeroAging = () => ({ current: "0.00", days_1_30: "0.00", days_31_60: "0.00", days_61_90: "0.00", days_over_90: "0.00" });
 const zeroAccount = (clientId: string, name: string): CollectionsAccount => ({
@@ -21,7 +21,9 @@ const zeroAccount = (clientId: string, name: string): CollectionsAccount => ({
     "91_180": { balance: "0.00", weight: "2.0", weighted_amount: "0.00" },
     over_180: { balance: "0.00", weight: "2.4", weighted_amount: "0.00" }, score_zero_before_days_past_due: 21,
   },
-  on_hold: false, credit_review_required: false, contact_review_required: false, largest_high_balance_invoice: "0.00", invoices: [],
+  on_hold: false, credit_review_required: false, contact_review_required: false, largest_high_balance_invoice: "0.00",
+  note_count: 0, last_note_at: null, late_beyond_final_count: 0,
+  late_beyond_final: { stage: 0, label: "Final stage", days_past_due: 0, window_months: 12 }, invoices: [],
 });
 
 function cents(value: number) { return (Number.isFinite(value) ? value : 0).toFixed(2); }
@@ -29,30 +31,31 @@ function cents(value: number) { return (Number.isFinite(value) ? value : 0).toFi
 export async function mergeApprovedPdfReceivables(db: QueryClient, result: CollectionsReceivablesResponse) {
   const [{ data: batches }, { data: rules }, { data: settings }] = await Promise.all([
     db.from("collection_import_batches").select("id,source_as_of,created_at").eq("status", "approved").order("created_at", { ascending: false }).limit(500),
-    db.from("collection_ladder_rules").select("stage,days_past_due,enabled").eq("enabled", true).order("stage"),
+    db.from("collection_ladder_rules").select("stage,label,days_past_due,min_days_since_previous,enabled").eq("enabled", true).order("stage"),
     db.from("collection_settings").select("timezone,minimum_balance,direct_escalation_threshold").eq("id", "default").maybeSingle(),
   ]);
   if (!batches || !rules || !settings) throw new Error("COLLECTIONS_IMPORT_READ_MODEL_FAILED");
-  if (!batches?.length) return result;
+  if (!batches?.length) return applyAccountSummaries(db, result, (rules || []) as Array<{ stage: number; label: string; days_past_due: number }>);
   const batchMap = new Map(batches.map((batch) => [batch.id, batch]));
   const { data: imported } = await db.from("collection_import_invoices")
     .select("id,batch_id,source_invoice_id,invoice_number,open_balance,transaction_date,due_date,source_as_of,reported_aging,review_status,discrepancy_status,source_row_key")
     .in("batch_id", batches.map((batch) => batch.id)).in("review_status", ["approved", "blocked"])
-    .order("updated_at", { ascending: false });
+    .order("source_as_of", { ascending: false }).order("updated_at", { ascending: false });
   if (!imported) throw new Error("COLLECTIONS_IMPORT_READ_MODEL_FAILED");
-  if (!imported.length) return result;
+  if (!imported.length) return applyAccountSummaries(db, result, (rules || []) as Array<{ stage: number; label: string; days_past_due: number }>);
   const latest = new Map<string, ImportedRow>();
   for (const row of imported as ImportedRow[]) if (!latest.has(row.source_invoice_id)) latest.set(row.source_invoice_id, row);
   const { data: identities } = await db.from("collection_source_invoice_identities")
-    .select("source_invoice_id,client_id,linked_invoice_id,canonical_collection_identity,selected_source")
+    .select("source_invoice_id,client_id,linked_invoice_id,canonical_collection_identity,selected_source,cleared_as_of")
     .in("source_invoice_id", Array.from(latest.keys()));
   const identityById = new Map(((identities || []) as ImportIdentity[]).map((item) => [item.source_invoice_id, item]));
   const usable = Array.from(latest.values()).flatMap((row) => {
     const identity = identityById.get(row.source_invoice_id);
     const batch = batchMap.get(row.batch_id);
-    return identity?.client_id && identity.canonical_collection_identity && batch ? [{ row, identity, batch }] : [];
+    return identity?.client_id && identity.canonical_collection_identity && batch
+      && (!identity.cleared_as_of || row.source_as_of > identity.cleared_as_of) ? [{ row, identity, batch }] : [];
   });
-  if (!usable.length) return result;
+  if (!usable.length) return applyAccountSummaries(db, result, (rules || []) as Array<{ stage: number; label: string; days_past_due: number }>);
 
   const clientIds = Array.from(new Set(usable.map(({ identity }) => identity.client_id!)));
   const { data: clients } = await db.from("clients").select("id,name,status").in("id", clientIds);
@@ -83,9 +86,17 @@ export async function mergeApprovedPdfReceivables(db: QueryClient, result: Colle
   ]);
   if (!events || !attempts || !holds) throw new Error("COLLECTIONS_IMPORT_READ_MODEL_FAILED");
   const completedByIdentity = new Map<string, number>();
+  const completedAtByIdentityStage = new Map<string, Map<number, string>>();
+  const setCompletedAt = (identity: string, stage: number, value: string) => {
+    const byStage = completedAtByIdentityStage.get(identity) || new Map<number, string>();
+    const date = value.slice(0, 10);
+    if (!byStage.has(stage) || byStage.get(stage)! < date) byStage.set(stage, date);
+    completedAtByIdentityStage.set(identity, byStage);
+  };
   for (const event of events || []) {
     if (event.stage && ["reminder_logged", "escalation_requested", "escalated", "formal_notice_requested", "formal_notice_approved", "formal_notice_sent"].includes(event.event_type)) {
       completedByIdentity.set(event.canonical_collection_identity, Math.max(completedByIdentity.get(event.canonical_collection_identity) || 0, event.stage));
+      if (["reminder_logged", "escalated", "formal_notice_approved", "formal_notice_sent"].includes(event.event_type)) setCompletedAt(event.canonical_collection_identity, event.stage, event.occurred_at);
     }
   }
   const lastByIdentity = new Map<string, NonNullable<CollectionsInvoice["last_delivery"]>>();
@@ -93,7 +104,10 @@ export async function mergeApprovedPdfReceivables(db: QueryClient, result: Colle
     if (!lastByIdentity.has(attempt.canonical_collection_identity)) {
       lastByIdentity.set(attempt.canonical_collection_identity, { stage: attempt.stage, status: attempt.status, occurred_at: attempt.updated_at || attempt.created_at });
     }
-    if (attempt.status === "accepted") completedByIdentity.set(attempt.canonical_collection_identity, Math.max(completedByIdentity.get(attempt.canonical_collection_identity) || 0, attempt.stage));
+    if (attempt.status === "accepted") {
+      completedByIdentity.set(attempt.canonical_collection_identity, Math.max(completedByIdentity.get(attempt.canonical_collection_identity) || 0, attempt.stage));
+      setCompletedAt(attempt.canonical_collection_identity, attempt.stage, attempt.updated_at || attempt.created_at);
+    }
   }
   const awaitingByIdentity = new Map<string, NonNullable<CollectionsInvoice["awaiting_approval"]>>();
   const approvedRequestIds = new Set((events || []).filter((event) => event.approves_event_id).map((event) => event.approves_event_id));
@@ -108,7 +122,7 @@ export async function mergeApprovedPdfReceivables(db: QueryClient, result: Colle
   const activeHolds = (holds || []).filter((hold) => !hold.expires_on || hold.expires_on >= result.as_of_date);
   const held = new Set(activeHolds.flatMap((hold) => hold.canonical_collection_identity ? [hold.canonical_collection_identity] : []));
   const heldClients = new Set(activeHolds.filter((hold) => !hold.canonical_collection_identity).map((hold) => hold.client_id));
-  const thresholds = (rules || []) as Array<{ stage: number; days_past_due: number; enabled: boolean }>;
+  const thresholds = (rules || []) as Array<{ stage: number; label: string; days_past_due: number; min_days_since_previous: number; enabled: boolean }>;
   const minBalance = Number(settings.minimum_balance ?? 50);
   const directThreshold = Number(settings.direct_escalation_threshold ?? 5000);
   const pdfLinkedIds = new Set(usable.flatMap(({ identity }) => identity.selected_source === "pdf_import" && identity.linked_invoice_id ? [identity.linked_invoice_id] : []));
@@ -135,7 +149,13 @@ export async function mergeApprovedPdfReceivables(db: QueryClient, result: Colle
     const daysPastDue = row.due_date ? Math.max(0, Math.floor((Date.parse(`${result.as_of_date}T00:00:00Z`) - Date.parse(`${row.due_date}T00:00:00Z`)) / 86400000)) : Number(row.reported_aging || 0);
     const balance = Number(row.open_balance);
     const completed = completedByIdentity.get(identity.canonical_collection_identity!) || 0;
-    const next = thresholds.find((rule) => rule.stage > completed && rule.days_past_due <= daysPastDue)?.stage ?? null;
+    const nextRule = thresholds.find((rule) => rule.stage === (completed === 0 ? 1 : completed + 1));
+    const previousCompletedOn = completedAtByIdentityStage.get(identity.canonical_collection_identity!)?.get(completed) || row.due_date || row.source_as_of;
+    const eligibleOn = nextRule ? [
+      addDays(row.due_date || row.source_as_of, nextRule.days_past_due),
+      ...(completed > 0 ? [addDays(previousCompletedOn, nextRule.min_days_since_previous || 0)] : []),
+    ].sort().at(-1)! : null;
+    const next = nextRule && eligibleOn && eligibleOn <= result.as_of_date ? nextRule.stage : null;
     const invoice: CollectionsInvoice = {
       invoice_id: identity.linked_invoice_id, source_invoice_id: row.source_invoice_id, source: "pdf_import",
       row_key: `collection:${identity.canonical_collection_identity}`, canonical_collection_identity: identity.canonical_collection_identity!,
@@ -143,7 +163,8 @@ export async function mergeApprovedPdfReceivables(db: QueryClient, result: Colle
       invoice_number: row.invoice_number || row.source_row_key, issue_date: row.transaction_date || row.source_as_of,
       due_date: row.due_date || row.source_as_of, invoice_total: cents(balance), allocated: "0.00", balance: cents(balance),
       days_past_due: daysPastDue, current_stage: thresholds.filter((rule) => rule.days_past_due <= daysPastDue).at(-1)?.stage || 0,
-      completed_stage: completed, upcoming_stage: next, next_stage: next, awaiting_approval: awaitingByIdentity.get(identity.canonical_collection_identity!) || null,
+      completed_stage: completed, upcoming_stage: thresholds.find((rule) => rule.stage > completed)?.stage ?? null,
+      next_stage: next, next_stage_eligible_on: eligibleOn, awaiting_approval: awaitingByIdentity.get(identity.canonical_collection_identity!) || null,
       on_hold: held.has(identity.canonical_collection_identity!) || heldClients.has(identity.client_id!), credit_review_required: false,
       contact_review_required: account.contact_review_required, below_minimum: balance < minBalance,
       last_delivery: lastByIdentity.get(identity.canonical_collection_identity!) || null,
@@ -190,5 +211,41 @@ export async function mergeApprovedPdfReceivables(db: QueryClient, result: Colle
   result.summary.chronic_accounts = accounts.filter((account) => account.open_invoice_count >= 3).length;
   result.summary.oldest_days_past_due = Math.max(0, ...accounts.map((account) => account.oldest_days_past_due));
   result.pagination.total_accounts = result.accounts.length;
+  return applyAccountSummaries(db, result, thresholds);
+}
+
+function addDays(value: string, days: number) {
+  const date = new Date(`${value}T00:00:00.000Z`);
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
+async function applyAccountSummaries(
+  db: QueryClient,
+  result: CollectionsReceivablesResponse,
+  rules: Array<{ stage: number; label: string; days_past_due: number }>,
+) {
+  const clientIds = result.accounts.map((account) => account.client_id);
+  const [{ data: noteSummaries, error: noteError }, { data: lateSummaries, error: lateError }] = clientIds.length
+    ? await Promise.all([
+      db.rpc("get_collections_note_summaries", { p_client_ids: clientIds }),
+      db.rpc("get_collections_late_history", { p_as_of: result.as_of_date }),
+    ])
+    : [{ data: [], error: null }, { data: [], error: null }];
+  if (noteError || lateError) throw new Error("COLLECTIONS_ACCOUNT_SUMMARY_READ_FAILED");
+  const notesByClient = new Map<string, { client_id: string; note_count: number; last_note_at: string | null }>(
+    (noteSummaries || []).map((item: { client_id: string; note_count: number; last_note_at: string | null }) => [item.client_id, item]),
+  );
+  const lateByClient = new Map<string, number>(
+    (lateSummaries || []).map((item: { client_id: string; late_beyond_final_count: number }) => [item.client_id, Number(item.late_beyond_final_count)]),
+  );
+  const finalRule = rules.at(-1);
+  for (const account of result.accounts) {
+    const note = notesByClient.get(account.client_id);
+    account.note_count = Number(note?.note_count || 0);
+    account.last_note_at = note?.last_note_at || null;
+    account.late_beyond_final_count = lateByClient.get(account.client_id) || 0;
+    account.late_beyond_final = { stage: finalRule?.stage || 0, label: finalRule?.label || "Final stage", days_past_due: finalRule?.days_past_due || 0, window_months: 12 };
+  }
   return result;
 }
