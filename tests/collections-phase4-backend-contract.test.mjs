@@ -86,7 +86,7 @@ test("parser behavior changes use a new version so existing batches can refresh"
 test("paired A/R approval requires a same-date summary and commits both batches together", () => {
   const approve = source("app/api/collections/imports/[id]/approve/route.ts");
   const summaryCorrection = source("app/api/collections/imports/[id]/summary-row/route.ts");
-  const migration = source("supabase/migrations/20261109121124_collections_atomic_summary_detail_approval.sql");
+  const migration = source("supabase/migrations/20261110131721_collections_atomic_summary_detail_approval.sql");
   const parse = source("app/api/collections/imports/[id]/parse/route.ts");
   assert.match(approve, /summary_batch_id/);
   assert.match(approve, /approve_collection_import_pair/);
