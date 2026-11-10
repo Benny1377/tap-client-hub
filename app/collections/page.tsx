@@ -13,11 +13,14 @@ import { AccountsWhoIsWhere, ArInsights, useWholeBook } from "@/components/billi
 import { CollectionsRulesEditor } from "@/components/billing/collections-rules-editor";
 import { DeliveryHistoryPanel, DeliverySetupPanel } from "@/components/billing/delivery-panels";
 import { ImportPermissionsPanel, ImportsPanel } from "@/components/billing/import-panels";
+import { EmailLogPanel } from "@/components/billing/email-log-panel";
+import { noteCounts } from "@/lib/billing-ui/ar-insights";
 
 const WORKLIST_PAGE = 50;
 const TABS = [
   { id: "insights", label: "AR Insights" },
   { id: "pipeline", label: "Pipeline" },
+  { id: "emails", label: "Email log" },
   { id: "imports", label: "A/R reports" },
   { id: "setup", label: "Setup and rules" },
 ] as const;
@@ -72,6 +75,7 @@ export default function CollectionsPage() {
   const invoiceOptions: InvoiceOption[] = [...billingOptions, ...reportOnlyOptions];
   const invoiceNumbers = Object.fromEntries(invoiceOptions.map((option) => [option.id, option.invoice_number]));
   const selectClient = (id: string | null) => { setClientId(id); setWorklistOffset(0); };
+  const notesByClient = useMemo(() => noteCounts(events), [events]);
   const decisions = approvalRequests(events, holds, viewer, today).filter((item) => item.state !== "approved").length
     + noticesAwaitingSend(events, holds, viewer, today).length;
 
@@ -102,7 +106,8 @@ export default function CollectionsPage() {
     <div className="bc-page">
       <div className="bc-tabrow">
         <div className="bc-subnav" role="tablist" aria-label="Collections views">
-          {TABS.map((item) => (
+          {/* Delivery history is Owner/Admin only, so the email log tab is too. */}
+          {TABS.filter((item) => item.id !== "emails" || power).map((item) => (
             <button
               key={item.id}
               type="button"
@@ -125,7 +130,7 @@ export default function CollectionsPage() {
 
       <TabPanel id="insights" active={tab}>
         <section aria-label="AR insights">
-          {book ? <ArInsights book={book} rules={rules} /> : bookFailed ? <ErrorBanner kind="server" message={bookFailed} /> : <p className="sub" role="status">Loading AR insights…</p>}
+          {book ? <ArInsights book={book} rules={rules} notes={{ api, counts: notesByClient, firmTimezone, onAdded: () => { void refreshLedger(); } }} /> : bookFailed ? <ErrorBanner kind="server" message={bookFailed} /> : <p className="sub" role="status">Loading AR insights…</p>}
         </section>
       </TabPanel>
 
@@ -164,6 +169,10 @@ export default function CollectionsPage() {
           <h3 className="bc-sect">Automation preview</h3>
           <AutomationPreviewPanel viewer={viewer} runPreview={(params) => api.preview(params)} stageLabels={stageLabels} />
         </section>
+      </TabPanel>
+
+      <TabPanel id="emails" active={tab}>
+        {power ? <EmailLogPanel api={api} clientId={clientId} clientNames={clientNames} stageLabels={stageLabels} firmTimezone={firmTimezone} refreshKey={deliveryRefreshKey} /> : null}
       </TabPanel>
 
       <TabPanel id="imports" active={tab}>

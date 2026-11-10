@@ -4,7 +4,8 @@ import { Fragment, useEffect, useState } from "react";
 import type { BillingApi } from "@/lib/billing-ui/api";
 import type { CollectionRule } from "@/lib/billing-ui/types";
 import type { CollectionsReceivablesResponse } from "@/lib/collections-api";
-import { andList, arStats, asOfDate, biggerPicture, dayMonth, dollars, hasBillingInvoices, mergePages, n, net, pct, reminderDays, rungChip, sharedContact, sortAccounts, tier, type Account, type SortKey } from "@/lib/billing-ui/ar-insights";
+import { andList, arStats, asOfDate, biggerPicture, dayMonth, dollars, hasBillingInvoices, hasLateCounts, lateTone, mergePages, n, net, noteCountOf, pct, reminderDays, rungChip, sharedContact, sortAccounts, tier, type Account, type SortKey } from "@/lib/billing-ui/ar-insights";
+import { CallNotes } from "./call-notes";
 
 const PAGE = 200;
 
@@ -50,8 +51,11 @@ function Fact({ value, text }: { value: string | number; text: string }) {
   );
 }
 
+export type CallNotesProps = { api: BillingApi; counts: Map<string, number>; firmTimezone: string; onAdded: () => void };
+
 /** AR Insights, as in the PracticeOps design. */
-export function ArInsights({ book, rules }: { book: CollectionsReceivablesResponse; rules: CollectionRule[] }) {
+export function ArInsights({ book, rules, notes }: { book: CollectionsReceivablesResponse; rules: CollectionRule[]; notes?: CallNotesProps }) {
+  const [notesOpen, setNotesOpen] = useState<string | null>(null);
   const stats = arStats(book, rules);
   const { cut, owe } = stats;
   const recs = stats.calls.slice(0, 15);
@@ -100,10 +104,14 @@ export function ArInsights({ book, rules }: { book: CollectionsReceivablesRespon
         ) : null}
         <div className="scroll">
           <table>
-            <thead><tr><th /><th>Client &amp; contact</th><th>Phone</th><th className="r">Outstanding</th><th className="r">Past due</th><th className="r">Open</th><th className="r">Annual value</th></tr></thead>
+            <thead><tr><th /><th>Client &amp; contact</th><th>Phone</th><th className="r">Outstanding</th><th className="r">Past due</th><th className="r">Open</th><th className="r">Annual value</th>{notes ? <th>Notes</th> : null}</tr></thead>
             <tbody>
-              {recs.map((account, index) => (
-                <tr key={account.client_id} data-call-row={account.client_id}>
+              {recs.map((account, index) => {
+                const count = notes ? noteCountOf(account, notes.counts) : 0;
+                const opened = notesOpen === account.client_id;
+                return (
+                <Fragment key={account.client_id}>
+                <tr data-call-row={account.client_id}>
                   <td style={{ color: "var(--faint)", fontWeight: 700 }}>{index + 1}</td>
                   <td><b>{account.client_name}</b><div className="sub"><ContactLine account={account} /></div></td>
                   <td><Phone phone={account.contact_phone} /></td>
@@ -111,9 +119,26 @@ export function ArInsights({ book, rules }: { book: CollectionsReceivablesRespon
                   <td className="r num" style={account.oldest_days_past_due >= 90 ? { color: "var(--amber)", fontWeight: 600 } : undefined}>{account.oldest_days_past_due}d</td>
                   <td className="r num">{account.open_invoice_count}</td>
                   <td className="r num" style={{ color: "var(--faint)" }}>—</td>
+                  {notes ? (
+                    <td>
+                      <button type="button" className="lnk" data-notes-toggle={account.client_id} aria-expanded={opened} aria-label={`${count ? `${count} note${count === 1 ? "" : "s"}` : "No notes"} for ${account.client_name}. ${opened ? "Hide" : "Show"} notes`} onClick={() => setNotesOpen(opened ? null : account.client_id)} style={{ whiteSpace: "nowrap", font: "inherit", fontSize: 12.5 }}>
+                        {count ? <span className="chip c-brand" data-note-indicator>&#9998; {count}</span> : <span style={{ color: "var(--muted)" }}>+ Note</span>}
+                      </button>
+                    </td>
+                  ) : null}
                 </tr>
-              ))}
-              {recs.length === 0 ? <tr><td colSpan={7} className="sub">Nothing is {cut}+ days past due. The reminders have it.</td></tr> : null}
+                {notes && opened ? (
+                  <tr data-call-notes-row={account.client_id}>
+                    <td />
+                    <td colSpan={7} style={{ background: "var(--card2)" }}>
+                      <CallNotes api={notes.api} clientId={account.client_id} clientName={account.client_name} firmTimezone={notes.firmTimezone} onAdded={notes.onAdded} />
+                    </td>
+                  </tr>
+                ) : null}
+                </Fragment>
+                );
+              })}
+              {recs.length === 0 ? <tr><td colSpan={notes ? 8 : 7} className="sub">Nothing is {cut}+ days past due. The reminders have it.</td></tr> : null}
             </tbody>
           </table>
         </div>
@@ -149,6 +174,8 @@ export function AccountsWhoIsWhere({ book, rules }: { book: CollectionsReceivabl
   const [sort, setSort] = useState<{ key: SortKey; ascending: boolean }>({ key: "score", ascending: false });
   const [open, setOpen] = useState<ReadonlySet<string>>(new Set());
   const accounts = sortAccounts(book.accounts, sort.key, sort.ascending);
+  // The late-payment column appears once the backend returns the count (Phase 5 contract, item 4).
+  const showLate = hasLateCounts(book.accounts);
   const owe = book.accounts.filter((account) => net(account) > 0);
   const inCredit = book.accounts.filter((account) => net(account) < 0);
   const credits = n(book.summary.unallocated_credit);
@@ -164,7 +191,7 @@ export function AccountsWhoIsWhere({ book, rules }: { book: CollectionsReceivabl
       <h3>Who&apos;s where<span>all {book.accounts.length} accounts on the books · click a row for its invoices</span></h3>
       <div className="scroll" style={{ maxHeight: 520, overflow: "auto" }}>
         <table>
-          <thead><tr><th aria-label="Open" />{header("name", "Client & contact")}<th>Phone</th>{header("net", "Outstanding", true)}{header("oldest", "Past due", true)}{header("open", "Open", true)}<th>Status</th></tr></thead>
+          <thead><tr><th aria-label="Open" />{header("name", "Client & contact")}<th>Phone</th>{header("net", "Outstanding", true)}{header("oldest", "Past due", true)}{header("open", "Open", true)}{showLate ? <th className="r">Times late</th> : null}<th>Status</th></tr></thead>
           <tbody>
             {accounts.map((account) => {
               const expanded = open.has(account.client_id);
@@ -181,12 +208,18 @@ export function AccountsWhoIsWhere({ book, rules }: { book: CollectionsReceivabl
                     <td className="r num" style={{ color: net(account) > 0 ? "var(--red)" : "var(--green)" }}>{dollars(net(account))}</td>
                     <td className="r num" style={account.oldest_days_past_due >= 90 ? { color: "var(--amber)", fontWeight: 600 } : undefined}>{account.oldest_days_past_due > 0 ? `${account.oldest_days_past_due}d` : "—"}</td>
                     <td className="r num">{account.open_invoice_count}</td>
+                    {showLate ? (() => {
+                      const late = account.late_beyond_final_count ?? 0;
+                      const rule = account.late_beyond_final;
+                      const why = rule ? `past ${rule.label} (${rule.days_past_due} days)${rule.window_months ? `, last ${rule.window_months} months` : ", all time"}` : "past the final escalation deadline";
+                      return <td className="r num" data-late-count={late} title={`${late} invoice${late === 1 ? "" : "s"} ${why}`} style={{ color: lateTone(late), fontWeight: late >= 3 ? 600 : undefined }}>{late}&times;</td>;
+                    })() : null}
                     <td><span className={`chip ${chip.tone}`}>{chip.label}{chip.gate ? " ⚑" : ""}</span></td>
                   </tr>
                   {expanded ? (
                     <tr data-account-invoices={account.client_id}>
                       <td />
-                      <td colSpan={6} style={{ background: "var(--card2)" }}>
+                      <td colSpan={showLate ? 7 : 6} style={{ background: "var(--card2)" }}>
                         {account.invoices.length ? (
                           <table>
                             <thead><tr><th>Invoice</th><th>Issued</th><th className="r">Past due</th><th className="r">Amount</th></tr></thead>
@@ -194,7 +227,7 @@ export function AccountsWhoIsWhere({ book, rules }: { book: CollectionsReceivabl
                               {account.invoices.map((invoice) => (
                                 <tr key={invoice.row_key || invoice.invoice_id || invoice.source_invoice_id}>
                                   <td className="mono">{invoice.invoice_number}</td>
-                                  <td>{dayMonth(invoice.issue_date)}</td>
+                                  <td>{dayMonth(invoice.issue_date, true)}</td>
                                   <td className="r num">{invoice.days_past_due > 0 ? `${invoice.days_past_due}d` : "not yet due"}</td>
                                   <td className="r num">${n(invoice.balance).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                                 </tr>

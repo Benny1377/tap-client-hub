@@ -28,7 +28,14 @@ export function firstGate(rules: CollectionRule[]) {
 }
 export const reminderDays = (rules: CollectionRule[]) => ladderOf(rules).filter((rule) => !isGateStage(rule.stage)).map((rule) => rule.days_past_due);
 
-export type Account = CollectionsAccount;
+/** Read-model fields proposed in the Phase 5 contract. Optional until the backend returns them; the UI only formats them. */
+export type Phase5AccountFields = {
+  note_count?: number;
+  last_note_at?: string | null;
+  late_beyond_final_count?: number;
+  late_beyond_final?: { stage: number; label: string; days_past_due: number; window_months: number | null };
+};
+export type Account = CollectionsAccount & Phase5AccountFields;
 export const net = (account: Account) => n(account.net_ar_estimate);
 export const hasBillingInvoices = (account: Account) => account.invoices.some((invoice) => invoice.source === "billing");
 /** Money an account has at or past the first hand-off day: what a call can bring in. */
@@ -84,18 +91,46 @@ export function biggerPicture(stats: ReturnType<typeof arStats>) {
   return { top20Share: pct(top20, tot), chronic: chronic.length, chronicTotal: chronic.reduce((sum, account) => sum + net(account), 0), stubs: stubs.length };
 }
 
+type StepFields = { completed_stage?: number | null; next_stage?: number | null };
+/**
+ * The touch an invoice is on, from the server's ladder history: the next touch when one is due,
+ * otherwise the last touch completed; 0 before any touch. Never worked out from days past due,
+ * so a first upload starts every invoice at the first touch the server proposes.
+ */
+export function ladderStep(invoice: StepFields) {
+  return invoice.next_stage ?? invoice.completed_stage ?? 0;
+}
+
 export type RungChip = { label: string; tone: string; gate: boolean };
 const RUNG_TONES = ["c-blue", "c-blue", "c-amber", "c-amber", "c-red"];
-/** The touch an account's oldest invoice has reached, as the design's status chip. */
+/** Where an account sits on the ladder: its furthest invoice's touch, as "<touch> due" or "<touch> sent". */
 export function rungChip(account: Account, rules: CollectionRule[]): RungChip {
   if (net(account) < 0) return { label: "In credit", tone: "c-grey", gate: false };
-  const ladder = ladderOf(rules);
-  let reached = -1;
-  ladder.forEach((rule, index) => { if (account.oldest_days_past_due >= rule.days_past_due) reached = index; });
-  if (reached < 0) return { label: "Current", tone: "c-green", gate: false };
-  const rule = ladder[reached];
-  return { label: rule.label, tone: RUNG_TONES[Math.min(reached, 4)], gate: isGateStage(rule.stage) };
+  if (account.on_hold) return { label: "On hold", tone: "c-grey", gate: false };
+  const labels = new Map(rules.map((rule) => [rule.stage, rule.label]));
+  let best: { stage: number; due: boolean } | null = null;
+  for (const invoice of account.invoices) {
+    const stage = ladderStep(invoice);
+    if (!stage) continue;
+    const due = invoice.next_stage != null;
+    if (!best || stage > best.stage || (stage === best.stage && due && !best.due)) best = { stage, due };
+  }
+  if (!best) return account.oldest_days_past_due > 0 ? { label: "Past due · no touch yet", tone: "c-grey", gate: false } : { label: "Current", tone: "c-green", gate: false };
+  const label = labels.get(best.stage) || `Touch ${best.stage}`;
+  return { label: `${label} ${best.due ? "due" : "sent"}`, tone: RUNG_TONES[Math.min(best.stage - 1, 4)], gate: isGateStage(best.stage) };
 }
+
+/** Notes per client from loaded Collections events; the server's note_count wins when it is returned. */
+export function noteCounts(events: { client_id: string; event_type: string }[]) {
+  const counts = new Map<string, number>();
+  for (const event of events) if (event.event_type === "note") counts.set(event.client_id, (counts.get(event.client_id) || 0) + 1);
+  return counts;
+}
+export const noteCountOf = (account: Account, counts: Map<string, number>) => account.note_count ?? counts.get(account.client_id) ?? 0;
+
+/** The design's late-payment marker: amber from 3, red from 5. */
+export const lateTone = (count: number) => (count >= 5 ? "var(--red)" : count >= 3 ? "var(--amber)" : "var(--ink)");
+export const hasLateCounts = (accounts: Account[]) => accounts.some((account) => typeof account.late_beyond_final_count === "number");
 
 export type SortKey = "score" | "name" | "net" | "oldest" | "open";
 export function sortAccounts(accounts: Account[], key: SortKey, ascending: boolean) {

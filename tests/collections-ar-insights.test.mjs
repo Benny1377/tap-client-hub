@@ -44,14 +44,44 @@ check("one shared contact is found and the largest group wins", () => {
   assert.equal(ar.sharedContact([owe[2]]), null);
 });
 
-check("status follows the touch the oldest invoice has reached, with credit and current", () => {
-  assert.equal(ar.rungChip(acct("x", [inv("10.00", 50)]), rules).label, "Touch 5");
-  assert.equal(ar.rungChip(acct("x", [inv("10.00", 50)]), rules).gate, true);
+check("status follows the server's ladder history, not the invoice's age", () => {
+  // 90 days past due but never touched: a first upload starts at the first touch the server proposes.
+  assert.equal(ar.rungChip(acct("x", [inv("10.00", 90, { completed_stage: 0, next_stage: 1 })]), rules).label, "Touch 1 due");
+  assert.equal(ar.rungChip(acct("x", [inv("10.00", 90, { completed_stage: 0, next_stage: 1 })]), rules).gate, false);
+  // After the first touch, waiting for the gap: shown as sent.
+  assert.equal(ar.rungChip(acct("x", [inv("10.00", 90, { completed_stage: 1, next_stage: null })]), rules).label, "Touch 1 sent");
+  // The furthest invoice decides, and a gate is flagged.
+  const chip = ar.rungChip(acct("x", [inv("10.00", 30, { completed_stage: 1, next_stage: 2 }), inv("5.00", 60, { completed_stage: 3, next_stage: 4 })]), rules);
+  assert.equal(chip.label, "Touch 4 due"); assert.equal(chip.gate, true);
+  assert.equal(ar.rungChip(acct("x", [inv("10.00", 40, { completed_stage: 0, next_stage: null })]), rules).label, "Past due · no touch yet");
   assert.equal(ar.rungChip(acct("x", [inv("10.00", 0)]), rules).label, "Current");
+  assert.equal(ar.rungChip(acct("x", [inv("10.00", 40, { next_stage: 1 })], { on_hold: true }), rules).label, "On hold");
   assert.equal(ar.rungChip(acct("x", [], { net_ar_estimate: "-5.00" }), rules).label, "In credit");
 });
 
+check("ladder step is the next touch when due, else the last completed", () => {
+  assert.equal(ar.ladderStep({ completed_stage: 2, next_stage: 3 }), 3);
+  assert.equal(ar.ladderStep({ completed_stage: 2, next_stage: null }), 2);
+  assert.equal(ar.ladderStep({ completed_stage: 0, next_stage: null }), 0);
+  assert.equal(ar.ladderStep({}), 0);
+});
+
+check("note counts come from note events, and the server's count wins", () => {
+  const counts = ar.noteCounts([{ client_id: "a", event_type: "note" }, { client_id: "a", event_type: "note" }, { client_id: "a", event_type: "call_logged" }, { client_id: "b", event_type: "note" }]);
+  assert.equal(counts.get("a"), 2); assert.equal(counts.get("b"), 1);
+  assert.equal(ar.noteCountOf(acct("a", []), counts), 2);
+  assert.equal(ar.noteCountOf(acct("a", [], { note_count: 7 }), counts), 7);
+  assert.equal(ar.noteCountOf(acct("z", []), counts), 0);
+});
+
+check("late marker colours follow the design, and the column waits for the backend count", () => {
+  assert.equal(ar.lateTone(2), "var(--ink)"); assert.equal(ar.lateTone(3), "var(--amber)"); assert.equal(ar.lateTone(5), "var(--red)");
+  assert.equal(ar.hasLateCounts([acct("a", [])]), false);
+  assert.equal(ar.hasLateCounts([acct("a", []), acct("b", [], { late_beyond_final_count: 0 })]), true);
+});
+
 check("money reads in whole dollars and dates in the design's form", () => {
+  assert.equal(ar.dayMonth("2026-07-01", true), "1 Jul 2026");
   assert.equal(ar.dollars(214800.4), "$214,800");
   assert.equal(ar.dollars(-7400), "-$7,400");
   assert.equal(ar.dayMonth("2026-08-21", true), "21 Aug 2026");
