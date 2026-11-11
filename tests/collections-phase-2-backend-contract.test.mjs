@@ -38,9 +38,10 @@ assert.match(previewRoute, /p_sort_order: "stable"/);
 assert.match(previewRoute, /pageOffset \+= 200/);
 assert.match(previewRoute, /has_more: offset \+ actions\.length < allActions\.length/);
 assert.match(previewRoute, /contact_phone: account\.contact_phone/);
-assert.match(previewRoute, /direct_escalation_threshold/);
 assert.match(previewRoute, /automaticByStage\.get\(stage\) !== true/);
-assert.match(previewRoute, /directOwnerEscalation/);
+assert.match(previewRoute, /const stage = invoice\.next_stage/);
+assert.doesNotMatch(previewRoute, /directOwnerEscalation|direct_escalation_threshold/,
+  "Phase 5 Friendly-first progression must not bypass earlier ladder stages");
 assert.match(contracts, /contact_phone: string \| null/);
 
 assert.match(followupMigration, /create or replace function tap_hub_project\.collections_firm_today/i);

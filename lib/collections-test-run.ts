@@ -6,7 +6,7 @@ import { renderCollectionsTemplate } from "@/lib/collections-template";
 type RunCounts = { run_id: string; claimed: number; accepted: number; suppressed: number; needs_review: number; failed: number; remaining: number };
 type WorklistInvoice = {
   invoice_id: string; invoice_number: string; balance: string; days_past_due: number; due_date: string;
-  next_stage: number | null; completed_stage?: number; awaiting_approval?: unknown; on_hold: boolean;
+  next_stage: number | null; completed_stage?: number; next_stage_eligible_on?: string | null; awaiting_approval?: unknown; on_hold: boolean;
   credit_review_required: boolean; contact_review_required: boolean; below_minimum: boolean;
 };
 type WorklistAccount = { client_id: string; invoices: WorklistInvoice[] };
@@ -60,7 +60,7 @@ export async function runCollectionsTestDelivery(actor: string | null, limit = 5
   const db = createAdminClient();
   const [{ data: rules, error: rulesError }, { data: settings, error: settingsError }] = await Promise.all([
     db.from("collection_ladder_rules").select("stage,automatic,enabled,subject_template,body_template").order("stage"),
-    db.from("collection_settings").select("minimum_balance,direct_escalation_threshold,timezone,send_start,send_end,weekdays_only").eq("id", "default").maybeSingle(),
+    db.from("collection_settings").select("minimum_balance,timezone,send_start,send_end,weekdays_only").eq("id", "default").maybeSingle(),
   ]);
   if (rulesError || settingsError || !settings) return null;
   // Outside the firm's hours nothing is created; the next eligible run picks the work up.
@@ -78,11 +78,7 @@ export async function runCollectionsTestDelivery(actor: string | null, limit = 5
     if (!rows.length || offset + rows.length >= Number(page.pagination?.total_accounts || 0)) break;
   }
   const invoiceRows = worklist.flatMap((account) => (account.invoices || []).map((invoice) => ({ account, invoice })));
-  const allCandidates: Candidate[] = invoiceRows.map((row) => {
-    const directEscalation = Number(row.invoice.balance) >= Number(settings.direct_escalation_threshold)
-      && Number(row.invoice.completed_stage || 0) < 4 && !row.invoice.awaiting_approval;
-    return { ...row, stage: directEscalation ? 4 : Number(row.invoice.next_stage || 0) };
-  })
+  const allCandidates: Candidate[] = invoiceRows.map((row) => ({ ...row, stage: Number(row.invoice.next_stage || 0) }))
     .filter(({ invoice, stage }) => stage >= 1 && stage <= 4 && !invoice.on_hold
       && (stage >= 4 || (!invoice.credit_review_required && !invoice.contact_review_required && !invoice.below_minimum))
       && Number(invoice.balance) >= Number(settings.minimum_balance))
