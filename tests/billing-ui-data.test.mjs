@@ -509,7 +509,8 @@ await check("the app shell titles Billing and Collections; pages do not repeat t
 
 await check("the Collections page pages the call list on its own loader", () => {
   const page = readFileSync(join(root, "app/collections/page.tsx"), "utf8");
-  assert.match(page, /useLedger\(clientId, \["holds", "events", "receivables", "rules"\], \{ eventsOffset \}\)/);
+  // Events load across clients for the approval queue; the Activity log itself was removed (not in the PracticeOps design).
+  assert.match(page, /useLedger\(clientId, \["holds", "events", "receivables", "rules"\]\)/);
   assert.match(page, /useLedger\(clientId, \["worklist"\], \{ worklistLimit: WORKLIST_PAGE, worklistOffset, includeMeta: false \}\)/);
   assert.match(page, /receivables\.receivables\.map/, "invoice names come from every issued invoice, not one call-list page");
 });

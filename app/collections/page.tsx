@@ -6,7 +6,7 @@ import { readyData } from "@/lib/billing-ui/ledger";
 import { approvalRequests, noticesAwaitingSend, stageLabelsFrom, todayIso, viewerIsPowerUser } from "@/lib/billing-ui/view-model";
 import { useLedger } from "@/components/billing/use-ledger";
 import { ClientPicker, ErrorBanner, OwnerAdminOnly, SectionView } from "@/components/billing/ui";
-import { ActiveHoldBanner, ActivityPanel, DecisionsPanel, HoldsPanel, PDF_OPTION_PREFIX, type InvoiceOption } from "@/components/billing/collections-panels";
+import { ActiveHoldBanner, DecisionsPanel, HoldsPanel, PDF_OPTION_PREFIX, type InvoiceOption } from "@/components/billing/collections-panels";
 import { AutomationPreviewPanel, LadderSummary } from "@/components/billing/worklist-panels";
 import { FiveTouchLadder, PipelineOverview } from "@/components/billing/pipeline-design";
 import { AccountsWhoIsWhere, ArInsights, useWholeBook } from "@/components/billing/ar-insights";
@@ -37,10 +37,9 @@ export default function CollectionsPage() {
   const [importPermissionsOpened, setImportPermissionsOpened] = useState(false);
   const [clientId, setClientId] = useState<string | null>(null);
   const [worklistOffset, setWorklistOffset] = useState(0);
-  const [eventsOffset, setEventsOffset] = useState(0);
   const [deliveryRefreshKey, setDeliveryRefreshKey] = useState(0);
   // Two loaders: paging the call list reloads only the worklist, not holds and activity.
-  const ledger = useLedger(clientId, ["holds", "events", "receivables", "rules"], { eventsOffset });
+  const ledger = useLedger(clientId, ["holds", "events", "receivables", "rules"]);
   const calls = useLedger(clientId, ["worklist"], { worklistLimit: WORKLIST_PAGE, worklistOffset, includeMeta: false });
   const { api, viewer, clients, state } = ledger;
   const refreshLedger = ledger.refresh;
@@ -55,7 +54,6 @@ export default function CollectionsPage() {
   const worklist = readyData(worklistState, null);
   const holds = readyData(state.holds, []);
   const events = readyData(state.events, []);
-  const eventsPagination = state.eventsPagination;
   const receivables = readyData(state.receivables, { receivables: [] });
   const ruleSettings = readyData(state.rules, {
     rules: [], firm_timezone: "America/Chicago",
@@ -78,7 +76,7 @@ export default function CollectionsPage() {
     .map((invoice) => ({ id: `${PDF_OPTION_PREFIX}${invoice.source_invoice_id}`, invoice_number: invoice.invoice_number, client_id: account.client_id, source: "pdf_import" as const, source_invoice_id: invoice.source_invoice_id, source_as_of: invoice.source_as_of })));
   const invoiceOptions: InvoiceOption[] = [...billingOptions, ...reportOnlyOptions];
   const invoiceNumbers = Object.fromEntries(invoiceOptions.map((option) => [option.id, option.invoice_number]));
-  const selectClient = (id: string | null) => { setClientId(id); setWorklistOffset(0); setEventsOffset(0); };
+  const selectClient = (id: string | null) => { setClientId(id); setWorklistOffset(0); };
   const notesByClient = useMemo(() => noteCounts(events), [events]);
   const decisions = approvalRequests(events, holds, viewer, today).filter((item) => item.state !== "approved").length
     + noticesAwaitingSend(events, holds, viewer, today).length;
@@ -153,20 +151,6 @@ export default function CollectionsPage() {
           <SectionView state={state.events} label="approvals">
             {(rows) => <DecisionsPanel events={rows} {...eventProps} />}
           </SectionView>
-        </section>
-        <section className="bc-cfgsec" aria-label="Activity">
-          <h3 className="bc-sect">Activity</h3>
-          <p className="bc-hint">Every call, reminder, promise to pay, and decision, newest first.</p>
-          <SectionView state={state.events} label="Collections activity">
-            {(rows) => <ActivityPanel events={rows} {...eventProps} />}
-          </SectionView>
-          {eventsPagination && eventsPagination.total > eventsPagination.limit ? (
-            <div className="bc-row" aria-label="Collections event pages" style={{ display: "flex", alignItems: "center", gap: 10, justifyContent: "flex-end", marginTop: 10 }}>
-              <span className="bc-hint">{eventsPagination.offset + 1}–{Math.min(eventsPagination.offset + eventsPagination.limit, eventsPagination.total)} of {eventsPagination.total} {clientId ? "client events" : "events across all clients"}</span>
-              <button className="btn sm" type="button" disabled={eventsPagination.offset === 0} onClick={() => setEventsOffset(Math.max(0, eventsPagination.offset - eventsPagination.limit))}>Newer</button>
-              <button className="btn sm" type="button" disabled={eventsPagination.offset + eventsPagination.limit >= eventsPagination.total} onClick={() => setEventsOffset(eventsPagination.offset + eventsPagination.limit)}>Older</button>
-            </div>
-          ) : null}
         </section>
         {power ? (
           <section className="bc-card" aria-label="Delivery history" style={{ marginBottom: 20 }}>

@@ -40,7 +40,8 @@ test("event history is optionally client-filtered, paged across clients, and Col
   assert.match(route, /requireCollectionsAccess/);
   assert.match(route, /if \(clientId\) query = query\.eq\("client_id", clientId\)/);
   assert.match(route, /pagination:\s*\{\s*limit,\s*offset,\s*total/);
-  assert.match(source("app/collections/page.tsx"), /eventsOffset/);
+  // The page reads events across clients for the approval queue (no client required); the Activity log was removed from the UI.
+  assert.match(source("lib/billing-ui/ledger.ts"), /api\.events\(clientId, \{ limit: 200, offset: options\.eventsOffset \|\| 0 \}\)/);
 });
 
 test("new PDF reports carry invoice identity only on an exact unambiguous client/invoice/date match", () => {

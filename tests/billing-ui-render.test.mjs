@@ -58,7 +58,7 @@ check("pages render every section as loading before the API responds", () => {
   assert.match(billing, /Your access does not include generating candidates/);
   assert.match(billing, /Coming up, all clients/);
   const collectionsHtml = render(h(CollectionsPage));
-  for (const label of ["AR insights", "Collections activity", "holds"]) assert.match(collectionsHtml, new RegExp(`Loading ${label}…`));
+  for (const label of ["AR insights", "approvals", "holds"]) assert.match(collectionsHtml, new RegExp(`Loading ${label}…`));
 });
 
 check("Collections rule controls are Owner/Admin-only and explicitly delivery-disabled", () => {
@@ -602,7 +602,8 @@ check("Collections has the demo's three views plus Phase 4 A/R reports, opening 
   assert.match(html, /id="collections-tab-insights"[^>]*aria-selected="true"/);
   assert.match(html, /role="tabpanel" id="collections-insights"[^>]*>/);
   assert.doesNotMatch(html, /id="collections-insights"[^>]*hidden/);
-  assert.match(html, /id="collections-pipeline"[^>]*hidden[\s\S]*?aria-label="Activity"/, "activity lives on the Pipeline view");
+  assert.match(html, /id="collections-pipeline"[^>]*hidden[\s\S]*?aria-label="Needs your decision"/, "the approval queue lives on the Pipeline view");
+  assert.doesNotMatch(html, /aria-label="Activity"/, "the Activity log was removed to match the PracticeOps design");
   for (const id of ["pipeline", "imports", "setup"]) assert.match(html, new RegExp(`id="collections-${id}"[^>]*hidden`));
 });
 
