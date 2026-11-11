@@ -27,6 +27,14 @@ import type {
   Viewer,
 } from "./types";
 import type { DeliveriesQuery, DeliveriesResponse, DeliverySetup, DeliveryTestRunResult } from "./delivery";
+import type { CollectionsDeliverySummaryResponse } from "@/lib/collections-api";
+
+/** What approving a detail report would clear: PDF-only invoices on the last report but missing from this one. */
+export type WouldClear = {
+  count: number; total_balance: string;
+  items: Array<{ source_invoice_id: string; canonical_collection_identity: string; client_id: string; invoice_number: string | null; balance: string; last_seen_as_of: string }>;
+  pagination: { limit: number; offset: number; total: number };
+};
 import type { ClassifyDisposition, CrossCheckResult, DiscrepancyResolution, ImportBatch, ImportBatchDetail, ImportInvoice, ImportInvoiceInput, ImportPolicy, SummaryRowCorrection } from "./imports";
 
 /** Source-aware invoice target accepted by the hold and event routes (Phase 4 addendum). */
@@ -75,7 +83,7 @@ async function request<T>(fetchImpl: FetchLike, url: string, init?: RequestInit)
     body = null;
   }
   if (!response.ok) {
-    const payload = body && typeof body === "object" ? (body as { error?: unknown; code?: unknown; result?: unknown }) : {};
+    const payload = body && typeof body === "object" ? (body as { error?: unknown; code?: unknown; result?: unknown; would_clear?: unknown }) : {};
     const failure: ApiResult<T> = {
       ok: false,
       status: response.status,
@@ -86,6 +94,8 @@ async function request<T>(fetchImpl: FetchLike, url: string, init?: RequestInit)
     if (typeof payload.code === "string") failure.code = payload.code;
     // Some refusals carry the evidence behind them, such as a failed A/R reconciliation.
     if (payload.result !== undefined && failure.ok === false) failure.details = payload.result;
+    // A complete-report confirmation refusal carries what approval would clear (Phase 5).
+    if (payload.would_clear !== undefined && failure.ok === false) failure.details = payload.would_clear;
     return failure;
   }
   // A success with no JSON body (for example an HTML page from a dev-server reload)
@@ -202,7 +212,14 @@ export function createBillingApi(fetchImpl: FetchLike) {
     receivables: (clientId?: string | null) => request<ReceivablesResponse>(fetchImpl, withClient("/api/billing/receivables", clientId)),
     payments: (clientId?: string | null) => request<{ payments: Payment[] }>(fetchImpl, withClient("/api/billing/payments", clientId)),
     holds: (clientId?: string | null) => request<{ holds: CollectionHold[] }>(fetchImpl, withClient("/api/collections/holds", clientId)),
-    events: (clientId?: string | null) => request<{ events: CollectionEvent[] }>(fetchImpl, withClient("/api/collections/events", clientId)),
+    /** One client's events, newest first. The server requires a client (Phase 5) and pages the result. */
+    events: (clientId: string, options: { eventType?: string; limit?: number; offset?: number } = {}) => {
+      const query = new URLSearchParams({ client_id: clientId });
+      if (options.eventType) query.set("event_type", options.eventType);
+      query.set("limit", String(options.limit ?? 200));
+      if (options.offset) query.set("offset", String(options.offset));
+      return request<{ events: CollectionEvent[]; pagination?: { limit: number; offset: number; total: number } }>(fetchImpl, `/api/collections/events?${query}`);
+    },
 
     /** Dynamic rule settings. Sender and test-recipient secrets are excluded. */
     rules: () => request<CollectionRuleSettings>(fetchImpl, "/api/collections/rules"),
@@ -231,6 +248,9 @@ export function createBillingApi(fetchImpl: FetchLike) {
     /** Readiness for test mode. Reports only; never starts sending. */
     deliveryStatus: () => request<DeliverySetup>(fetchImpl, "/api/collections/delivery-status"),
     /** Delivery history, newest first. */
+    /** Per-client email counts and dates (Phase 5); Owner/Admin and Collections staff. */
+    deliverySummary: (clientId: string, limit = 200, offset = 0) =>
+      request<CollectionsDeliverySummaryResponse>(fetchImpl, `/api/collections/deliveries/summary?client_id=${encodeURIComponent(clientId)}&limit=${limit}&offset=${offset}`),
     deliveries: (params: DeliveriesQuery = {}) => {
       const query = new URLSearchParams();
       if (params.invoiceId) query.set("invoice_id", params.invoiceId);
@@ -314,11 +334,14 @@ export function createBillingApi(fetchImpl: FetchLike) {
     /** Reviewer-confirmed report type and as-of date when parsing couldn't read them (before any invoice is reviewed). */
     correctImportMetadata: (batchId: string, input: { report_type: "aging_detail" | "aging_summary"; source_as_of: string }) =>
       patch<{ batch: { id: string; status: string; report_type: string; source_as_of: string } }>(fetchImpl, `/api/collections/imports/${encodeURIComponent(batchId)}/metadata`, { ...input, confirmed: true }),
-    approveImport: (batchId: string, summaryBatchId?: string) =>
+    /** PDF-only invoices that approving this detail report would clear because they're missing from it (Phase 5). */
+    clearPreview: (batchId: string, limit = 50, offset = 0) =>
+      request<{ would_clear: WouldClear }>(fetchImpl, `/api/collections/imports/${encodeURIComponent(batchId)}/clear-preview?limit=${limit}&offset=${offset}`),
+    approveImport: (batchId: string, summaryBatchId?: string, completeReportConfirmed = false) =>
       post<{ result: { status: "approved"; detail_batch: { batch_id: string; status: "approved"; invoice_count: number }; summary_batch_id: string; summary_status: "approved"; reconciliation: Record<string, unknown> } }>(
         fetchImpl,
         `/api/collections/imports/${encodeURIComponent(batchId)}/approve`,
-        summaryBatchId ? { summary_batch_id: summaryBatchId } : {},
+        summaryBatchId ? { summary_batch_id: summaryBatchId, ...(completeReportConfirmed ? { complete_report_confirmed: true } : {}) } : {},
       ),
     /** A person's correction of one summary customer row. Whoever corrects either report can't approve the pair. */
     correctSummaryRow: (summaryBatchId: string, input: SummaryRowCorrection) =>

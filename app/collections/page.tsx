@@ -62,6 +62,8 @@ export default function CollectionsPage() {
   const { rules, firm_timezone: firmTimezone } = ruleSettings;
   const stageLabels = stageLabelsFrom(rules);
   const power = viewerIsPowerUser(viewer);
+  // Owner decision D5: the email log is for Owners, Admins and staff with the Collections module.
+  const seesEmailLog = power || Boolean(viewer?.modules?.some((module) => module.toLowerCase() === "collections"));
   // The server's firm date drives hold and ladder rules; fall back to the browser
   // date only while neither read model has loaded.
   const today = worklist?.as_of_date || receivables.as_of_date || todayIso();
@@ -106,8 +108,7 @@ export default function CollectionsPage() {
     <div className="bc-page">
       <div className="bc-tabrow">
         <div className="bc-subnav" role="tablist" aria-label="Collections views">
-          {/* Delivery history is Owner/Admin only, so the email log tab is too. */}
-          {TABS.filter((item) => item.id !== "emails" || power).map((item) => (
+          {TABS.filter((item) => item.id !== "emails" || seesEmailLog).map((item) => (
             <button
               key={item.id}
               type="button"
@@ -147,6 +148,7 @@ export default function CollectionsPage() {
         <section className="bc-cfgsec" aria-label="Needs your decision" style={{ marginTop: 26 }}>
           <h3 className="bc-sect">Needs your decision</h3>
           <p className="bc-hint">Touches 4 and 5 hand off to an Owner or Admin. Escalations and formal notices wait here.</p>
+          {!clientId ? <p className="bc-hint" data-pick-client-events><b>Pick a client above</b> to see their escalations, formal notices and activity.</p> : null}
           <SectionView state={state.events} label="approvals">
             {(rows) => <DecisionsPanel events={rows} {...eventProps} />}
           </SectionView>
@@ -172,7 +174,7 @@ export default function CollectionsPage() {
       </TabPanel>
 
       <TabPanel id="emails" active={tab}>
-        {power ? <EmailLogPanel api={api} clientId={clientId} clientNames={clientNames} stageLabels={stageLabels} firmTimezone={firmTimezone} refreshKey={deliveryRefreshKey} /> : null}
+        {seesEmailLog ? <EmailLogPanel api={api} clientId={clientId} clientNames={clientNames} stageLabels={stageLabels} firmTimezone={firmTimezone} canSeeAll={power} refreshKey={deliveryRefreshKey} /> : null}
       </TabPanel>
 
       <TabPanel id="imports" active={tab}>

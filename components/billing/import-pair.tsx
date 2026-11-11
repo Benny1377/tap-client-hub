@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState, type FormEvent } from "react";
-import type { ApiResult, BillingApi } from "@/lib/billing-ui/api";
+import type { ApiResult, BillingApi, WouldClear } from "@/lib/billing-ui/api";
+import { dayMonth } from "@/lib/billing-ui/ar-insights";
 import { pairApprovalChecklist, reconciliationOf, SUMMARY_BUCKETS, summaryRowView, type ImportBatch, type ImportBatchDetail, type ImportRow, type PairReconciliation, type SummaryBucket } from "@/lib/billing-ui/imports";
 import type { Viewer } from "@/lib/billing-ui/types";
 import { formatMoney } from "@/lib/billing-ui/view-model";
@@ -13,6 +14,7 @@ const STATUS_PILL: Record<string, { label: string; tone: string }> = {
   conflict: { label: "Conflict", tone: "red" },
   review: { label: "Needs review", tone: "amber" },
 };
+const dateLabel = (iso: string | null | undefined) => dayMonth(iso, true);
 const money = (value: string | null | undefined) => (value === null || value === undefined || value === "" ? "—" : formatMoney(value));
 
 /** A summary report's customer aging rows, as balance evidence: pending, matched or in conflict, never "ignored". */
@@ -159,7 +161,22 @@ export function PairApprovalBox({ api, detail, viewer, summaries, onApproved }: 
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<Failure | null>(null);
   const [mismatch, setMismatch] = useState<PairReconciliation | null>(null);
+  const [wouldClear, setWouldClear] = useState<WouldClear | null>(null);
+  const [clearFailed, setClearFailed] = useState<string | null>(null);
+  const [complete, setComplete] = useState(false);
+  const [showCleared, setShowCleared] = useState(false);
   const chosen = summaryId || (summaries.length === 1 ? summaries[0].id : "");
+  // What approving would clear: invoices on the last approved report that this one leaves out (Phase 5).
+  useEffect(() => {
+    let current = true;
+    api.clearPreview(detail.batch.id, 200, 0).then((result) => {
+      if (!current) return;
+      if (result.ok === true) { setWouldClear(result.data.would_clear); setClearFailed(null); }
+      else setClearFailed(result.message);
+    });
+    return () => { current = false; };
+  }, [api, detail.batch.id]);
+  const clears = (wouldClear?.count || 0) > 0;
   useEffect(() => {
     let current = true;
     if (chosen) api.importBatch(chosen).then((result) => { if (current && result.ok) setLoaded({ id: chosen, data: result.data }); });
@@ -170,13 +187,17 @@ export function PairApprovalBox({ api, detail, viewer, summaries, onApproved }: 
   const stored = reconciliationOf(summary?.batch.metadata?.detail_cross_check);
   const shown = mismatch || (stored && stored.detail_batch_id === detail.batch.id ? stored : null);
   const checks = pairApprovalChecklist(detail, summary, viewer);
-  const ready = checks.every((check) => check.ok);
+  const ready = checks.every((check) => check.ok) && !clearFailed && wouldClear !== null && (!clears || complete);
   async function approve() {
     if (!chosen) return;
     setPending(true); setError(null); setMismatch(null);
-    const result = await api.approveImport(detail.batch.id, chosen);
+    const result = await api.approveImport(detail.batch.id, chosen, clears && complete);
     setPending(false);
     if (result.ok === true) { await onApproved(); return; }
+    // The server recomputes what would clear; if it differs from what was shown, show its numbers and ask again.
+    if (result.code === "IMPORT_CLEAR_CONFIRMATION_REQUIRED" && result.details && typeof result.details === "object") {
+      setWouldClear(result.details as WouldClear); setComplete(false);
+    }
     if (result.code === "IMPORT_RECONCILIATION_MISMATCH") {
       setMismatch(reconciliationOf(result.details));
       const fresh = await api.importBatch(chosen);
@@ -201,6 +222,28 @@ export function PairApprovalBox({ api, detail, viewer, summaries, onApproved }: 
           <li key={check.id} data-approval-check={check.id} data-ok={check.ok} style={{ color: check.ok ? "var(--green)" : "var(--gate-ink)", padding: "2px 0" }}>{check.ok ? "✓" : "•"} {check.label}</li>
         ))}
       </ul>
+      {clearFailed ? <p role="alert" className="bc-small" style={{ color: "var(--red)" }} data-clear-preview-error>Couldn&rsquo;t check which invoices this report would clear: {clearFailed}</p> : null}
+      {wouldClear && clears ? (
+        <div className="bc-source" role="note" data-would-clear={wouldClear.count} style={{ margin: "0 0 10px" }}>
+          <p style={{ margin: "0 0 6px" }}><b>Approving clears {wouldClear.count} invoice{wouldClear.count === 1 ? "" : "s"} ({money(wouldClear.total_balance)})</b> that were on the last approved report but aren&rsquo;t on this one. They&rsquo;re treated as paid: they leave the call list and no further reminders go out. Invoices billed in TAP Hub are never cleared this way.</p>
+          <button type="button" className="lnk" aria-expanded={showCleared} onClick={() => setShowCleared(!showCleared)} data-would-clear-toggle>{showCleared ? "Hide" : "Show"} the invoices</button>
+          {showCleared ? (
+            <table style={{ marginTop: 6 }} data-would-clear-list>
+              <thead><tr><th>Invoice</th><th>Last on the report</th><th className="r">Balance then</th></tr></thead>
+              <tbody>
+                {wouldClear.items.map((item) => (
+                  <tr key={item.source_invoice_id}><td className="mono">{item.invoice_number || "—"}</td><td>{dateLabel(item.last_seen_as_of)}</td><td className="r num">{money(item.balance)}</td></tr>
+                ))}
+              </tbody>
+            </table>
+          ) : null}
+          {wouldClear.pagination.total > wouldClear.items.length ? <p className="bc-small">Showing {wouldClear.items.length} of {wouldClear.pagination.total}.</p> : null}
+          <label className="bc-check" style={{ display: "flex", gap: 8, alignItems: "flex-start", marginTop: 8 }}>
+            <input type="checkbox" data-complete-report checked={complete} onChange={(event) => setComplete(event.target.checked)} />
+            <span>This is the complete A/R report for {dateLabel(detail.batch.source_as_of)}, not a filtered or partial export.</span>
+          </label>
+        </div>
+      ) : wouldClear ? <p className="bc-small" data-would-clear="0" style={{ margin: "0 0 10px" }}>Nothing on earlier reports would be cleared by this one.</p> : null}
       <p className="bc-small" style={{ margin: "0 0 10px" }}>An Admin may approve a pair they uploaded; an Owner or anyone else who uploaded a report may not. Anyone who corrected either report can&rsquo;t approve the pair, including an Admin.</p>
       {error && error.code !== "IMPORT_RECONCILIATION_MISMATCH" ? <p role="alert" className="bc-small" style={{ color: "var(--red)" }} data-approval-error={error.code || error.kind}>{error.message}</p> : null}
       {shown && shown.status === "mismatch" ? <p role="alert" className="bc-small" style={{ color: "var(--red)", margin: "0 0 6px" }} data-approval-error="IMPORT_RECONCILIATION_MISMATCH">The reports don&rsquo;t match, so neither was approved. Both stay in review.</p> : null}

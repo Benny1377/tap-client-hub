@@ -28,7 +28,7 @@ export function CallNotes({ api, clientId, clientName, firmTimezone, onAdded }: 
   useEffect(() => {
     let current = true;
     (async () => {
-      const result = await api.events(clientId);
+      const result = await api.events(clientId, { eventType: "note", limit: 200 });
       if (!current) return;
       if (result.ok === false) { setFailed(result.message); return; }
       setFailed(null);

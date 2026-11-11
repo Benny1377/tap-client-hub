@@ -4,7 +4,7 @@ import { Fragment, useEffect, useState } from "react";
 import type { BillingApi } from "@/lib/billing-ui/api";
 import type { CollectionRule } from "@/lib/billing-ui/types";
 import type { CollectionsReceivablesResponse } from "@/lib/collections-api";
-import { andList, arStats, asOfDate, biggerPicture, dayMonth, dollars, hasBillingInvoices, hasLateCounts, lateTone, mergePages, n, net, noteCountOf, pct, reminderDays, rungChip, sharedContact, sortAccounts, tier, type Account, type SortKey } from "@/lib/billing-ui/ar-insights";
+import { andList, arStats, asOfDate, biggerPicture, dayMonth, dollars, hasBillingInvoices, hasLateCounts, lateTone, mergePages, n, net, nextTouch, noteCountOf, pct, reminderDays, rungChip, sharedContact, sortAccounts, tier, type Account, type SortKey } from "@/lib/billing-ui/ar-insights";
 import { CallNotes } from "./call-notes";
 
 const PAGE = 200;
@@ -176,6 +176,7 @@ export function AccountsWhoIsWhere({ book, rules }: { book: CollectionsReceivabl
   const accounts = sortAccounts(book.accounts, sort.key, sort.ascending);
   // The late-payment column appears once the backend returns the count (Phase 5 contract, item 4).
   const showLate = hasLateCounts(book.accounts);
+  const finalRule = book.accounts.find((account) => (account as Account).late_beyond_final)?.late_beyond_final;
   const owe = book.accounts.filter((account) => net(account) > 0);
   const inCredit = book.accounts.filter((account) => net(account) < 0);
   const credits = n(book.summary.unallocated_credit);
@@ -222,13 +223,14 @@ export function AccountsWhoIsWhere({ book, rules }: { book: CollectionsReceivabl
                       <td colSpan={showLate ? 7 : 6} style={{ background: "var(--card2)" }}>
                         {account.invoices.length ? (
                           <table>
-                            <thead><tr><th>Invoice</th><th>Issued</th><th className="r">Past due</th><th className="r">Amount</th></tr></thead>
+                            <thead><tr><th>Invoice</th><th>Issued</th><th className="r">Past due</th><th>Next touch</th><th className="r">Amount</th></tr></thead>
                             <tbody>
                               {account.invoices.map((invoice) => (
                                 <tr key={invoice.row_key || invoice.invoice_id || invoice.source_invoice_id}>
                                   <td className="mono">{invoice.invoice_number}</td>
                                   <td>{dayMonth(invoice.issue_date, true)}</td>
                                   <td className="r num">{invoice.days_past_due > 0 ? `${invoice.days_past_due}d` : "not yet due"}</td>
+                                  <td data-next-touch>{nextTouch(invoice, rules)}</td>
                                   <td className="r num">${n(invoice.balance).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                                 </tr>
                               ))}
@@ -247,6 +249,7 @@ export function AccountsWhoIsWhere({ book, rules }: { book: CollectionsReceivabl
       </div>
       <p className="fine" style={{ border: "none", marginTop: 10, paddingTop: 0 }}>
         {owe.length} accounts owe the firm, {dollars(n(book.summary.gross_open_balance))} in all; {inCredit.length} sit in credit (−{dollars(credits)}), netting to <b>{dollars(n(book.summary.net_ar_estimate))}</b>. Default sort is priority (dollars × age) — click a column to re-sort.{" "}
+        {showLate && finalRule ? <>Times late counts invoices that went past <b>{finalRule.label}</b> ({finalRule.days_past_due} days) in the last {finalRule.window_months || 12} months, recomputed under the current rules. </> : null}
         <b>Gaps found:</b> {owe.filter((account) => !account.contact_phone).length} accounts have no phone, {owe.filter((account) => !account.contact_email).length} no email, 0 aren&apos;t in the client list.
       </p>
     </div>

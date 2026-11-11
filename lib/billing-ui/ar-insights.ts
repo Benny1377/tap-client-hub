@@ -120,6 +120,16 @@ export function rungChip(account: Account, rules: CollectionRule[]): RungChip {
   return { label: `${label} ${best.due ? "due" : "sent"}`, tone: RUNG_TONES[Math.min(best.stage - 1, 4)], gate: isGateStage(best.stage) };
 }
 
+/** The next touch for one invoice, from the server's next stage and its eligible date (Phase 5). */
+export function nextTouch(invoice: StepFields & { next_stage_eligible_on?: string | null; upcoming_stage?: number | null; awaiting_approval?: unknown }, rules: CollectionRule[]) {
+  const label = (stage: number | null | undefined) => (stage ? rules.find((rule) => rule.stage === stage)?.label || `Touch ${stage}` : "");
+  if (invoice.awaiting_approval) return "Waiting for Owner/Admin approval";
+  if (invoice.next_stage) return `${label(invoice.next_stage)} · due now`;
+  const upcoming = (invoice.completed_stage ?? 0) === 0 ? 1 : (invoice.completed_stage ?? 0) + 1;
+  if (invoice.next_stage_eligible_on && rules.some((rule) => rule.stage === upcoming && rule.enabled)) return `${label(upcoming)} · ${dayMonth(invoice.next_stage_eligible_on, true)}`;
+  return "—";
+}
+
 /** Notes per client from loaded Collections events; the server's note_count wins when it is returned. */
 export function noteCounts(events: { client_id: string; event_type: string }[]) {
   const counts = new Map<string, number>();

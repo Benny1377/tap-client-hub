@@ -218,12 +218,18 @@ await check("sections start loading and fail independently", async () => {
     "GET /api/collections/holds": [200, { holds: [] }],
     "GET /api/collections/events": [403, { error: "Forbidden" }],
   });
-  const state = await ledger.loadLedger(api.createBillingApi(fetchImpl), null, ["holds", "events"]);
+  const state = await ledger.loadLedger(api.createBillingApi(fetchImpl), "c-1", ["holds", "events"]);
   assert.equal(state.holds.status, "ready");
   assert.equal(state.events.status, "error");
   assert.equal(state.events.kind, "forbidden");
   assert.equal(state.invoices.status, "loading", "sections not requested are not fetched");
   assert.equal(calls.length, 2);
+  assert.match(calls.find((call) => call.url.startsWith("/api/collections/events")).url, /client_id=c-1/);
+  // Phase 5: the events API needs a client, so with none picked nothing is requested.
+  const none = fakeFetch({ "GET /api/collections/holds": [200, { holds: [] }] });
+  const empty = await ledger.loadLedger(api.createBillingApi(none.fetchImpl), null, ["holds", "events"]);
+  assert.equal(empty.events.status, "ready"); assert.deepEqual(empty.events.data, []);
+  assert.equal(none.calls.filter((call) => call.url.startsWith("/api/collections/events")).length, 0);
 });
 
 // --- Validation ------------------------------------------------------------
@@ -597,7 +603,7 @@ await check("every contract status, reason code, and missing setting has plain w
     // Addendum 2b1fce4
     "STAGE_NOT_DUE", "INVOICE_NOT_ELIGIBLE", "OUTSIDE_SEND_WINDOW", "PROVIDER_PAYLOAD_CHANGED",
     // Phase 4 source-identity addendum
-    "SOURCE_DISCREPANCY_BLOCKED"];
+    "SOURCE_DISCREPANCY_BLOCKED", "SOURCE_CLEARED"];
   assert.deepEqual(Object.keys(delivery.DELIVERY_REASON_LABELS).sort(), [...codes].sort());
   assert.equal(delivery.deliveryReasonLabel("OUTSIDE_SEND_WINDOW"), "Outside the firm's configured send window.");
   assert.notEqual(delivery.DELIVERY_REASON_LABELS.OUTSIDE_SEND_WINDOW, delivery.DELIVERY_REASON_LABELS.RULE_DISABLED, "a closed window is not a disabled rule");

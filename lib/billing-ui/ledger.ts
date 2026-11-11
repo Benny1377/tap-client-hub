@@ -48,7 +48,10 @@ export async function loadLedger(api: BillingApi, clientId: string | null, secti
     wanted.has("receivables") && api.receivables(clientId).then((r) => { state.receivables = toSection(r, (d) => ({ ...d, receivables: d.receivables || [] })); }),
     wanted.has("payments") && api.payments(clientId).then((r) => { state.payments = toSection(r, (d) => d.payments || []); }),
     wanted.has("holds") && api.holds(clientId).then((r) => { state.holds = toSection(r, (d) => d.holds || []); }),
-    wanted.has("events") && api.events(clientId).then((r) => { state.events = toSection(r, (d) => d.events || []); }),
+    // The events API now requires a client (Phase 5). With none picked there is nothing to load; the page says so.
+    wanted.has("events") && (clientId
+      ? api.events(clientId).then((r) => { state.events = toSection(r, (d) => d.events || []); })
+      : Promise.resolve().then(() => { state.events = { status: "ready", data: [] }; })),
     wanted.has("worklist") && api.worklist({ clientId, limit: options.worklistLimit, offset: options.worklistOffset })
       .then((r) => { state.worklist = toSection(r, (d) => d); }),
     wanted.has("rules") && api.rules().then((r) => { state.rules = toSection(r, (d) => ({ ...d, rules: d.rules || [], firm_timezone: d.firm_timezone || "America/Chicago" })); }),
