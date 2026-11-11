@@ -144,7 +144,7 @@ export function CollectionsRulesEditor({
             <label className="bc-field"><span>Direct-owner escalation above</span>
               <span className="bc-inline"><span className="bc-muted">$</span><input className="bc-in" style={{ width: 120 }} type="number" min="0" step="0.01" value={settings.direct_escalation_threshold} onChange={(event) => editSetting("direct_escalation_threshold", event.target.value)} /></span>
             </label>
-            <div className="bc-note">Stored for reference only. Every invoice now starts at the first touch and moves one step at a time, whatever its balance.</div>
+            <div className="bc-note">Large balances are flagged for an internal Owner or Admin review. Reminders still start at the first touch and move one step at a time, whatever the balance.</div>
           </div>
           <div className="bc-cfgcard">
             <span className="bc-label">Send window</span>
