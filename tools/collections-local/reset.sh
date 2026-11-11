@@ -45,7 +45,8 @@ for migration in \
   20261107140000_billing_firm_schedule_paging.sql \
   20261107150120_billing_issue_presentation_snapshot.sql \
   20261110220908_collections_delivery_history_schema.sql \
-  20261110142736_collections_phase5_client_feedback.sql; do
+  20261110142736_collections_phase5_client_feedback.sql \
+  20261111095644_collections_phase5_identity_cross_client_delivery_fixes.sql; do
   psql "$db_url" -X -v ON_ERROR_STOP=1 -f "$project_root/supabase/migrations/$migration" >/dev/null
 done
 psql "$db_url" -X -v ON_ERROR_STOP=1 -f "$local_root/seed.sql" >/dev/null

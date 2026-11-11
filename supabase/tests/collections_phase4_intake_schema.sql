@@ -148,8 +148,8 @@ begin
     values (v_batch_one,v_source_invoice_id,1,1,'synthetic invoice row','invoice'),
            (v_batch_two,v_source_invoice_id,1,1,'synthetic revised invoice row','invoice');
   insert into tap_hub_project.collection_import_invoices
-    (source_invoice_id,batch_id,invoice_number,customer_name,open_balance,source_as_of,source_row_key,review_status)
-    values (v_source_invoice_id,v_batch_one,'SYN-001','Synthetic Orchard',125,v_as_of,'1:1','ready');
+    (source_invoice_id,batch_id,invoice_number,customer_name,due_date,open_balance,source_as_of,source_row_key,review_status)
+    values (v_source_invoice_id,v_batch_one,'SYN-001','Synthetic Orchard',v_as_of-5,125,v_as_of,'1:1','ready');
   perform tap_hub_project.approve_collection_import_batch(v_batch_one,'00000000-0000-4000-8000-000000000003');
   select canonical_collection_identity into v_identity from tap_hub_project.collection_source_invoice_identities where source_invoice_id=v_source_invoice_id;
   if v_identity <> 'pdf_import:'||v_source_invoice_id::text then raise exception 'PDF-only identity was not established'; end if;
@@ -158,8 +158,8 @@ begin
     '10000000-0000-4000-8000-000000000001','pdf_import',null,v_source_invoice_id,
     'reminder_logged','00000000-0000-4000-8000-000000000002',1,'{}'::jsonb,null);
   insert into tap_hub_project.collection_import_invoices
-    (source_invoice_id,batch_id,proposed_linked_invoice_id,invoice_number,customer_name,open_balance,source_as_of,source_row_key,review_status)
-    values (v_source_invoice_id,v_batch_two,'20000000-0000-4000-8000-000000000001','SYN-001','Synthetic Orchard',125,v_as_of,'1:1','ready');
+    (source_invoice_id,batch_id,proposed_linked_invoice_id,invoice_number,customer_name,due_date,open_balance,source_as_of,source_row_key,review_status)
+    values (v_source_invoice_id,v_batch_two,'20000000-0000-4000-8000-000000000001','SYN-001','Synthetic Orchard',v_as_of-5,125,v_as_of,'1:1','ready');
   perform tap_hub_project.approve_collection_import_batch(v_batch_two,'00000000-0000-4000-8000-000000000003');
 
   select canonical_collection_identity into v_identity from tap_hub_project.collection_source_invoice_identities where source_invoice_id=v_source_invoice_id;

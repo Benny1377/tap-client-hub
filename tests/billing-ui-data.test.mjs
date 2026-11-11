@@ -213,7 +213,7 @@ await check("after a successful mutation the refreshed balance comes from the se
 // --- Section loading -------------------------------------------------------
 await check("sections start loading and fail independently", async () => {
   const initial = ledger.loadingLedger();
-  assert.ok(Object.values(initial).every((section) => section.status === "loading"));
+  assert.ok(Object.entries(initial).filter(([key]) => key !== "eventsPagination").every(([, section]) => section.status === "loading"));
   const { fetchImpl, calls } = fakeFetch({
     "GET /api/collections/holds": [200, { holds: [] }],
     "GET /api/collections/events": [403, { error: "Forbidden" }],
@@ -225,11 +225,18 @@ await check("sections start loading and fail independently", async () => {
   assert.equal(state.invoices.status, "loading", "sections not requested are not fetched");
   assert.equal(calls.length, 2);
   assert.match(calls.find((call) => call.url.startsWith("/api/collections/events")).url, /client_id=c-1/);
-  // Phase 5: the events API needs a client, so with none picked nothing is requested.
-  const none = fakeFetch({ "GET /api/collections/holds": [200, { holds: [] }] });
+  // Phase 5: event history can page across clients when no client is selected.
+  const none = fakeFetch({
+    "GET /api/collections/holds": [200, { holds: [] }],
+    "GET /api/collections/events": [200, { events: [], pagination: { limit: 200, offset: 0, total: 4 } }],
+  });
   const empty = await ledger.loadLedger(api.createBillingApi(none.fetchImpl), null, ["holds", "events"]);
   assert.equal(empty.events.status, "ready"); assert.deepEqual(empty.events.data, []);
-  assert.equal(none.calls.filter((call) => call.url.startsWith("/api/collections/events")).length, 0);
+  const globalEvents = none.calls.find((call) => call.url.startsWith("/api/collections/events"));
+  assert.ok(globalEvents);
+  assert.doesNotMatch(globalEvents.url, /client_id=/);
+  assert.match(globalEvents.url, /limit=200/);
+  assert.equal(empty.eventsPagination?.total, 4);
 });
 
 // --- Validation ------------------------------------------------------------
@@ -502,7 +509,7 @@ await check("the app shell titles Billing and Collections; pages do not repeat t
 
 await check("the Collections page pages the call list on its own loader", () => {
   const page = readFileSync(join(root, "app/collections/page.tsx"), "utf8");
-  assert.match(page, /useLedger\(clientId, \["holds", "events", "receivables", "rules"\]\)/);
+  assert.match(page, /useLedger\(clientId, \["holds", "events", "receivables", "rules"\], \{ eventsOffset \}\)/);
   assert.match(page, /useLedger\(clientId, \["worklist"\], \{ worklistLimit: WORKLIST_PAGE, worklistOffset, includeMeta: false \}\)/);
   assert.match(page, /receivables\.receivables\.map/, "invoice names come from every issued invoice, not one call-list page");
 });

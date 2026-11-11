@@ -1,6 +1,6 @@
 # Collections Phase 5: Client Feedback (Ladder Start, Call Notes, Cleared Invoices, Late History, Email Log)
 
-State: **Owner decisions D1–D5 approved 2026-11-10; Engineer B contract review and implementation validation pending.** This contract does not authorize a hosted migration, production change, real-report import, or live delivery.
+State: **Owner decisions D1–D5 approved 2026-11-10; implementation follow-ups in progress.** This contract does not authorize a hosted migration, production change, real-report import, or live delivery.
 
 - Producer: Engineer B (Collections backend: read model, rules, delivery history, migrations).
 - Consumer: Engineer A (Collections UI and integrated testing).
@@ -29,7 +29,7 @@ Exclusions:
 
 ## Item 1 — First touch always starts at Friendly
 
-**Change request against an owner-approved rule.** Phase 2 records the owner-approved *catch-up* policy: "if earlier reminders were missed, the next proposed reminder is the highest enabled automatic stage currently due." The client now asks for the opposite on first contact. This item supersedes catch-up only after the owner confirms it (decision D1).
+**Approved change to the Phase 2 rule.** The owner approved replacing catch-up with a Friendly-first policy for all invoices. The next proposed reminder is the earliest eligible step, never a later automatic stage just because its threshold has passed.
 
 Proposed behavior:
 
@@ -51,11 +51,11 @@ The existing events API already supports notes: `POST /api/collections/events` w
 
 Requested backend additions (additive, read-only):
 
-- `GET /api/collections/events` accepts `client_id` (required UUID), `event_type` (one of the existing event types), and `limit` (1–200, default 50) / `offset` (0–100,000, default 0). Results sort by `occurred_at DESC, id DESC`; response is `{ events, pagination: { limit, offset, total } }`.
-- Invalid/missing `client_id`, invalid `event_type`, invalid `limit`, and invalid `offset` return 422 with `INVALID_CLIENT_ID`, `INVALID_EVENT_TYPE`, `INVALID_LIMIT`, and `INVALID_OFFSET`; access errors remain 401 `UNAUTHENTICATED` / 403 `FORBIDDEN`, read errors return 500 `READ_FAILED`.
+- `GET /api/collections/events` accepts optional `client_id` (UUID), `event_type` (one of the existing event types), and `limit` (1–200, default 50) / `offset` (0–100,000, default 0). If `client_id` is omitted, the endpoint returns a cross-client page for the approval queue and activity history; if supplied, it filters to that client. Results sort by `occurred_at DESC, id DESC`; response is `{ events, pagination: { limit, offset, total } }`.
+- A malformed or empty supplied `client_id`, invalid `event_type`, invalid `limit`, and invalid `offset` return 422 with `INVALID_CLIENT_ID`, `INVALID_EVENT_TYPE`, `INVALID_LIMIT`, and `INVALID_OFFSET`; omission of `client_id` is valid. Access errors remain 401 `UNAUTHENTICATED` / 403 `FORBIDDEN`, read errors return 500 `READ_FAILED`.
 - `GET /api/collections/receivables` returns per account `note_count: number` and `last_note_at: string | null` (ISO timestamp). Counts include all note events for that client, whether account- or invoice-scoped, so the indicator needs no per-row request.
 
-Frontend: each of the top-15 call rows gets a notes button showing an indicator (count) when `note_count > 0`; opening it lists that client's notes (author, firm-local date/time, text) and offers an add-note form. Notes are free text, 1–2,000 characters, trimmed; the server is authoritative for length. Access follows the existing events rules (Owner/Admin and staff with Collections or Billing module access). Notes are internal and never included in client-facing email.
+Frontend: each of the top-15 call rows gets a notes button showing an indicator (count) when `note_count > 0`; opening it lists that client's notes (author, firm-local date/time, text) and offers an add-note form. Notes are free text, 1–2,000 characters, trimmed; the server is authoritative for length. Access is Owner/Admin and staff with Collections access; Billing-only and unassigned staff are forbidden. Notes are internal and never included in client-facing email.
 
 ## Item 3 — Absent from a newer report means cleared
 
@@ -65,15 +65,16 @@ Proposed behavior:
 
 - When a detail/summary pair with as-of date `D` is approved, every **PDF-sourced** identity whose latest approved row has an as-of date earlier than `D` and which is absent from the newly approved detail report is marked **cleared**: `cleared_as_of = D`, `cleared_by_batch_id`, recorded in the same approval transaction with an audit entry per identity (counts and IDs only, no customer names in the audit detail).
 - Clearing is allowed only when the approver explicitly confirms `complete_report_confirmed: true` if `would_clear.count > 0`. The server recomputes the impact inside the same approval transaction; the confirmation is recorded in the batch audit. The approval preview returns the count and total balance plus a paginated affected-row drilldown for review. Partial/filtered exports must not be declared complete.
-- Identity matching is exact by the already-reviewed `source_invoice_id` / canonical identity; never infer continuity from invoice number or customer name. An invoice that was not linked to the same identity in the new report is not silently treated as the same invoice.
+- Identity continuity across reports: after the customer is matched to one TAP Hub client, auto-match may reuse a prior `source_invoice_id` only when exactly one invoice in an earlier approved detail report has the exact same client, invoice number, and transaction date. Balance, due date, or aging changes do not change this identity key. If the invoice number or transaction date differs, if the exact key matches multiple prior identities, or if the identity has already been used by another row in the current report, leave the row for manual identity review. If no prior row shares either key value, create a new identity. Never guess across a partial or ambiguous match. A carried identity retains its canonical identity and stage/hold/event/delivery history.
 - A cleared invoice leaves the worklist, call list, preview, and future test delivery. Queued/needs-review attempts are suppressed with reason `SOURCE_CLEARED`; accepted attempts and history remain unchanged. Delivery claim/retry must check cleared state atomically before claiming. An already in-flight provider request cannot be recalled; approval must surface that condition rather than claim that it was suppressed.
 - Billing-linked identities are **not** cleared by a PDF; the Billing ledger remains the source of truth for them.
 - **Out-of-order safety:** approving a report with an as-of date earlier than the newest approved report clears nothing and does not reopen anything.
 - **Reappearance:** if the same canonical identity appears in a later approved report, it reopens with its stage history intact, and the reopen is audited. Completed stages are not reset or sent again.
+- **Test-only delivery for report-only rows:** stages 1–4 may be claimed only from an approved, unblocked, uncleared PDF identity, and only when its TAP Hub client is explicitly synthetic, automation is enabled, and delivery mode is `test`. The message goes only to the configured test recipient. Non-synthetic Clients/Operations data is always refused with `SYNTHETIC_DATA_REQUIRED`; this does not authorize live customer email.
 - **Approval preview:** the paired-approval reconciliation result adds `would_clear: { count, total_balance }` so the approver sees the effect before it happens. The UI shows this in the approval box.
 - Receivables summary adds `cleared_since_previous_report: { count, total_balance, as_of }`.
 
-Risk requiring a decision (D3): a filtered or partial QuickBooks export would clear every customer it omits. Options: (a) clear automatically on approval, relying on the `would_clear` preview; (b) require the approver to tick an explicit "this is a complete report" confirmation when `would_clear.count > 0`. Engineer A recommends (b).
+The owner approved requiring an explicit "this is a complete report" confirmation whenever `would_clear.count > 0`. A filtered or partial QuickBooks export must not be approved as complete.
 
 ## Item 4 — Times late beyond the final escalation deadline
 
@@ -83,6 +84,8 @@ Definition: for each client, count distinct invoices with dated evidence that da
 - PDF-sourced invoices: any approved report snapshot (including the last snapshot before clearing) showing days past due beyond the final threshold.
 
 Each invoice counts at most once per client and canonical identity. The value is computed at read time from the current rules, so changing the final threshold recalculates it retroactively; the UI must identify the threshold used and that the metric is recomputed under current rules. Approved report dates and firm-local payment/allocation dates determine whether evidence falls in the window. The look-back window is 12 months.
+
+The existing `direct_escalation_threshold` setting remains in place: it still drives the high-balance worklist metric and the guarded internal stage-4 test-escalation path, even though the Phase 5 automatic preview no longer bypasses the configured ladder.
 
 `GET /api/collections/receivables` returns per account:
 

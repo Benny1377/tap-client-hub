@@ -37,9 +37,10 @@ export default function CollectionsPage() {
   const [importPermissionsOpened, setImportPermissionsOpened] = useState(false);
   const [clientId, setClientId] = useState<string | null>(null);
   const [worklistOffset, setWorklistOffset] = useState(0);
+  const [eventsOffset, setEventsOffset] = useState(0);
   const [deliveryRefreshKey, setDeliveryRefreshKey] = useState(0);
   // Two loaders: paging the call list reloads only the worklist, not holds and activity.
-  const ledger = useLedger(clientId, ["holds", "events", "receivables", "rules"]);
+  const ledger = useLedger(clientId, ["holds", "events", "receivables", "rules"], { eventsOffset });
   const calls = useLedger(clientId, ["worklist"], { worklistLimit: WORKLIST_PAGE, worklistOffset, includeMeta: false });
   const { api, viewer, clients, state } = ledger;
   const refreshLedger = ledger.refresh;
@@ -54,6 +55,7 @@ export default function CollectionsPage() {
   const worklist = readyData(worklistState, null);
   const holds = readyData(state.holds, []);
   const events = readyData(state.events, []);
+  const eventsPagination = state.eventsPagination;
   const receivables = readyData(state.receivables, { receivables: [] });
   const ruleSettings = readyData(state.rules, {
     rules: [], firm_timezone: "America/Chicago",
@@ -76,7 +78,7 @@ export default function CollectionsPage() {
     .map((invoice) => ({ id: `${PDF_OPTION_PREFIX}${invoice.source_invoice_id}`, invoice_number: invoice.invoice_number, client_id: account.client_id, source: "pdf_import" as const, source_invoice_id: invoice.source_invoice_id, source_as_of: invoice.source_as_of })));
   const invoiceOptions: InvoiceOption[] = [...billingOptions, ...reportOnlyOptions];
   const invoiceNumbers = Object.fromEntries(invoiceOptions.map((option) => [option.id, option.invoice_number]));
-  const selectClient = (id: string | null) => { setClientId(id); setWorklistOffset(0); };
+  const selectClient = (id: string | null) => { setClientId(id); setWorklistOffset(0); setEventsOffset(0); };
   const notesByClient = useMemo(() => noteCounts(events), [events]);
   const decisions = approvalRequests(events, holds, viewer, today).filter((item) => item.state !== "approved").length
     + noticesAwaitingSend(events, holds, viewer, today).length;
@@ -148,7 +150,6 @@ export default function CollectionsPage() {
         <section className="bc-cfgsec" aria-label="Needs your decision" style={{ marginTop: 26 }}>
           <h3 className="bc-sect">Needs your decision</h3>
           <p className="bc-hint">Touches 4 and 5 hand off to an Owner or Admin. Escalations and formal notices wait here.</p>
-          {!clientId ? <p className="bc-hint" data-pick-client-events><b>Pick a client above</b> to see their escalations, formal notices and activity.</p> : null}
           <SectionView state={state.events} label="approvals">
             {(rows) => <DecisionsPanel events={rows} {...eventProps} />}
           </SectionView>
@@ -159,6 +160,13 @@ export default function CollectionsPage() {
           <SectionView state={state.events} label="Collections activity">
             {(rows) => <ActivityPanel events={rows} {...eventProps} />}
           </SectionView>
+          {eventsPagination && eventsPagination.total > eventsPagination.limit ? (
+            <div className="bc-row" aria-label="Collections event pages" style={{ display: "flex", alignItems: "center", gap: 10, justifyContent: "flex-end", marginTop: 10 }}>
+              <span className="bc-hint">{eventsPagination.offset + 1}–{Math.min(eventsPagination.offset + eventsPagination.limit, eventsPagination.total)} of {eventsPagination.total} {clientId ? "client events" : "events across all clients"}</span>
+              <button className="btn sm" type="button" disabled={eventsPagination.offset === 0} onClick={() => setEventsOffset(Math.max(0, eventsPagination.offset - eventsPagination.limit))}>Newer</button>
+              <button className="btn sm" type="button" disabled={eventsPagination.offset + eventsPagination.limit >= eventsPagination.total} onClick={() => setEventsOffset(eventsPagination.offset + eventsPagination.limit)}>Older</button>
+            </div>
+          ) : null}
         </section>
         {power ? (
           <section className="bc-card" aria-label="Delivery history" style={{ marginBottom: 20 }}>

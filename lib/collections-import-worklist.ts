@@ -81,7 +81,7 @@ export async function mergeApprovedPdfReceivables(db: QueryClient, result: Colle
   const targetIdentities = usable.map(({ identity }) => identity.canonical_collection_identity!);
   const [{ data: events }, { data: attempts }, { data: holds }] = await Promise.all([
     db.from("collection_events").select("id,canonical_collection_identity,event_type,stage,occurred_at,detail,approves_event_id").in("canonical_collection_identity", targetIdentities).order("occurred_at", { ascending: false }),
-    db.from("collection_delivery_attempts").select("canonical_collection_identity,stage,status,updated_at,created_at").in("canonical_collection_identity", targetIdentities).order("updated_at", { ascending: false }),
+    db.from("collection_delivery_attempts").select("canonical_collection_identity,stage,status,accepted_at,updated_at,created_at").in("canonical_collection_identity", targetIdentities).order("updated_at", { ascending: false }),
     db.from("collection_holds").select("client_id,canonical_collection_identity,released_at,expires_on").in("client_id", clientIds).is("released_at", null),
   ]);
   if (!events || !attempts || !holds) throw new Error("COLLECTIONS_IMPORT_READ_MODEL_FAILED");
@@ -102,11 +102,14 @@ export async function mergeApprovedPdfReceivables(db: QueryClient, result: Colle
   const lastByIdentity = new Map<string, NonNullable<CollectionsInvoice["last_delivery"]>>();
   for (const attempt of attempts || []) {
     if (!lastByIdentity.has(attempt.canonical_collection_identity)) {
-      lastByIdentity.set(attempt.canonical_collection_identity, { stage: attempt.stage, status: attempt.status, occurred_at: attempt.updated_at || attempt.created_at });
+      lastByIdentity.set(attempt.canonical_collection_identity, {
+        stage: attempt.stage, status: attempt.status,
+        occurred_at: attempt.status === "accepted" ? attempt.accepted_at || attempt.updated_at || attempt.created_at : attempt.updated_at || attempt.created_at,
+      });
     }
     if (attempt.status === "accepted") {
       completedByIdentity.set(attempt.canonical_collection_identity, Math.max(completedByIdentity.get(attempt.canonical_collection_identity) || 0, attempt.stage));
-      setCompletedAt(attempt.canonical_collection_identity, attempt.stage, attempt.updated_at || attempt.created_at);
+      if (attempt.accepted_at) setCompletedAt(attempt.canonical_collection_identity, attempt.stage, attempt.accepted_at);
     }
   }
   const awaitingByIdentity = new Map<string, NonNullable<CollectionsInvoice["awaiting_approval"]>>();

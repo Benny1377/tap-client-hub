@@ -212,9 +212,10 @@ export function createBillingApi(fetchImpl: FetchLike) {
     receivables: (clientId?: string | null) => request<ReceivablesResponse>(fetchImpl, withClient("/api/billing/receivables", clientId)),
     payments: (clientId?: string | null) => request<{ payments: Payment[] }>(fetchImpl, withClient("/api/billing/payments", clientId)),
     holds: (clientId?: string | null) => request<{ holds: CollectionHold[] }>(fetchImpl, withClient("/api/collections/holds", clientId)),
-    /** One client's events, newest first. The server requires a client (Phase 5) and pages the result. */
-    events: (clientId: string, options: { eventType?: string; limit?: number; offset?: number } = {}) => {
-      const query = new URLSearchParams({ client_id: clientId });
+    /** Paged events, newest first. Omit clientId for a cross-client activity/approval page. */
+    events: (clientId?: string | null, options: { eventType?: string; limit?: number; offset?: number } = {}) => {
+      const query = new URLSearchParams();
+      if (clientId) query.set("client_id", clientId);
       if (options.eventType) query.set("event_type", options.eventType);
       query.set("limit", String(options.limit ?? 200));
       if (options.offset) query.set("offset", String(options.offset));

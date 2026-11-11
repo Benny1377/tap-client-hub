@@ -79,7 +79,7 @@ export async function GET(request: NextRequest) {
   const billingIds = billingInvoices.map((invoice) => invoice.invoice_id as string);
   if (billingIds.length) {
     const latest = await db.from("collection_delivery_attempts")
-      .select("id,invoice_id,source_invoice_id,canonical_collection_identity,stage,status,created_at,updated_at")
+      .select("id,invoice_id,source_invoice_id,canonical_collection_identity,stage,status,accepted_at,created_at,updated_at")
       .in("canonical_collection_identity", billingInvoices.map((invoice) => invoice.canonical_collection_identity))
       .order("updated_at", { ascending: false }).order("id", { ascending: false });
     if (latest.error) {
@@ -88,7 +88,9 @@ export async function GET(request: NextRequest) {
     const byIdentity = new Map<string, NonNullable<(typeof invoices)[number]["last_delivery"]>>();
     for (const attempt of latest.data || []) {
       if (attempt.canonical_collection_identity && !byIdentity.has(attempt.canonical_collection_identity)) byIdentity.set(attempt.canonical_collection_identity, {
-        stage: attempt.stage, status: attempt.status, occurred_at: attempt.updated_at || attempt.created_at,
+        stage: attempt.stage, status: attempt.status, occurred_at: attempt.status === "accepted"
+          ? attempt.accepted_at || attempt.updated_at || attempt.created_at
+          : attempt.updated_at || attempt.created_at,
       });
     }
     // PDF-sourced rows already carry last_delivery from the merge.

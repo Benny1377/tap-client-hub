@@ -70,6 +70,7 @@ assert.match(dynamicRulesMigration, /create or replace function tap_hub_project\
 assert.match(dynamicRulesMigration, /selected_primary_contact_id/);
 assert.match(contactsRoute, /set_primary_client_contact/);
 assert.match(eventRoute, /invoice:invoices\(invoice_number\)/);
+assert.match(eventRoute, /requireCollectionsAccess/);
 assert.match(holdsRoute, /invoice:invoices\(invoice_number\)/);
 assert.match(eventRoute, /collectionsError/);
 assert.match(holdsRoute, /collectionsError/);

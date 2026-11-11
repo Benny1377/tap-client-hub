@@ -31,13 +31,42 @@ test("first touch stays Friendly and preview does not bypass the ladder", () => 
   assert.match(worklist, /completed_stage/);
 });
 
-test("event history is filtered and paginated with stable validation codes", () => {
+test("event history is optionally client-filtered, paged across clients, and Collections-gated", () => {
   const route = source("app/api/collections/events/route.ts");
   for (const code of ["INVALID_CLIENT_ID", "INVALID_EVENT_TYPE", "INVALID_LIMIT", "INVALID_OFFSET"]) {
     assert.ok(route.includes(code), `missing ${code}`);
   }
   assert.match(route, /occurred_at.*DESC|ascending:\s*false/);
+  assert.match(route, /requireCollectionsAccess/);
+  assert.match(route, /if \(clientId\) query = query\.eq\("client_id", clientId\)/);
   assert.match(route, /pagination:\s*\{\s*limit,\s*offset,\s*total/);
+  assert.match(source("app/collections/page.tsx"), /eventsOffset/);
+});
+
+test("new PDF reports carry invoice identity only on an exact unambiguous client/invoice/date match", () => {
+  const migration = source("supabase/migrations/20261111095644_collections_phase5_identity_cross_client_delivery_fixes.sql");
+  assert.match(migration, /prior\.invoice_number=v_fields->>'invoice_number'/);
+  assert.match(migration, /prior\.transaction_date=\(v_fields->>'transaction_date'\)::date/);
+  assert.match(migration, /s\.client_id=v_client_id/);
+  assert.match(migration, /v_exact_count>1/);
+  assert.match(migration, /v_partial_count>0/);
+  assert.match(migration, /identity_reused/);
+});
+
+test("PDF test delivery is source-aware and synthetic-only; accepted dates drive gaps", () => {
+  const migration = source("supabase/migrations/20261111095644_collections_phase5_identity_cross_client_delivery_fixes.sql");
+  const runner = source("lib/collections-test-run.ts");
+  const readModel = source("lib/collections-import-worklist.ts");
+  assert.match(migration, /v_attempt\.source_invoice_id is null/);
+  assert.match(migration, /not v_client\.is_synthetic/);
+  assert.match(migration, /v_identity\.linked_invoice_id is distinct from v_attempt\.invoice_id/);
+  assert.match(migration, /v_attempt\.stage<=3/);
+  assert.match(migration, /get_collection_test_message_context/);
+  assert.match(runner, /mergeApprovedPdfReceivables/);
+  assert.match(runner, /canonical_collection_identity/);
+  assert.match(runner, /source_invoice_id: invoice\.source === "pdf_import" \? invoice\.source_invoice_id : null/);
+  assert.match(readModel, /accepted_at/);
+  assert.match(readModel, /attempt\.accepted_at\)/);
 });
 
 test("complete-report approval previews and confirms PDF-only clear impact", () => {
@@ -81,6 +110,9 @@ test("Phase 5 migration is included in reset and SQL suite runners", () => {
   assert.ok(source("tools/collections-local/reset.sh").includes(migration));
   assert.ok(source("tools/collections-local/test.sh").includes("collections_phase5_client_feedback.sql"));
   assert.ok(source("supabase/tests/collections_phase5_client_feedback.sql").includes("rollback;"));
+  assert.ok(source("tools/collections-local/reset.sh").includes("20261111095644_collections_phase5_identity_cross_client_delivery_fixes.sql"));
+  assert.ok(source("tools/collections-local/test.sh").includes("collections_phase5_identity_delivery_followups.sql"));
+  assert.ok(source("supabase/tests/collections_phase5_identity_delivery_followups.sql").includes("rollback;"));
 });
 
 test("delivery history schema repair adds accepted timestamp and reason without replacing claim guards", () => {
