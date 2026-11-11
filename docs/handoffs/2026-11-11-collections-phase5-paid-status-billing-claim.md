@@ -5,6 +5,7 @@
 | From / To | Engineer B → Aanan (Engineer A) |
 | Branch | `codex/collections-phase5-review-fixes` |
 | Base | `471ea5b` (`fix(collections): close phase 5 backend review gaps`) |
+| Implementation commit | `aa590de` (`fix(collections): treat cleared A/R balances as paid`) |
 | Scope | A/R zero-balance status plus the Billing-only test-delivery claim fix |
 | Delivery | Disabled outside the local fake-provider tests; no real messages sent |
 
