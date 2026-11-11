@@ -9,7 +9,21 @@ export const n = (value: string | number | null | undefined) => Number(value || 
 export function displayContactValue(value: string | null | undefined): string | null {
   if (!value) return null;
   const cleaned = value.trim().replace(/"+\s*$/, "").trim();
-  return cleaned || null;
+  return cleaned && !/^(?:null|none|n\/a)$/i.test(cleaned) ? cleaned : null;
+}
+/** Show only phone numbers from source fields that sometimes include a contact name or note. */
+export function displayPhoneNumbers(value: string | null | undefined): string[] {
+  const cleaned = displayContactValue(value);
+  if (!cleaned) return [];
+  const numbers: string[] = [];
+  const pattern = /(\+?\(?\d[\d().\s-]{5,}\d)(?:\s*(?:ext\.?|x)\s*(\d+))?/gi;
+  let match: RegExpExecArray | null;
+  while ((match = pattern.exec(cleaned)) !== null) {
+    const number = match[1].replace(/\s+/g, " ").trim();
+    const extension = match[2] ? ` ext ${match[2]}` : "";
+    if (number.replace(/\D/g, "").length >= 7) numbers.push(`${number}${extension}`);
+  }
+  return [...new Set(numbers)];
 }
 export const isPaidInvoice = (invoice: { collection_status?: "open" | "paid"; balance?: string | number | null }) => {
   if (invoice.collection_status) return invoice.collection_status === "paid";
