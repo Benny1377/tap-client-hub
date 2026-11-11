@@ -4,7 +4,7 @@ import { Fragment, useEffect, useState } from "react";
 import type { BillingApi } from "@/lib/billing-ui/api";
 import type { CollectionRule } from "@/lib/billing-ui/types";
 import type { CollectionsReceivablesResponse } from "@/lib/collections-api";
-import { andList, arStats, asOfDate, biggerPicture, dayMonth, dollars, hasBillingInvoices, hasLateCounts, isPaidInvoice, lateTone, mergePages, n, net, nextTouch, noteCountOf, pct, reminderDays, rungChip, sharedContact, sortAccounts, tier, type Account, type SortKey } from "@/lib/billing-ui/ar-insights";
+import { andList, arStats, asOfDate, biggerPicture, dayMonth, dollars, hasBillingInvoices, isPaidInvoice, lateTone, mergePages, n, net, nextTouch, noteCountOf, pct, reminderDays, rungChip, sharedContact, sortAccounts, tier, type Account, type SortKey } from "@/lib/billing-ui/ar-insights";
 import { CallNotes } from "./call-notes";
 
 const PAGE = 200;
@@ -174,8 +174,8 @@ export function AccountsWhoIsWhere({ book, rules }: { book: CollectionsReceivabl
   const [sort, setSort] = useState<{ key: SortKey; ascending: boolean }>({ key: "score", ascending: false });
   const [open, setOpen] = useState<ReadonlySet<string>>(new Set());
   const accounts = sortAccounts(book.accounts, sort.key, sort.ascending);
-  // The late-payment column appears once the backend returns the count (Phase 5 contract, item 4).
-  const showLate = hasLateCounts(book.accounts);
+  // Times late is always shown; a client with no late record reads 0×.
+  const showLate = true;
   const finalRule = book.accounts.find((account) => (account as Account).late_beyond_final)?.late_beyond_final;
   const owe = book.accounts.filter((account) => net(account) > 0);
   const inCredit = book.accounts.filter((account) => net(account) < 0);
