@@ -42,3 +42,12 @@ test("Operations client import is sandbox-only, Owner/Admin-only and uses the tr
   assert.match(migration, /operations_source_contact_id/);
   assert.match(migration, /operations_import/);
 });
+
+test("Operations import validates contact client IDs against the source client payload", async () => {
+  const fs = await import("node:fs");
+  const migration = fs.readFileSync(new URL("../supabase/migrations/20261110131729_operations_import_source_client_preflight.sql", import.meta.url), "utf8");
+  const contactClientPreflight = migration.match(/if exists \(\s*select 1\s*from jsonb_array_elements\(p_contacts\) c[\s\S]*?'reason', 'contact_has_unknown_source_client'\)\);/);
+  assert.ok(contactClientPreflight, "unknown-source contact preflight should remain present");
+  assert.match(contactClientPreflight[0], /jsonb_array_elements\(p_clients\) source_client[\s\S]*source_client->>'source_client_id' = c->>'source_client_id'/);
+  assert.doesNotMatch(contactClientPreflight[0], /v_map/);
+});
