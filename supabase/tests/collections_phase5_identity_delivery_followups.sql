@@ -18,6 +18,7 @@ declare
   v_linked_delivery_identity uuid := gen_random_uuid();
   v_accepted_attempt uuid := gen_random_uuid();
   v_linked_attempt uuid := gen_random_uuid();
+  v_billing_attempt uuid := gen_random_uuid();
   v_exact_row uuid := gen_random_uuid();
   v_ambiguous_row uuid := gen_random_uuid();
   v_partial_row uuid := gen_random_uuid();
@@ -113,6 +114,14 @@ begin
   if coalesce((v_context->>'eligible')::boolean,false) is not true or v_context->>'invoice_number'<>'DELIVERY-1' then
     raise exception 'Synthetic PDF-only message context was not resolved safely: %',v_context;
   end if;
+  if tap_hub_project.accept_collection_delivery(v_attempt,'fake_phase5_pdf_accept',v_actor) is not true then
+    raise exception 'PDF-only test delivery should be accepted by the local fake-provider harness';
+  end if;
+  if not exists(select 1 from tap_hub_project.collection_events where detail->>'delivery_attempt_id'=v_attempt::text
+    and event_type='reminder_logged' and source='pdf_import' and invoice_id is null
+    and source_invoice_id=v_delivery_identity and canonical_collection_identity='pdf_import:'||v_delivery_identity::text) then
+    raise exception 'Accepted PDF-only reminder must be recorded against its source identity';
+  end if;
 
   insert into tap_hub_project.collection_delivery_attempts
     (id,client_id,invoice_id,source,source_invoice_id,canonical_collection_identity,stage,status,idempotency_key,actor)
@@ -123,6 +132,19 @@ begin
   v_context:=tap_hub_project.get_collection_test_message_context(v_linked_attempt);
   if coalesce((v_context->>'eligible')::boolean,false) is not true or v_context->>'invoice_number'<>'DELIVERY-2' then
     raise exception 'Linked PDF source message context did not use the PDF-selected invoice: %',v_context;
+  end if;
+
+  -- A malformed imported contact value (including the observed trailing quote)
+  -- must be blocked by the database guard even if it is non-empty.
+  update tap_hub_project.contacts set email='alex@example.invalid"'
+    where client_id=v_client and is_primary and category='client';
+  insert into tap_hub_project.collection_delivery_attempts
+    (id,client_id,invoice_id,source,source_invoice_id,canonical_collection_identity,stage,status,idempotency_key,actor)
+  values(v_billing_attempt,v_client,'20000000-0000-4000-8000-000000000001','billing',null,
+    'billing:20000000-0000-4000-8000-000000000001',1,'queued','phase5-invalid-contact:'||v_billing_attempt::text,v_actor);
+  v_reason:=tap_hub_project.claim_collection_test_delivery(v_billing_attempt,v_actor);
+  if v_reason<>'EMAIL_CONTACT_INVALID' then
+    raise exception 'Malformed primary email must be rejected before the Billing claim, got %',v_reason;
   end if;
 end;
 $$;

@@ -43,6 +43,7 @@ export const DELIVERY_REASON_LABELS: Record<CollectionsDeliveryReasonCode, strin
   UNALLOCATED_CREDIT_REVIEW: "Credit/payment needs review.",
   CONTACT_REVIEW_REQUIRED: "Choose one primary contact with an email.",
   EMAIL_CONTACT_MISSING: "No client email is available.",
+  EMAIL_CONTACT_INVALID: "The primary contact email address is invalid.",
   BELOW_MINIMUM_BALANCE: "Balance is below the configured minimum.",
   RULE_DISABLED: "This reminder stage is turned off.",
   APPROVAL_REQUIRED: "Owner/Admin approval is required.",

@@ -18,7 +18,8 @@ for test_file in \
   collections_phase2_configuration.sql \
   collections_phase4_intake_schema.sql \
   collections_phase5_client_feedback.sql \
-  collections_phase5_identity_delivery_followups.sql; do
+  collections_phase5_identity_delivery_followups.sql \
+  collections_phase5_delivery_relink_safety.sql; do
   echo "Running $test_file"
   psql "$db_url" -X -v ON_ERROR_STOP=1 -f "$project_root/supabase/tests/$test_file" >/dev/null
 done

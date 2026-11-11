@@ -173,3 +173,13 @@ Apply migrations to the shared Sandbox only after local synthetic review and own
 - Engineer A (consumer): author, 2026-11-10.
 - Engineer B (producer): review pending.
 - Owner: D1–D5 approved 2026-11-10.
+
+## Backend review clarifications (2026-11-11)
+
+- The synthetic test runner fills the Billing worklist's canonical identity as `billing:<invoice_id>` when the lower-level SQL worklist omits that API-enrichment field. PDF rows continue to use the approved canonical identity. Missing PDF identity fails closed.
+- On provider acceptance, the single `reminder_logged` event copies the attempt's source and canonical identity. PDF-source events use `invoice_id: null` and `source_invoice_id`; Billing-source events use `invoice_id` and no PDF ID.
+- Test-delivery eligibility rejects malformed primary contact email values with `EMAIL_CONTACT_INVALID`; it does not repair or rewrite Operations contact data. The configured test recipient remains the only provider recipient.
+- An approved client relink records the prior A/R client name as a normalized alias of the Operations-linked target, then deactivates the now-empty A/R-only source client. The existing client row and canonical invoice identities remain for history. Alias collisions are not guessed: auto-match requires exactly one active client candidate and otherwise leaves the row unmatched for review. Each relink writes a summary audit row with moved identity/hold/event/attempt counts; route errors use stable text and never return raw database exception messages.
+- `direct_escalation_threshold` remains in settings for the high-balance internal stage-4 path and worklist metric; it does not let automatic reminders skip ahead of Friendly, Professional, or Firm.
+
+These clarifications do not authorize a Sandbox migration, production change, source-data cleanup, or live delivery. Validate the migration locally and have Engineer A verify the already-applied Sandbox version before integrated reruns.

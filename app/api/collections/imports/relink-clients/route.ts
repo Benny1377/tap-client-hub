@@ -44,7 +44,12 @@ export async function POST(request: Request) {
       : status === 404 ? "IMPORT_CLIENT_NOT_FOUND"
       : status === 409 ? "IMPORT_CLIENT_RELINK_CONFLICT"
       : "IMPORT_CLIENT_RELINK_FAILED";
-    return NextResponse.json({ error: status === 500 ? "Unable to relink Collections client accounts" : error.message, code }, { status, headers: NO_STORE });
+    const message = status === 403 ? "Only an active Owner or Admin may relink client accounts."
+      : status === 400 ? "The client relink request is invalid."
+      : status === 404 ? "The source or target client was not found."
+      : status === 409 ? "The client relink conflicts with the current account data or state."
+      : "Unable to relink Collections client accounts.";
+    return NextResponse.json({ error: message, code }, { status, headers: NO_STORE });
   }
   return NextResponse.json(data, { status: 200, headers: NO_STORE });
 }

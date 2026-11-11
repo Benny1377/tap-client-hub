@@ -65,7 +65,7 @@ test("PDF test delivery is source-aware and synthetic-only; accepted dates drive
   assert.match(migration, /get_collection_test_message_context/);
   assert.match(runner, /mergeApprovedPdfReceivables/);
   assert.match(runner, /canonical_collection_identity/);
-  assert.match(runner, /source_invoice_id: invoice\.source === "pdf_import" \? invoice\.source_invoice_id : null/);
+  assert.match(runner, /source_invoice_id: source === "pdf_import" \? invoice\.source_invoice_id : null/);
   assert.match(readModel, /accepted_at/);
   assert.match(readModel, /attempt\.accepted_at\)/);
 });
