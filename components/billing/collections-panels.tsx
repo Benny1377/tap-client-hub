@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import type { ApiResult } from "@/lib/billing-ui/api";
 import type { CollectionEvent, CollectionHold, Viewer } from "@/lib/billing-ui/types";
 import { LOGGABLE_EVENT_TYPES, validateEvent, validateHold, validateReason } from "@/lib/billing-ui/validation";
@@ -90,8 +91,12 @@ export function HoldsPanel({ holds, clientId, clientNames, invoiceOptions, viewe
   onRelease: (holdId: string) => Mutation;
 }) {
   const power = viewerIsPowerUser(viewer);
+  // With no page-wide client, the hold form picks its own client.
+  const [chosenClient, setChosenClient] = useState("");
+  const holdClient = clientId || chosenClient || null;
   const invoiceNumbers = Object.fromEntries(invoiceOptions.map((option) => [option.id, option.invoice_number]));
-  const clientInvoices = invoiceOptions.filter((option) => option.client_id === clientId);
+  const clientInvoices = invoiceOptions.filter((option) => option.client_id === holdClient);
+  const clientChoices = Object.entries(clientNames).sort((a, b) => a[1].localeCompare(b[1]));
   return (
     <div className="bc-exlist">
       {holds.length === 0 ? <div className="bc-exrow"><span className="why">No holds.</span></div> : holds.map((hold) => {
@@ -123,26 +128,34 @@ export function HoldsPanel({ holds, clientId, clientNames, invoiceOptions, viewe
         );
       })}
       {power ? (
-        clientId ? (
           <details className="bc-exadd">
-            <summary>+ Place a hold for {clientNames[clientId] || "this client"}</summary>
+            <summary>+ Place a hold{holdClient ? ` for ${clientNames[holdClient] || "this client"}` : ""}</summary>
             <section aria-label="Place hold" style={{ maxWidth: 440 }}>
+              {!clientId ? (
+                <label className="bc-field"><span>Client</span>
+                  <select className="bc-in" data-hold-client value={chosenClient} onChange={(event) => setChosenClient(event.target.value)}>
+                    <option value="">Choose a client…</option>
+                    {clientChoices.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
+                  </select>
+                </label>
+              ) : null}
+              {holdClient ? (<>
               <LedgerForm
-                key={`hold-${clientId}-${today}`}
+                key={`hold-${holdClient}-${today}`}
                 fields={[
                   { name: "reason", label: "Reason", type: "textarea" },
                   { name: "invoice_id", label: "Applies to", type: "select", optional: true, options: clientInvoices.map((option) => ({ value: option.id, label: `Invoice ${optionLabel(option)} only` })) },
                   { name: "expires_on", label: "Review by", type: "date", optional: true },
                 ]}
-                initialValues={{ client_id: clientId, reason: "", invoice_id: "", expires_on: "" }}
+                initialValues={{ client_id: holdClient, reason: "", invoice_id: "", expires_on: "" }}
                 validate={(values) => validateHold(values, today)}
                 onSubmit={onPlace}
                 submitLabel="Place hold"
               />
               <p className="bc-note">Leave &ldquo;Applies to&rdquo; empty to hold the whole client.</p>
+              </>) : null}
             </section>
           </details>
-        ) : <div className="bc-exadd bc-small">Choose a client to place a hold.</div>
       ) : <div className="bc-exadd bc-small"><OwnerAdminOnly action="Placing or releasing a hold" /></div>}
     </div>
   );
