@@ -6,18 +6,21 @@ import { readyData } from "@/lib/billing-ui/ledger";
 import { approvalRequests, noticesAwaitingSend, stageLabelsFrom, todayIso, viewerIsPowerUser } from "@/lib/billing-ui/view-model";
 import { useLedger } from "@/components/billing/use-ledger";
 import { ClientPicker, ErrorBanner, OwnerAdminOnly, SectionView } from "@/components/billing/ui";
-import { ActiveHoldBanner, ActivityPanel, DecisionsPanel, HoldsPanel, PDF_OPTION_PREFIX, type InvoiceOption } from "@/components/billing/collections-panels";
+import { ActiveHoldBanner, DecisionsPanel, HoldsPanel, PDF_OPTION_PREFIX, type InvoiceOption } from "@/components/billing/collections-panels";
 import { AutomationPreviewPanel, LadderSummary } from "@/components/billing/worklist-panels";
 import { FiveTouchLadder, PipelineOverview } from "@/components/billing/pipeline-design";
 import { AccountsWhoIsWhere, ArInsights, useWholeBook } from "@/components/billing/ar-insights";
 import { CollectionsRulesEditor } from "@/components/billing/collections-rules-editor";
 import { DeliveryHistoryPanel, DeliverySetupPanel } from "@/components/billing/delivery-panels";
 import { ImportPermissionsPanel, ImportsPanel } from "@/components/billing/import-panels";
+import { EmailLogPanel } from "@/components/billing/email-log-panel";
+import { noteCounts } from "@/lib/billing-ui/ar-insights";
 
 const WORKLIST_PAGE = 50;
 const TABS = [
   { id: "insights", label: "AR Insights" },
   { id: "pipeline", label: "Pipeline" },
+  { id: "emails", label: "Email log" },
   { id: "imports", label: "A/R reports" },
   { id: "setup", label: "Setup and rules" },
 ] as const;
@@ -59,6 +62,8 @@ export default function CollectionsPage() {
   const { rules, firm_timezone: firmTimezone } = ruleSettings;
   const stageLabels = stageLabelsFrom(rules);
   const power = viewerIsPowerUser(viewer);
+  // Owner decision D5: the email log is for Owners, Admins and staff with the Collections module.
+  const seesEmailLog = power || Boolean(viewer?.modules?.some((module) => module.toLowerCase() === "collections"));
   // The server's firm date drives hold and ladder rules; fall back to the browser
   // date only while neither read model has loaded.
   const today = worklist?.as_of_date || receivables.as_of_date || todayIso();
@@ -72,6 +77,7 @@ export default function CollectionsPage() {
   const invoiceOptions: InvoiceOption[] = [...billingOptions, ...reportOnlyOptions];
   const invoiceNumbers = Object.fromEntries(invoiceOptions.map((option) => [option.id, option.invoice_number]));
   const selectClient = (id: string | null) => { setClientId(id); setWorklistOffset(0); };
+  const notesByClient = useMemo(() => noteCounts(events), [events]);
   const decisions = approvalRequests(events, holds, viewer, today).filter((item) => item.state !== "approved").length
     + noticesAwaitingSend(events, holds, viewer, today).length;
 
@@ -102,7 +108,7 @@ export default function CollectionsPage() {
     <div className="bc-page">
       <div className="bc-tabrow">
         <div className="bc-subnav" role="tablist" aria-label="Collections views">
-          {TABS.map((item) => (
+          {TABS.filter((item) => item.id !== "emails" || seesEmailLog).map((item) => (
             <button
               key={item.id}
               type="button"
@@ -125,7 +131,7 @@ export default function CollectionsPage() {
 
       <TabPanel id="insights" active={tab}>
         <section aria-label="AR insights">
-          {book ? <ArInsights book={book} rules={rules} /> : bookFailed ? <ErrorBanner kind="server" message={bookFailed} /> : <p className="sub" role="status">Loading AR insights…</p>}
+          {book ? <ArInsights book={book} rules={rules} notes={{ api, counts: notesByClient, firmTimezone, onAdded: () => { void refreshLedger(); } }} /> : bookFailed ? <ErrorBanner kind="server" message={bookFailed} /> : <p className="sub" role="status">Loading AR insights…</p>}
         </section>
       </TabPanel>
 
@@ -146,13 +152,6 @@ export default function CollectionsPage() {
             {(rows) => <DecisionsPanel events={rows} {...eventProps} />}
           </SectionView>
         </section>
-        <section className="bc-cfgsec" aria-label="Activity">
-          <h3 className="bc-sect">Activity</h3>
-          <p className="bc-hint">Every call, reminder, promise to pay, and decision, newest first.</p>
-          <SectionView state={state.events} label="Collections activity">
-            {(rows) => <ActivityPanel events={rows} {...eventProps} />}
-          </SectionView>
-        </section>
         {power ? (
           <section className="bc-card" aria-label="Delivery history" style={{ marginBottom: 20 }}>
             <h3 className="bc-sect">Delivery history</h3>
@@ -164,6 +163,10 @@ export default function CollectionsPage() {
           <h3 className="bc-sect">Automation preview</h3>
           <AutomationPreviewPanel viewer={viewer} runPreview={(params) => api.preview(params)} stageLabels={stageLabels} />
         </section>
+      </TabPanel>
+
+      <TabPanel id="emails" active={tab}>
+        {seesEmailLog ? <EmailLogPanel api={api} clientId={clientId} clientNames={clientNames} stageLabels={stageLabels} firmTimezone={firmTimezone} canSeeAll={power} refreshKey={deliveryRefreshKey} /> : null}
       </TabPanel>
 
       <TabPanel id="imports" active={tab}>

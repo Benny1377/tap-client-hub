@@ -2,18 +2,22 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { getDeliveryStatus, isSyntheticOnlyEnabled, isWithinSendWindow } from "@/lib/collections-delivery";
 import { resendPayloadFingerprint, sendResendEmail } from "@/lib/collections-provider";
 import { renderCollectionsTemplate } from "@/lib/collections-template";
+import { mergeApprovedPdfReceivables } from "@/lib/collections-import-worklist";
+import type { CollectionsAccount, CollectionsInvoice, CollectionsReceivablesResponse } from "@/lib/collections-api";
 
 type RunCounts = { run_id: string; claimed: number; accepted: number; suppressed: number; needs_review: number; failed: number; remaining: number };
-type WorklistInvoice = {
-  invoice_id: string; invoice_number: string; balance: string; days_past_due: number; due_date: string;
-  next_stage: number | null; completed_stage?: number; awaiting_approval?: unknown; on_hold: boolean;
-  credit_review_required: boolean; contact_review_required: boolean; below_minimum: boolean;
-};
-type WorklistAccount = { client_id: string; invoices: WorklistInvoice[] };
+type WorklistInvoice = Pick<CollectionsInvoice, "invoice_id" | "source_invoice_id" | "source" | "canonical_collection_identity" | "invoice_number" | "balance" | "days_past_due" | "due_date" | "next_stage" | "completed_stage" | "next_stage_eligible_on" | "awaiting_approval" | "on_hold" | "credit_review_required" | "contact_review_required" | "below_minimum" | "discrepancy_status">;
+type WorklistAccount = Pick<CollectionsAccount, "client_id" | "invoices">;
 type Candidate = { account: WorklistAccount; invoice: WorklistInvoice; stage: number };
-type WorklistPage = { accounts?: WorklistAccount[]; pagination?: { total_accounts?: number } };
+type WorklistPage = CollectionsReceivablesResponse;
 
 function stripTags(value: string) { return value.replace(/<[^>]*>/g, ""); }
+
+function isValidContactEmail(value: string) {
+  // Contacts are stored as a bare address, not a display-name mailbox. Reject
+  // whitespace, quotes and incomplete domains before either test-provider path.
+  return /^[^\s@"<>]+@[^\s@"<>]+\.[^\s@"<>]+$/.test(value);
+}
 
 /**
  * Whether an approved A/R report linked to this Billing invoice disagrees with Billing
@@ -60,7 +64,7 @@ export async function runCollectionsTestDelivery(actor: string | null, limit = 5
   const db = createAdminClient();
   const [{ data: rules, error: rulesError }, { data: settings, error: settingsError }] = await Promise.all([
     db.from("collection_ladder_rules").select("stage,automatic,enabled,subject_template,body_template").order("stage"),
-    db.from("collection_settings").select("minimum_balance,direct_escalation_threshold,timezone,send_start,send_end,weekdays_only").eq("id", "default").maybeSingle(),
+    db.from("collection_settings").select("minimum_balance,timezone,send_start,send_end,weekdays_only").eq("id", "default").maybeSingle(),
   ]);
   if (rulesError || settingsError || !settings) return null;
   // Outside the firm's hours nothing is created; the next eligible run picks the work up.
@@ -68,21 +72,39 @@ export async function runCollectionsTestDelivery(actor: string | null, limit = 5
   const ruleMap = new Map<number, { stage: number; automatic: boolean; enabled: boolean; subject_template: string; body_template: string }>(
     ((rules || []) as Array<{ stage: number; automatic: boolean; enabled: boolean; subject_template: string; body_template: string }>).map((rule) => [Number(rule.stage), rule]),
   );
-  const worklist: WorklistAccount[] = [];
+  let response: CollectionsReceivablesResponse | null = null;
+  const accounts: CollectionsReceivablesResponse["accounts"] = [];
   for (let offset = 0; offset < 10000; offset += 200) {
     const { data, error } = await db.rpc("get_collections_worklist", { p_client_id: null, p_as_of_date: null, p_limit: 200, p_offset: offset, p_sort_order: "stable" });
     if (error || !data) return null;
     const page = data as WorklistPage;
     const rows = page.accounts || [];
-    worklist.push(...rows);
+    response ||= { ...page, accounts: [] };
+    accounts.push(...rows);
     if (!rows.length || offset + rows.length >= Number(page.pagination?.total_accounts || 0)) break;
   }
+  if (!response) return null;
+  response.accounts = accounts;
+  let merged: CollectionsReceivablesResponse;
+  try { merged = await mergeApprovedPdfReceivables(db, response); } catch { return null; }
+  // The SQL worklist is intentionally Billing-focused and doesn't include the
+  // API route's source metadata. Fill the same Billing identity defaults here
+  // before querying/creating delivery attempts.
+  const worklist = merged.accounts.map((account) => ({
+    ...account,
+    invoices: (account.invoices || []).map((invoice) => {
+      const source = invoice.source || "billing";
+      const canonical = invoice.canonical_collection_identity
+        || (source === "billing" && invoice.invoice_id ? `billing:${invoice.invoice_id}` : null);
+      return {
+        ...invoice,
+        source,
+        canonical_collection_identity: canonical,
+      };
+    }),
+  })) as WorklistAccount[];
   const invoiceRows = worklist.flatMap((account) => (account.invoices || []).map((invoice) => ({ account, invoice })));
-  const allCandidates: Candidate[] = invoiceRows.map((row) => {
-    const directEscalation = Number(row.invoice.balance) >= Number(settings.direct_escalation_threshold)
-      && Number(row.invoice.completed_stage || 0) < 4 && !row.invoice.awaiting_approval;
-    return { ...row, stage: directEscalation ? 4 : Number(row.invoice.next_stage || 0) };
-  })
+  const allCandidates: Candidate[] = invoiceRows.map((row) => ({ ...row, stage: Number(row.invoice.next_stage || 0) }))
     .filter(({ invoice, stage }) => stage >= 1 && stage <= 4 && !invoice.on_hold
       && (stage >= 4 || (!invoice.credit_review_required && !invoice.contact_review_required && !invoice.below_minimum))
       && Number(invoice.balance) >= Number(settings.minimum_balance))
@@ -108,22 +130,35 @@ export async function runCollectionsTestDelivery(actor: string | null, limit = 5
 
   const counts: RunCounts = { run_id: crypto.randomUUID(), claimed: 0, accepted: 0, suppressed: 0, needs_review: 0, failed: 0, remaining: 0 };
   for (const { account, invoice, stage } of candidates) {
+    const source = invoice.source || "billing";
+    const identity = invoice.canonical_collection_identity
+      || (source === "billing" && invoice.invoice_id ? `billing:${invoice.invoice_id}` : null);
+    if (!identity || (source === "pdf_import" && !invoice.source_invoice_id)) {
+      counts.suppressed++;
+      continue;
+    }
     const rule = ruleMap.get(stage)!;
-    const [{ data: client }, { data: sourceInvoice }, { data: existing }, { data: contactRows }] = await Promise.all([
+    const [{ data: client }, sourceInvoiceResult, { data: existing }, { data: contactRows }] = await Promise.all([
       db.from("clients").select("id,is_synthetic").eq("id", account.client_id).maybeSingle(),
-      db.from("invoices").select("id,is_synthetic").eq("id", invoice.invoice_id).maybeSingle(),
-      db.from("collection_delivery_attempts").select("id,status,attempt_count,reason_code,last_error_code").eq("canonical_collection_identity", `billing:${invoice.invoice_id}`).eq("stage", stage).maybeSingle(),
+      invoice.invoice_id
+        ? db.from("invoices").select("id,is_synthetic").eq("id", invoice.invoice_id).maybeSingle()
+        : Promise.resolve({ data: null }),
+      db.from("collection_delivery_attempts").select("id,status,attempt_count,reason_code,last_error_code")
+        .eq("canonical_collection_identity", identity).eq("stage", stage).maybeSingle(),
       db.from("contacts").select("id,name,email,is_primary,category").eq("client_id", account.client_id).eq("category", "client").eq("is_primary", true),
     ]);
+    const sourceInvoice = sourceInvoiceResult.data;
     // Attempts already handled (accepted, sending, needs review, failed) are not
     // part of this run: no new send and no count.
     if (existing && existing.status !== "suppressed" && existing.status !== "queued") continue;
     // Pre-checks run before any reopen so a skipped attempt is never left queued.
     const contacts = contactRows || [];
-    const preReason = !client?.is_synthetic || !sourceInvoice?.is_synthetic ? "SYNTHETIC_DATA_REQUIRED"
-      : await sourceDiscrepancyBlocked(db, invoice.invoice_id) ? "SOURCE_DISCREPANCY_BLOCKED"
+    const primaryEmail = contacts.length === 1 ? String(contacts[0].email || "").trim() : "";
+    const preReason = !client?.is_synthetic || (invoice.invoice_id !== null && !sourceInvoice?.is_synthetic) ? "SYNTHETIC_DATA_REQUIRED"
+      : invoice.discrepancy_status === "blocked" || (source === "billing" && invoice.invoice_id && await sourceDiscrepancyBlocked(db, invoice.invoice_id)) ? "SOURCE_DISCREPANCY_BLOCKED"
       : stage <= 3 && contacts.length !== 1 ? "CONTACT_REVIEW_REQUIRED"
-      : stage <= 3 && !contacts[0].email ? "EMAIL_CONTACT_MISSING"
+      : stage <= 3 && !primaryEmail ? "EMAIL_CONTACT_MISSING"
+      : stage <= 3 && !isValidContactEmail(primaryEmail) ? "EMAIL_CONTACT_INVALID"
       : null;
     if (preReason) {
       if (existing && ["queued", "suppressed"].includes(existing.status)) {
@@ -143,11 +178,14 @@ export async function runCollectionsTestDelivery(actor: string | null, limit = 5
         attemptId = reopened.id;
       } else attemptId = existing.id;
     }
-    const idem = `collections:billing:${invoice.invoice_id}:stage:${stage}`;
+    const idem = `collections:${identity}:stage:${stage}`;
     if (!attemptId) {
       const { data: attempt, error: insertError } = await db.from("collection_delivery_attempts").insert({
-        client_id: account.client_id, invoice_id: invoice.invoice_id, source: "billing", source_invoice_id: null,
-        canonical_collection_identity: `billing:${invoice.invoice_id}`, stage, status: "queued", idempotency_key: idem,
+        client_id: account.client_id, invoice_id: invoice.invoice_id, source,
+        // A Billing-selected linked row may expose its PDF alias for display,
+        // but the attempt's source identity must contain exactly one side.
+        source_invoice_id: source === "pdf_import" ? invoice.source_invoice_id : null,
+        canonical_collection_identity: identity, stage, status: "queued", idempotency_key: idem,
         reason_code: null, actor,
       }).select("id").maybeSingle();
       if (insertError || !attempt) { counts.suppressed++; continue; }

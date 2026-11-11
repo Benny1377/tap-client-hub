@@ -11,6 +11,7 @@ export interface LedgerState {
   payments: SectionState<Payment[]>;
   holds: SectionState<CollectionHold[]>;
   events: SectionState<CollectionEvent[]>;
+  eventsPagination: { limit: number; offset: number; total: number } | null;
   worklist: SectionState<CollectionsReceivablesResponse>;
   rules: SectionState<CollectionRuleSettings>;
 }
@@ -18,6 +19,7 @@ export interface LedgerState {
 export interface LedgerOptions {
   worklistLimit?: number;
   worklistOffset?: number;
+  eventsOffset?: number;
 }
 
 export function loadingLedger(): LedgerState {
@@ -27,6 +29,7 @@ export function loadingLedger(): LedgerState {
     payments: { status: "loading" },
     holds: { status: "loading" },
     events: { status: "loading" },
+    eventsPagination: null,
     worklist: { status: "loading" },
     rules: { status: "loading" },
   };
@@ -48,7 +51,10 @@ export async function loadLedger(api: BillingApi, clientId: string | null, secti
     wanted.has("receivables") && api.receivables(clientId).then((r) => { state.receivables = toSection(r, (d) => ({ ...d, receivables: d.receivables || [] })); }),
     wanted.has("payments") && api.payments(clientId).then((r) => { state.payments = toSection(r, (d) => d.payments || []); }),
     wanted.has("holds") && api.holds(clientId).then((r) => { state.holds = toSection(r, (d) => d.holds || []); }),
-    wanted.has("events") && api.events(clientId).then((r) => { state.events = toSection(r, (d) => d.events || []); }),
+    wanted.has("events") && api.events(clientId, { limit: 200, offset: options.eventsOffset || 0 }).then((r) => {
+      state.events = toSection(r, (d) => d.events || []);
+      if (r.ok) state.eventsPagination = r.data.pagination || null;
+    }),
     wanted.has("worklist") && api.worklist({ clientId, limit: options.worklistLimit, offset: options.worklistOffset })
       .then((r) => { state.worklist = toSection(r, (d) => d); }),
     wanted.has("rules") && api.rules().then((r) => { state.rules = toSection(r, (d) => ({ ...d, rules: d.rules || [], firm_timezone: d.firm_timezone || "America/Chicago" })); }),

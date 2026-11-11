@@ -3,7 +3,7 @@
 import { useState } from "react";
 import type { CollectionRule } from "@/lib/billing-ui/types";
 import type { CollectionsReceivablesResponse } from "@/lib/collections-api";
-import { arStats, biggerPicture, dayMonth, dollars, isGateStage, ladderOf, n, pct } from "@/lib/billing-ui/ar-insights";
+import { arStats, biggerPicture, dayMonth, dollars, isGateStage, isOpenInvoice, ladderOf, ladderStep, n, pct } from "@/lib/billing-ui/ar-insights";
 
 const whenLabel = (days: number) => (days < 0 ? `${Math.abs(days)} days before due` : days === 0 ? "on the due date" : days === 1 ? "1 day past due" : `${days} days past due`);
 
@@ -14,10 +14,12 @@ export function PipelineOverview({ book, rules }: { book: CollectionsReceivables
   const oldest = book.summary.oldest_days_past_due;
   const ladder = ladderOf(rules);
   const invoices = book.accounts.flatMap((account) => account.invoices);
-  const stages = ladder.map((rule, index) => {
-    const low = rule.days_past_due, high = ladder[index + 1] ? ladder[index + 1].days_past_due - 1 : Infinity;
-    const inBand = invoices.filter((invoice) => invoice.days_past_due >= low && invoice.days_past_due <= high);
-    return { rule, band: Number.isFinite(high) ? `Day ${low}–${high}` : `Day ${low}+`, auto: !isGateStage(rule.stage), count: inBand.length, amount: inBand.reduce((sum, invoice) => sum + n(invoice.balance), 0) };
+  const openInvoices = invoices.filter(isOpenInvoice);
+  // Each invoice sits on the touch the server says it is on (next due, or last completed), not where its age would put it,
+  // so a first upload starts everything at the first touch.
+  const stages = ladder.map((rule) => {
+    const onTouch = openInvoices.filter((invoice) => ladderStep(invoice) === rule.stage);
+    return { rule, band: `Touch ${rule.stage}`, auto: !isGateStage(rule.stage), count: onTouch.length, amount: onTouch.reduce((sum, invoice) => sum + n(invoice.balance), 0) };
   });
   const pAuto = stages.filter((stage) => stage.auto).reduce((sum, stage) => sum + stage.amount, 0);
   const pYou = stages.filter((stage) => !stage.auto).reduce((sum, stage) => sum + stage.amount, 0);
@@ -34,7 +36,7 @@ export function PipelineOverview({ book, rules }: { book: CollectionsReceivables
         <div className="stat"><div className="k">Over 90 days</div><div className="v num" style={{ color: "var(--amber)" }}>{dollars(stats.d90)}</div><div className="d">{pct(stats.d90, stats.tot)}% of AR · the danger zone</div></div>
         <div className="stat"><div className="k">Chronic accounts</div><div className="v num">{picture.chronic}</div><div className="d">3+ unpaid invoices · {dollars(picture.chronicTotal)}</div></div>
         <div className="stat"><div className="k">Staff time to run it</div><div className="v num">$0<span style={{ fontSize: 14, color: "var(--muted)" }}> / mo</span></div><div className="d">every reminder sent in the firm&apos;s name</div></div>
-        <div className="stat"><div className="k">Stops the moment they pay</div><div className="v num">Yes</div><div className="d">a payment placed in Billing takes them off the ladder</div></div>
+        <div className="stat"><div className="k">Stops when the balance is cleared</div><div className="v num">Yes</div><div className="d">a Billing payment or approved A/R report takes it off the ladder</div></div>
         <div className="stat"><div className="k">Oldest invoice</div><div className="v num">{oldest}<span style={{ fontSize: 14, color: "var(--muted)" }}> days</span></div><div className="d">no follow-up behind it until now</div></div>
       </div>
       {stages.length ? (
@@ -42,14 +44,14 @@ export function PipelineOverview({ book, rules }: { book: CollectionsReceivables
           <h3>Where the money sits in the ladder<span><span className="chip c-brand">Automated handles {dollars(pAuto)}</span> <span className="chip c-amber">Your attention: {dollars(pYou)} · {pct(pYou, pAuto + pYou)}%</span></span></h3>
           {stages.map((stage) => (
             <div key={stage.rule.stage} className="cx-stage" data-stage-band={stage.rule.stage}>
-              <div><b>{stage.band}</b><div className="sub">{stage.rule.label}</div></div>
+              <div><b>{stage.band}</b><div className="sub">{stage.rule.label} · from day {stage.rule.days_past_due}</div></div>
               <div className="cx-bar"><i className={stage.auto ? "" : "you"} style={{ width: `${stage.amount ? Math.max(1.5, (stage.amount / max) * 100) : 0}%` }} /></div>
               <span className={`chip ${stage.auto ? "c-brand" : "c-amber"}`}>{stage.auto ? "Automated" : "Needs you"}</span>
               <b className="num" style={{ textAlign: "right" }}>{stage.amount ? dollars(stage.amount) : "—"}</b>
               <span className="sub" style={{ textAlign: "right" }}>{stage.count} inv</span>
             </div>
           ))}
-          <p className="fine" style={{ border: "none", marginTop: 10, paddingTop: 0 }}>{dollars(stats.tot)} across {invoices.length} open invoices{notDue > 0.5 ? ` (${dollars(notDue)} not yet due)` : ""}, less {dollars(-stats.credits)} in credits = <b>{dollars(stats.net)} net AR</b>. The ladder clears everything under {stats.cut} days on its own; the agent hands you only the {stats.cut}+ accounts — ranked for you in <b>AR Insights</b>.</p>
+          <p className="fine" style={{ border: "none", marginTop: 10, paddingTop: 0 }}>{dollars(stats.tot)} across {openInvoices.length} open invoices{notDue > 0.5 ? ` (${dollars(notDue)} not on a touch yet: not due, on hold or below the minimum)` : ""}, less {dollars(-stats.credits)} in credits = <b>{dollars(stats.net)} net AR</b>. The ladder clears everything under {stats.cut} days on its own; the agent hands you only the {stats.cut}+ accounts — ranked for you in <b>AR Insights</b>.</p>
         </div>
       ) : null}
     </div>
@@ -63,7 +65,7 @@ export function FiveTouchLadder({ book, rules }: { book: CollectionsReceivablesR
   if (!ladder.length) return null;
   const stats = arStats(book, rules);
   const top = stats.calls[0] || stats.owe[0] || null;
-  const invoice = top?.invoices[0] || null;
+  const invoice = top?.invoices.find(isOpenInvoice) || null;
   const fill = (text: string) => {
     if (!top) return text;
     const values: Record<string, string> = {

@@ -58,7 +58,7 @@ check("pages render every section as loading before the API responds", () => {
   assert.match(billing, /Your access does not include generating candidates/);
   assert.match(billing, /Coming up, all clients/);
   const collectionsHtml = render(h(CollectionsPage));
-  for (const label of ["AR insights", "Collections activity", "holds"]) assert.match(collectionsHtml, new RegExp(`Loading ${label}…`));
+  for (const label of ["AR insights", "approvals", "holds"]) assert.match(collectionsHtml, new RegExp(`Loading ${label}…`));
 });
 
 check("Collections rule controls are Owner/Admin-only and explicitly delivery-disabled", () => {
@@ -445,6 +445,9 @@ check("call list shows flags, contact, score breakdown, and invoice next steps",
   const notDue = { ...worklistAccount, invoices: [{ ...worklistAccount.invoices[1], invoice_id: "inv-3", days_past_due: 0, next_stage: null }] };
   const notDueHtml = render(h(worklistPanels.WorklistTable, { worklist: worklist({ accounts: [notDue] }), onSelectClient: () => {}, onPage: () => {} }));
   assert.match(notDueHtml, /data-worklist-invoice="inv-3"[\s\S]*?Not due yet/);
+  const paidAccount = { ...worklistAccount, open_invoice_count: 0, invoices: [{ ...worklistAccount.invoices[0], invoice_id: "inv-paid", invoice_number: "AR-PAID", balance: "0.00", collection_status: "paid", paid_as_of: "2026-11-10", next_stage: null, upcoming_stage: null }] };
+  const paidHtml = render(h(worklistPanels.WorklistTable, { worklist: worklist({ accounts: [paidAccount] }), onSelectClient: () => {}, onPage: () => {} }));
+  assert.match(paidHtml, /0 open · 1 paid[\s\S]*?AR-PAID[\s\S]*?Paid[\s\S]*?approved A\/R report as of 2026-11-10/);
 });
 
 check("call list pagination reflects the server's page", () => {
@@ -602,7 +605,8 @@ check("Collections has the demo's three views plus Phase 4 A/R reports, opening 
   assert.match(html, /id="collections-tab-insights"[^>]*aria-selected="true"/);
   assert.match(html, /role="tabpanel" id="collections-insights"[^>]*>/);
   assert.doesNotMatch(html, /id="collections-insights"[^>]*hidden/);
-  assert.match(html, /id="collections-pipeline"[^>]*hidden[\s\S]*?aria-label="Activity"/, "activity lives on the Pipeline view");
+  assert.match(html, /id="collections-pipeline"[^>]*hidden[\s\S]*?aria-label="Needs your decision"/, "the approval queue lives on the Pipeline view");
+  assert.doesNotMatch(html, /aria-label="Activity"/, "the Activity log was removed to match the PracticeOps design");
   for (const id of ["pipeline", "imports", "setup"]) assert.match(html, new RegExp(`id="collections-${id}"[^>]*hidden`));
 });
 

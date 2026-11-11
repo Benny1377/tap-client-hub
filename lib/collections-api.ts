@@ -2,12 +2,12 @@ export type Money = string;
 
 export type CollectionsDeliveryStatus = "queued" | "sending" | "accepted" | "suppressed" | "needs_review" | "failed";
 export type CollectionsDeliveryReasonCode =
-  | "ACTIVE_HOLD" | "UNALLOCATED_CREDIT_REVIEW" | "CONTACT_REVIEW_REQUIRED" | "EMAIL_CONTACT_MISSING"
+  | "ACTIVE_HOLD" | "UNALLOCATED_CREDIT_REVIEW" | "CONTACT_REVIEW_REQUIRED" | "EMAIL_CONTACT_MISSING" | "EMAIL_CONTACT_INVALID"
   | "BELOW_MINIMUM_BALANCE" | "RULE_DISABLED" | "APPROVAL_REQUIRED" | "ATTEMPT_ALREADY_EXISTS"
   | "DELIVERY_DISABLED" | "PROVIDER_KEY_MISSING" | "SENDER_NOT_VERIFIED" | "TEST_RECIPIENT_MISSING"
   | "SYNTHETIC_DATA_REQUIRED" | "PROVIDER_RATE_LIMITED" | "PROVIDER_TEMPORARY_FAILURE"
   | "PROVIDER_REJECTED" | "PROVIDER_OUTCOME_UNKNOWN" | "PROVIDER_PAYLOAD_CHANGED" | "ATTEMPT_LIMIT_REACHED"
-  | "STAGE_NOT_DUE" | "INVOICE_NOT_ELIGIBLE" | "OUTSIDE_SEND_WINDOW" | "SOURCE_DISCREPANCY_BLOCKED";
+  | "STAGE_NOT_DUE" | "INVOICE_NOT_ELIGIBLE" | "OUTSIDE_SEND_WINDOW" | "SOURCE_DISCREPANCY_BLOCKED" | "SOURCE_CLEARED";
 export type CollectionsDeliveryAttemptRef = {
   attempt_id: string; status: CollectionsDeliveryStatus; reason_code: CollectionsDeliveryReasonCode | null;
   retryable: boolean; updated_at: string;
@@ -24,6 +24,19 @@ export type CollectionsDeliveryAttemptSummary = {
 };
 export type CollectionsDeliveryHistoryResponse = {
   items: CollectionsDeliveryAttemptSummary[]; pagination: { limit: number; offset: number; total: number };
+};
+export type CollectionsDeliverySummaryResponse = {
+  client_id: string;
+  delivery_mode: "disabled" | "test";
+  stages: Array<{ stage: number; label: string; accepted_count: number; last_accepted_at: string | null }>;
+  invoices: Array<{
+    row_key: string; invoice_id: string | null; source_invoice_id: string | null;
+    invoice_number: string; source: "billing" | "pdf_import";
+    accepted: Array<{ stage: number; label: string; accepted_at: string | null; mode: "disabled" | "test" }>;
+    not_accepted: Array<{ stage: number; status: Exclude<CollectionsDeliveryStatus, "accepted">; reason_code: string | null }>;
+    formal_notice: { recorded_count: number; last_recorded_at: string | null };
+  }>;
+  pagination: { limit: number; offset: number; total_invoices: number };
 };
 export type CollectionsDeliveryMissingSetting =
   | "DELIVERY_DISABLED" | "AUTOMATION_PAUSED" | "PROVIDER_KEY_MISSING" | "SENDER_NOT_VERIFIED"
@@ -58,6 +71,7 @@ export type CollectionsRule = {
   stage: number;
   label: string;
   days_past_due: number;
+  min_days_since_previous: number;
   automatic: boolean;
   enabled: boolean;
   subject_template: string;
@@ -78,7 +92,7 @@ export type CollectionsRuleSettingsData = {
   weekdays_only: boolean;
 };
 
-export type CollectionsRuleUpdate = Partial<Pick<CollectionsRule, "label" | "days_past_due" | "automatic" | "enabled" | "subject_template" | "body_template">> & { stage: number };
+export type CollectionsRuleUpdate = Partial<Pick<CollectionsRule, "label" | "days_past_due" | "min_days_since_previous" | "automatic" | "enabled" | "subject_template" | "body_template">> & { stage: number };
 
 export type CollectionsSettingsUpdate = {
   timezone?: string;
@@ -104,11 +118,16 @@ export type CollectionsInvoice = {
   invoice_total: Money;
   allocated: Money;
   balance: Money;
+  /** Current Collections balance state; for A/R-only invoices this comes from the latest approved report snapshot. */
+  collection_status: "open" | "paid";
+  /** As-of date of the approved A/R report that first/last showed a zero balance; null for Billing-ledger rows. */
+  paid_as_of: string | null;
   days_past_due: number;
   current_stage: number;
   completed_stage: number;
   upcoming_stage: number | null;
   next_stage: number | null;
+  next_stage_eligible_on: string | null;
   awaiting_approval: CollectionsAwaitingApproval | null;
   on_hold: boolean;
   credit_review_required: boolean;
@@ -143,6 +162,10 @@ export type CollectionsAccount = {
   credit_review_required: boolean;
   contact_review_required: boolean;
   largest_high_balance_invoice: Money;
+  note_count: number;
+  last_note_at: string | null;
+  late_beyond_final_count: number;
+  late_beyond_final: { stage: number; label: string; days_past_due: number; window_months: number | null };
   invoices: CollectionsInvoice[];
 };
 

@@ -79,13 +79,9 @@ export async function POST(request: NextRequest) {
   if (offset === null) return apiError("offset must be a non-negative integer", "INVALID_OFFSET", 422);
 
   const db = createAdminClient();
-  const [{ data: ruleRows, error: rulesError }, { data: settings, error: settingsError }] = await Promise.all([
-    db.from("collection_ladder_rules").select("stage, automatic, enabled"),
-    db.from("collection_settings").select("direct_escalation_threshold").eq("id", "default").maybeSingle(),
-  ]);
-  if (rulesError || settingsError || !settings) return apiError("Unable to load Collections preview rules", "PREVIEW_RULES_READ_FAILED", 500);
+  const { data: ruleRows, error: rulesError } = await db.from("collection_ladder_rules").select("stage, automatic, enabled");
+  if (rulesError) return apiError("Unable to load Collections preview rules", "PREVIEW_RULES_READ_FAILED", 500);
   const automaticByStage = new Map((ruleRows || []).map((rule) => [rule.stage, rule.enabled && rule.automatic]));
-  const directThreshold = Number(settings.direct_escalation_threshold);
   const accounts: WorklistAccount[] = [];
   let totalAccounts = 0;
   let resolvedAsOfDate = "";
@@ -118,10 +114,7 @@ export async function POST(request: NextRequest) {
   accounts.splice(0, accounts.length, ...(merged.accounts as unknown as WorklistAccount[]));
 
   const allActions: CollectionsPreviewAction[] = accounts.flatMap((account) => account.invoices.flatMap((invoice) => {
-    const directOwnerEscalation = Number(invoice.balance) >= directThreshold
-      && invoice.completed_stage < 4
-      && !invoice.awaiting_approval;
-    const stage = directOwnerEscalation ? 4 : invoice.next_stage;
+    const stage = invoice.next_stage;
     if (!stage || !invoice.balance) return [];
 
     const suppressionReasons: string[] = [];

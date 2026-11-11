@@ -213,17 +213,30 @@ await check("after a successful mutation the refreshed balance comes from the se
 // --- Section loading -------------------------------------------------------
 await check("sections start loading and fail independently", async () => {
   const initial = ledger.loadingLedger();
-  assert.ok(Object.values(initial).every((section) => section.status === "loading"));
+  assert.ok(Object.entries(initial).filter(([key]) => key !== "eventsPagination").every(([, section]) => section.status === "loading"));
   const { fetchImpl, calls } = fakeFetch({
     "GET /api/collections/holds": [200, { holds: [] }],
     "GET /api/collections/events": [403, { error: "Forbidden" }],
   });
-  const state = await ledger.loadLedger(api.createBillingApi(fetchImpl), null, ["holds", "events"]);
+  const state = await ledger.loadLedger(api.createBillingApi(fetchImpl), "c-1", ["holds", "events"]);
   assert.equal(state.holds.status, "ready");
   assert.equal(state.events.status, "error");
   assert.equal(state.events.kind, "forbidden");
   assert.equal(state.invoices.status, "loading", "sections not requested are not fetched");
   assert.equal(calls.length, 2);
+  assert.match(calls.find((call) => call.url.startsWith("/api/collections/events")).url, /client_id=c-1/);
+  // Phase 5: event history can page across clients when no client is selected.
+  const none = fakeFetch({
+    "GET /api/collections/holds": [200, { holds: [] }],
+    "GET /api/collections/events": [200, { events: [], pagination: { limit: 200, offset: 0, total: 4 } }],
+  });
+  const empty = await ledger.loadLedger(api.createBillingApi(none.fetchImpl), null, ["holds", "events"]);
+  assert.equal(empty.events.status, "ready"); assert.deepEqual(empty.events.data, []);
+  const globalEvents = none.calls.find((call) => call.url.startsWith("/api/collections/events"));
+  assert.ok(globalEvents);
+  assert.doesNotMatch(globalEvents.url, /client_id=/);
+  assert.match(globalEvents.url, /limit=200/);
+  assert.equal(empty.eventsPagination?.total, 4);
 });
 
 // --- Validation ------------------------------------------------------------
@@ -496,6 +509,7 @@ await check("the app shell titles Billing and Collections; pages do not repeat t
 
 await check("the Collections page pages the call list on its own loader", () => {
   const page = readFileSync(join(root, "app/collections/page.tsx"), "utf8");
+  // Events load across clients for the approval queue; the Activity log itself was removed (not in the PracticeOps design).
   assert.match(page, /useLedger\(clientId, \["holds", "events", "receivables", "rules"\]\)/);
   assert.match(page, /useLedger\(clientId, \["worklist"\], \{ worklistLimit: WORKLIST_PAGE, worklistOffset, includeMeta: false \}\)/);
   assert.match(page, /receivables\.receivables\.map/, "invoice names come from every issued invoice, not one call-list page");
@@ -539,6 +553,7 @@ await check("next step: due now, awaiting approval, upcoming, complete, or not d
   assert.equal(vm.nextStepText({ next_stage: 2, days_past_due: 14 }, ladder, labels), "2 · Professional");
   assert.equal(vm.nextStepText({ next_stage: null, days_past_due: 39 }, ladder, labels), "Ladder complete — follow up manually");
   assert.equal(vm.nextStepText({ next_stage: null, days_past_due: 0 }, ladder, labels), "Not due yet");
+  assert.equal(vm.nextStepText({ next_stage: null, days_past_due: 84, collection_status: "paid", paid_as_of: "2026-11-10", balance: "0.00" }, ladder, labels), "Paid · approved A/R report as of 2026-11-10");
   assert.match(vm.nextStepText({ next_stage: null, days_past_due: 39, awaiting_approval: { event_id: "e", event_type: "escalation_requested", stage: 4, requested_at: "2026-10-01T00:00:00Z" } }, ladder, labels), /^Awaiting Owner\/Admin approval: 4 · Owner escalation/);
   const withDisabledFirm = ladder.map((rule) => (rule.stage === 3 ? { ...rule, enabled: false } : rule));
   assert.equal(vm.nextStepText({ next_stage: null, days_past_due: 14 }, withDisabledFirm, labels), "Next: 4 · Owner escalation at 21 days", "disabled steps are skipped");
@@ -593,11 +608,11 @@ await check("every contract status, reason code, and missing setting has plain w
   assert.deepEqual(delivery.DELIVERY_STATUSES, ["queued", "sending", "accepted", "suppressed", "needs_review", "failed"]);
   assert.equal(delivery.deliveryStatusLabel("accepted"), "Accepted by email provider");
   assert.doesNotMatch(delivery.DELIVERY_STATUS_LABELS.accepted, /\bdelivered\b|\bread\b|\bsent\b/i, "acceptance never claims delivery");
-  const codes = ["ACTIVE_HOLD", "UNALLOCATED_CREDIT_REVIEW", "CONTACT_REVIEW_REQUIRED", "EMAIL_CONTACT_MISSING", "BELOW_MINIMUM_BALANCE", "RULE_DISABLED", "APPROVAL_REQUIRED", "ATTEMPT_ALREADY_EXISTS", "DELIVERY_DISABLED", "PROVIDER_KEY_MISSING", "SENDER_NOT_VERIFIED", "TEST_RECIPIENT_MISSING", "SYNTHETIC_DATA_REQUIRED", "PROVIDER_RATE_LIMITED", "PROVIDER_TEMPORARY_FAILURE", "PROVIDER_REJECTED", "PROVIDER_OUTCOME_UNKNOWN", "ATTEMPT_LIMIT_REACHED",
+  const codes = ["ACTIVE_HOLD", "UNALLOCATED_CREDIT_REVIEW", "CONTACT_REVIEW_REQUIRED", "EMAIL_CONTACT_MISSING", "EMAIL_CONTACT_INVALID", "BELOW_MINIMUM_BALANCE", "RULE_DISABLED", "APPROVAL_REQUIRED", "ATTEMPT_ALREADY_EXISTS", "DELIVERY_DISABLED", "PROVIDER_KEY_MISSING", "SENDER_NOT_VERIFIED", "TEST_RECIPIENT_MISSING", "SYNTHETIC_DATA_REQUIRED", "PROVIDER_RATE_LIMITED", "PROVIDER_TEMPORARY_FAILURE", "PROVIDER_REJECTED", "PROVIDER_OUTCOME_UNKNOWN", "ATTEMPT_LIMIT_REACHED",
     // Addendum 2b1fce4
     "STAGE_NOT_DUE", "INVOICE_NOT_ELIGIBLE", "OUTSIDE_SEND_WINDOW", "PROVIDER_PAYLOAD_CHANGED",
     // Phase 4 source-identity addendum
-    "SOURCE_DISCREPANCY_BLOCKED"];
+    "SOURCE_DISCREPANCY_BLOCKED", "SOURCE_CLEARED"];
   assert.deepEqual(Object.keys(delivery.DELIVERY_REASON_LABELS).sort(), [...codes].sort());
   assert.equal(delivery.deliveryReasonLabel("OUTSIDE_SEND_WINDOW"), "Outside the firm's configured send window.");
   assert.notEqual(delivery.DELIVERY_REASON_LABELS.OUTSIDE_SEND_WINDOW, delivery.DELIVERY_REASON_LABELS.RULE_DISABLED, "a closed window is not a disabled rule");

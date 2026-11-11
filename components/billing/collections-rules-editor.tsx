@@ -44,8 +44,8 @@ export function CollectionsRulesEditor({
     setSaving(true);
     setMessage("");
     const result = await onSave({
-      rules: rules.map(({ stage, label, days_past_due, automatic, enabled, subject_template, body_template }) => ({
-        stage, label, days_past_due, automatic, enabled, subject_template, body_template,
+      rules: rules.map(({ stage, label, days_past_due, min_days_since_previous, automatic, enabled, subject_template, body_template }) => ({
+        stage, label, days_past_due, ...(stage > 1 ? { min_days_since_previous } : {}), automatic, enabled, subject_template, body_template,
       })),
       settings: {
         timezone,
@@ -88,6 +88,14 @@ export function CollectionsRulesEditor({
                   <span className="bc-when">day {rule.days_past_due}</span>
                 </span>
               </label>
+              {rule.stage > 1 ? (
+                <label className="bc-field"><span>Wait after the previous touch · days</span>
+                  <span className="bc-inline">
+                    <input className="bc-in sm" type="number" min={0} max={3650} data-rule-gap={rule.stage} value={rule.min_days_since_previous ?? 0} onChange={(event) => editRule(rule.stage, { min_days_since_previous: Number(event.target.value) })} />
+                    <span className="bc-when">{(rule.min_days_since_previous ?? 0) === 0 ? "no wait" : `${rule.min_days_since_previous} days after touch ${rule.stage - 1}`}</span>
+                  </span>
+                </label>
+              ) : <p className="bc-note" style={{ margin: "0 0 10px" }}>Every invoice starts here, however late it is.</p>}
               {rule.stage <= 3 ? (
                 <label className="bc-field"><span>Sending</span>
                   <select className="bc-in" value={rule.automatic ? "auto" : "approve"} onChange={(event) => editRule(rule.stage, { automatic: event.target.value === "auto" })}>
@@ -136,7 +144,7 @@ export function CollectionsRulesEditor({
             <label className="bc-field"><span>Direct-owner escalation above</span>
               <span className="bc-inline"><span className="bc-muted">$</span><input className="bc-in" style={{ width: 120 }} type="number" min="0" step="0.01" value={settings.direct_escalation_threshold} onChange={(event) => editSetting("direct_escalation_threshold", event.target.value)} /></span>
             </label>
-            <div className="bc-note">Big balances skip the reminders and come straight to an Owner or Admin.</div>
+            <div className="bc-note">Large balances are flagged for an internal Owner or Admin review. Reminders still start at the first touch and move one step at a time, whatever the balance.</div>
           </div>
           <div className="bc-cfgcard">
             <span className="bc-label">Send window</span>

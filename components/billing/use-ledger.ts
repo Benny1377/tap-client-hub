@@ -14,8 +14,8 @@ export function useLedger(clientId: string | null, sections: LedgerSection[], op
   const [viewer, setViewer] = useState<Viewer | null>(null);
   const [clients, setClients] = useState<ClientOption[]>([]);
   const sectionKey = sections.join(",");
-  const { worklistLimit, worklistOffset, includeMeta = true } = options;
-  const key = `${clientId ?? ""}|${sectionKey}|${worklistLimit ?? ""}|${worklistOffset ?? ""}`;
+  const { worklistLimit, worklistOffset, eventsOffset, includeMeta = true } = options;
+  const key = `${clientId ?? ""}|${sectionKey}|${worklistLimit ?? ""}|${worklistOffset ?? ""}|${eventsOffset ?? ""}`;
   // Data is tagged with the client/sections/page it was loaded for, so switching
   // shows "loading" instead of the previous selection's data.
   const [loaded, setLoaded] = useState<{ key: string; ledger: LedgerState } | null>(null);
@@ -31,10 +31,10 @@ export function useLedger(clientId: string | null, sections: LedgerSection[], op
 
   const refresh = useCallback(async () => {
     const id = ++requestId.current;
-    const ledger = await loadLedger(api, clientId, sectionKey.split(",") as LedgerSection[], { worklistLimit, worklistOffset });
+    const ledger = await loadLedger(api, clientId, sectionKey.split(",") as LedgerSection[], { worklistLimit, worklistOffset, eventsOffset });
     // Ignore responses for a selection the user has already moved away from.
     if (id === requestId.current) setLoaded({ key, ledger });
-  }, [api, clientId, sectionKey, worklistLimit, worklistOffset, key]);
+  }, [api, clientId, sectionKey, worklistLimit, worklistOffset, eventsOffset, key]);
 
   useEffect(() => {
     void refresh();

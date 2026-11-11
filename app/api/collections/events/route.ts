@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { requireBillingPowerUser, requireCollectionsAccess, requireLedgerReadAccess } from "@/lib/billing-access";
+import { requireBillingPowerUser, requireCollectionsAccess } from "@/lib/billing-access";
 import { collectionsError } from "@/lib/collections-route-error";
 import { loadImportInvoiceLabels } from "@/lib/collections-import";
 
@@ -8,14 +8,27 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET(request: NextRequest) {
-  const access = await requireLedgerReadAccess();
+  const access = await requireCollectionsAccess();
   if (access.response) return access.response;
   const db = createAdminClient();
-  let query = db.from("collection_events").select("*, invoice:invoices(invoice_number)").order("occurred_at", { ascending: false }).limit(500);
+  const params = request.nextUrl.searchParams;
   const clientId = request.nextUrl.searchParams.get("client_id");
+  const hasClientId = params.has("client_id");
+  const eventType = params.get("event_type");
+  const limit = params.has("limit") ? Number(params.get("limit")) : 50;
+  const offset = params.has("offset") ? Number(params.get("offset")) : 0;
+  const validTypes = new Set(["note", "reminder_logged", "call_logged", "promise_to_pay", "escalation_requested", "escalated", "formal_notice_requested", "formal_notice_approved", "formal_notice_sent", "hold_placed", "hold_released"]);
+  const bad = (message: string, code: string) => NextResponse.json({ error: message, code }, { status: 422, headers: { "Cache-Control": "no-store" } });
+  if (hasClientId && (!clientId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(clientId))) return bad("client_id must be a UUID when provided", "INVALID_CLIENT_ID");
+  if (eventType && !validTypes.has(eventType)) return bad("event_type is not supported", "INVALID_EVENT_TYPE");
+  if (!Number.isInteger(limit) || limit < 1 || limit > 200) return bad("limit must be an integer from 1 to 200", "INVALID_LIMIT");
+  if (!Number.isInteger(offset) || offset < 0 || offset > 100000) return bad("offset must be a non-negative integer", "INVALID_OFFSET");
+  let query = db.from("collection_events").select("*, invoice:invoices(invoice_number)", { count: "exact" })
+    .order("occurred_at", { ascending: false }).order("id", { ascending: false }).range(offset, offset + limit - 1);
   if (clientId) query = query.eq("client_id", clientId);
-  const { data, error } = await query;
-  if (error) return NextResponse.json({ error: "Unable to load Collections events", code: "READ_FAILED" }, { status: 500 });
+  if (eventType) query = query.eq("event_type", eventType);
+  const { data, error, count } = await query;
+  if (error) return NextResponse.json({ error: "Unable to load Collections events", code: "READ_FAILED" }, { status: 500, headers: { "Cache-Control": "no-store" } });
   const labels = await loadImportInvoiceLabels((data || []).flatMap((event) => event.source_invoice_id ? [event.source_invoice_id] : []));
   const events = (data || []).map(({ invoice, ...event }) => {
     const imported = event.source_invoice_id ? labels.get(event.source_invoice_id) : null;
@@ -23,7 +36,7 @@ export async function GET(request: NextRequest) {
       invoice_number: invoice?.invoice_number ?? imported?.invoice_number ?? null,
       source_batch_id: imported?.source_batch_id ?? null, source_as_of: imported?.source_as_of ?? null };
   });
-  return NextResponse.json({ events }, { headers: { "Cache-Control": "no-store" } });
+  return NextResponse.json({ events, pagination: { limit, offset, total: count || 0 } }, { headers: { "Cache-Control": "no-store" } });
 }
 
 export async function POST(request: NextRequest) {

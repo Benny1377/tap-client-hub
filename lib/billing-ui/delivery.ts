@@ -43,6 +43,7 @@ export const DELIVERY_REASON_LABELS: Record<CollectionsDeliveryReasonCode, strin
   UNALLOCATED_CREDIT_REVIEW: "Credit/payment needs review.",
   CONTACT_REVIEW_REQUIRED: "Choose one primary contact with an email.",
   EMAIL_CONTACT_MISSING: "No client email is available.",
+  EMAIL_CONTACT_INVALID: "The primary contact email address is invalid.",
   BELOW_MINIMUM_BALANCE: "Balance is below the configured minimum.",
   RULE_DISABLED: "This reminder stage is turned off.",
   APPROVAL_REQUIRED: "Owner/Admin approval is required.",
@@ -62,6 +63,7 @@ export const DELIVERY_REASON_LABELS: Record<CollectionsDeliveryReasonCode, strin
   PROVIDER_PAYLOAD_CHANGED: "Message content changed since the prior attempt; review required.",
   ATTEMPT_LIMIT_REACHED: "Retry limit reached.",
   SOURCE_DISCREPANCY_BLOCKED: "Imported balance differs from Billing; review required.",
+  SOURCE_CLEARED: "This invoice is absent from the latest complete report and was cleared.",
 };
 
 /** What still blocks test mode, from GET /api/collections/delivery-status `missing`. */

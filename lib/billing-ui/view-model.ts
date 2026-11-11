@@ -249,11 +249,15 @@ export function upcomingStage(rules: CollectionRule[] | null | undefined, daysPa
 
 /** What the call list shows for an invoice's next step. */
 export function nextStepText(
-  invoice: { next_stage: number | null; upcoming_stage?: number | null; days_past_due: number; awaiting_approval?: AwaitingApproval | null },
+  invoice: { next_stage: number | null; upcoming_stage?: number | null; days_past_due: number; collection_status?: "open" | "paid"; paid_as_of?: string | null; balance?: string | number | null; awaiting_approval?: AwaitingApproval | null },
   rules: CollectionRule[] | null | undefined,
   labels: StageLabels = STAGE_LABELS,
   firmTimezone = "America/Chicago",
 ) {
+  const balance = invoice.balance == null || invoice.balance === "" ? Number.NaN : Number(invoice.balance);
+  if (invoice.collection_status === "paid" || (invoice.collection_status !== "open" && Number.isFinite(balance) && balance <= 0)) {
+    return invoice.paid_as_of ? `Paid · approved A/R report as of ${invoice.paid_as_of}` : "Paid";
+  }
   if (invoice.awaiting_approval) return awaitingApprovalLabel(invoice.awaiting_approval, labels, firmTimezone);
   if (invoice.next_stage) return stageLabel(invoice.next_stage, labels);
   if (invoice.days_past_due <= 0) return "Not due yet";
