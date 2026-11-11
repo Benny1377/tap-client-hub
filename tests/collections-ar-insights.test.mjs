@@ -33,6 +33,14 @@ check("contact display removes only trailing CSV quotes without mutating source 
   assert.equal(ar.displayContactValue('"  '), null);
 });
 
+check("phone display keeps numbers and extensions but drops NULL and contact annotations", () => {
+  assert.deepEqual(ar.displayPhoneNumbers("NULL"), []);
+  assert.deepEqual(ar.displayPhoneNumbers('(936) 827-4692 (Chris)'), ["(936) 827-4692"]);
+  assert.deepEqual(ar.displayPhoneNumbers('(713) 489-7686 ext 2'), ["(713) 489-7686 ext 2"]);
+  assert.deepEqual(ar.displayPhoneNumbers('(832)674-66689 Sarkis - (832)674-6447 Tsoler'), ["(832)674-66689", "(832)674-6447"]);
+  assert.deepEqual(ar.displayPhoneNumbers('(832) 598-1756 Sweta'), ["(832) 598-1756"]);
+});
+
 check("the ladder and team split adds back to the open balance", () => {
   const b = book([acct("a", [inv("100.00", 10), inv("300.00", 40)]), acct("b", [inv("50.00", -3)])]);
   const s = ar.arStats(b, rules);
