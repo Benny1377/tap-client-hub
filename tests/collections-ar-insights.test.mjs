@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import { loadTs } from "./helpers/load-ts.mjs";
 
 const ar = loadTs("lib/billing-ui/ar-insights.ts");
+const importReadModel = loadTs("lib/collections-import-worklist.ts");
 let passed = 0;
 const check = (label, fn) => { try { fn(); passed += 1; } catch (error) { error.message = `${label}: ${error.message}`; throw error; } };
 
@@ -57,6 +58,19 @@ check("status follows the server's ladder history, not the invoice's age", () =>
   assert.equal(ar.rungChip(acct("x", [inv("10.00", 0)]), rules).label, "Current");
   assert.equal(ar.rungChip(acct("x", [inv("10.00", 40, { next_stage: 1 })], { on_hold: true }), rules).label, "On hold");
   assert.equal(ar.rungChip(acct("x", [], { net_ar_estimate: "-5.00" }), rules).label, "In credit");
+});
+
+check("zero-balance invoices read as paid and stay off the active ladder", () => {
+  const paid = inv("0.00", 84, { collection_status: "paid", paid_as_of: "2026-11-10", completed_stage: 1, next_stage: null });
+  assert.equal(ar.isPaidInvoice(paid), true);
+  assert.equal(ar.isPaidInvoice({}), false, "missing balance is not proof of payment");
+  assert.equal(ar.isOpenInvoice(paid), false);
+  assert.equal(ar.nextTouch(paid, rules), "Paid · approved A/R report as of 2026-11-10");
+  assert.deepEqual(ar.rungChip(acct("paid", [paid]), rules), { label: "Paid", tone: "c-green", gate: false });
+  assert.equal(ar.isOpenInvoice(inv("25.00", 84, { collection_status: "open" })), true, "a later positive report balance reopens the invoice");
+  assert.deepEqual(importReadModel.reportInvoicePaymentStatus("0.00", "2026-11-10"), { collection_status: "paid", paid_as_of: "2026-11-10" });
+  assert.deepEqual(importReadModel.reportInvoicePaymentStatus("12.50", "2026-11-10"), { collection_status: "open", paid_as_of: null });
+  assert.deepEqual(importReadModel.reportInvoicePaymentStatus(null, "2026-11-10"), { collection_status: "open", paid_as_of: null }, "missing balance is never silently treated as paid");
 });
 
 check("ladder step is the next touch when due, else the last completed", () => {

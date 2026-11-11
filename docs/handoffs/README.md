@@ -1,5 +1,6 @@
 # TAP Client Hub Handoffs
 
+- [Collections Phase 5: paid A/R balances and Billing test-claim](2026-11-11-collections-phase5-paid-status-billing-claim.md)
 - [Billing project initialization](2026-10-19-billing-project-initialization.md)
 - [Billing Phase 3 contract acknowledgement](2026-11-06-billing-phase3-contract-acknowledgement.md)
 - [Billing Phase 3 final validation](2026-11-06-billing-phase3-final-validation.md)

@@ -553,6 +553,7 @@ await check("next step: due now, awaiting approval, upcoming, complete, or not d
   assert.equal(vm.nextStepText({ next_stage: 2, days_past_due: 14 }, ladder, labels), "2 · Professional");
   assert.equal(vm.nextStepText({ next_stage: null, days_past_due: 39 }, ladder, labels), "Ladder complete — follow up manually");
   assert.equal(vm.nextStepText({ next_stage: null, days_past_due: 0 }, ladder, labels), "Not due yet");
+  assert.equal(vm.nextStepText({ next_stage: null, days_past_due: 84, collection_status: "paid", paid_as_of: "2026-11-10", balance: "0.00" }, ladder, labels), "Paid · approved A/R report as of 2026-11-10");
   assert.match(vm.nextStepText({ next_stage: null, days_past_due: 39, awaiting_approval: { event_id: "e", event_type: "escalation_requested", stage: 4, requested_at: "2026-10-01T00:00:00Z" } }, ladder, labels), /^Awaiting Owner\/Admin approval: 4 · Owner escalation/);
   const withDisabledFirm = ladder.map((rule) => (rule.stage === 3 ? { ...rule, enabled: false } : rule));
   assert.equal(vm.nextStepText({ next_stage: null, days_past_due: 14 }, withDisabledFirm, labels), "Next: 4 · Owner escalation at 21 days", "disabled steps are skipped");

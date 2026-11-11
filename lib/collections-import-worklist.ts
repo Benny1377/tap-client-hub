@@ -27,6 +27,12 @@ const zeroAccount = (clientId: string, name: string): CollectionsAccount => ({
 });
 
 function cents(value: number) { return (Number.isFinite(value) ? value : 0).toFixed(2); }
+/** A/R snapshots are Collections evidence, not Billing ledger entries. */
+export function reportInvoicePaymentStatus(balance: string | number | null | undefined, asOf: string) {
+  const amount = balance == null || balance === "" ? Number.NaN : Number(balance);
+  const paid = Number.isFinite(amount) && amount <= 0;
+  return { collection_status: paid ? "paid" as const : "open" as const, paid_as_of: paid ? asOf : null };
+}
 /** Add the latest approved PDF snapshots, replacing linked Billing rows rather than duplicating them. */
 export async function mergeApprovedPdfReceivables(db: QueryClient, result: CollectionsReceivablesResponse) {
   const [{ data: batches }, { data: rules }, { data: settings }] = await Promise.all([
@@ -152,6 +158,8 @@ export async function mergeApprovedPdfReceivables(db: QueryClient, result: Colle
     const daysPastDue = row.due_date ? Math.max(0, Math.floor((Date.parse(`${result.as_of_date}T00:00:00Z`) - Date.parse(`${row.due_date}T00:00:00Z`)) / 86400000)) : Number(row.reported_aging || 0);
     const balance = Number(row.open_balance);
     const completed = completedByIdentity.get(identity.canonical_collection_identity!) || 0;
+    const paymentStatus = reportInvoicePaymentStatus(balance, row.source_as_of);
+    const isPaid = paymentStatus.collection_status === "paid";
     const nextRule = thresholds.find((rule) => rule.stage === (completed === 0 ? 1 : completed + 1));
     const previousCompletedOn = completedAtByIdentityStage.get(identity.canonical_collection_identity!)?.get(completed) || row.due_date || row.source_as_of;
     const eligibleOn = nextRule ? [
@@ -165,9 +173,10 @@ export async function mergeApprovedPdfReceivables(db: QueryClient, result: Colle
       source_batch_id: row.batch_id, source_as_of: row.source_as_of, discrepancy_status: row.discrepancy_status,
       invoice_number: row.invoice_number || row.source_row_key, issue_date: row.transaction_date || row.source_as_of,
       due_date: row.due_date || row.source_as_of, invoice_total: cents(balance), allocated: "0.00", balance: cents(balance),
+      ...paymentStatus,
       days_past_due: daysPastDue, current_stage: thresholds.filter((rule) => rule.days_past_due <= daysPastDue).at(-1)?.stage || 0,
-      completed_stage: completed, upcoming_stage: thresholds.find((rule) => rule.stage > completed)?.stage ?? null,
-      next_stage: next, next_stage_eligible_on: eligibleOn, awaiting_approval: awaitingByIdentity.get(identity.canonical_collection_identity!) || null,
+      completed_stage: completed, upcoming_stage: isPaid ? null : thresholds.find((rule) => rule.stage > completed)?.stage ?? null,
+      next_stage: isPaid ? null : next, next_stage_eligible_on: isPaid ? null : eligibleOn, awaiting_approval: awaitingByIdentity.get(identity.canonical_collection_identity!) || null,
       on_hold: held.has(identity.canonical_collection_identity!) || heldClients.has(identity.client_id!), credit_review_required: false,
       contact_review_required: account.contact_review_required, below_minimum: balance < minBalance,
       last_delivery: lastByIdentity.get(identity.canonical_collection_identity!) || null,
@@ -180,7 +189,12 @@ export async function mergeApprovedPdfReceivables(db: QueryClient, result: Colle
     account.invoices.sort((a, b) => a.due_date.localeCompare(b.due_date) || a.invoice_number.localeCompare(b.invoice_number));
     let current = 0, one30 = 0, thirty60 = 0, sixty90 = 0, over90 = 0, gross = 0, oldest = 0, score = 0, largest = 0;
     for (const invoice of account.invoices) {
-      const amount = asNum(invoice.balance); gross += amount; oldest = Math.max(oldest, invoice.days_past_due);
+      account.on_hold ||= invoice.on_hold;
+      account.credit_review_required ||= invoice.credit_review_required;
+      account.contact_review_required ||= invoice.contact_review_required;
+      const amount = asNum(invoice.balance);
+      if (amount <= 0 || invoice.collection_status === "paid") continue;
+      gross += amount; oldest = Math.max(oldest, invoice.days_past_due);
       if (invoice.days_past_due === 0) current += amount;
       else if (invoice.days_past_due <= 30) one30 += amount;
       else if (invoice.days_past_due <= 60) thirty60 += amount;
@@ -189,12 +203,10 @@ export async function mergeApprovedPdfReceivables(db: QueryClient, result: Colle
       const weight = invoice.days_past_due > 180 ? 2.4 : invoice.days_past_due > 90 ? 2 : invoice.days_past_due > 60 ? 1.6 : invoice.days_past_due > 30 ? 1.3 : invoice.days_past_due > 20 ? 1 : 0;
       score += amount * weight;
       if (amount >= directThreshold) largest = Math.max(largest, amount);
-      account.on_hold ||= invoice.on_hold;
-      account.credit_review_required ||= invoice.credit_review_required;
-      account.contact_review_required ||= invoice.contact_review_required;
     }
     account.gross_open_balance = cents(gross); account.net_ar_estimate = cents(gross - Number(account.unallocated_credit || 0));
-    account.open_invoice_count = account.invoices.length; account.oldest_days_past_due = oldest;
+    account.open_invoice_count = account.invoices.filter((invoice) => invoice.collection_status !== "paid" && asNum(invoice.balance) > 0).length;
+    account.oldest_days_past_due = oldest;
     account.aging = { current: cents(current), days_1_30: cents(one30), days_31_60: cents(thirty60), days_61_90: cents(sixty90), days_over_90: cents(over90) };
     account.call_priority_score = cents(score); account.largest_high_balance_invoice = cents(largest);
   }
@@ -208,7 +220,7 @@ export async function mergeApprovedPdfReceivables(db: QueryClient, result: Colle
     days_61_90: cents(accounts.reduce((sum, account) => sum + Number(account.aging.days_61_90), 0)),
     days_over_90: cents(accounts.reduce((sum, account) => sum + Number(account.aging.days_over_90), 0)),
   };
-  result.summary.open_invoice_count = accounts.reduce((sum, account) => sum + account.invoices.length, 0);
+  result.summary.open_invoice_count = accounts.reduce((sum, account) => sum + account.open_invoice_count, 0);
   result.summary.owing_accounts = accounts.filter((account) => account.open_invoice_count > 0).length;
   result.summary.credit_review_accounts = accounts.filter((account) => Number(account.unallocated_credit) > 0).length;
   result.summary.chronic_accounts = accounts.filter((account) => account.open_invoice_count >= 3).length;

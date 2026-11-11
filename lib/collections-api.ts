@@ -118,6 +118,10 @@ export type CollectionsInvoice = {
   invoice_total: Money;
   allocated: Money;
   balance: Money;
+  /** Current Collections balance state; for A/R-only invoices this comes from the latest approved report snapshot. */
+  collection_status: "open" | "paid";
+  /** As-of date of the approved A/R report that first/last showed a zero balance; null for Billing-ledger rows. */
+  paid_as_of: string | null;
   days_past_due: number;
   current_stage: number;
   completed_stage: number;

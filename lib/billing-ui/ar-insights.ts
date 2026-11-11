@@ -5,6 +5,14 @@ import type { CollectionsAccount, CollectionsReceivablesResponse } from "@/lib/c
 import type { CollectionRule } from "./types";
 
 export const n = (value: string | number | null | undefined) => Number(value || 0);
+export const isPaidInvoice = (invoice: { collection_status?: "open" | "paid"; balance?: string | number | null }) => {
+  if (invoice.collection_status) return invoice.collection_status === "paid";
+  if (invoice.balance == null || invoice.balance === "") return false;
+  const balance = Number(invoice.balance);
+  return Number.isFinite(balance) && balance <= 0;
+};
+export const isOpenInvoice = (invoice: { collection_status?: "open" | "paid"; balance?: string | number | null }) =>
+  !isPaidInvoice(invoice) && n(invoice.balance) > 0;
 export const pct = (part: number, whole: number) => Math.round((part / (whole || 1)) * 100);
 /** Whole dollars, as the design shows them. */
 export const dollars = (value: number) => `${value < 0 ? "-" : ""}$${Math.round(Math.abs(value)).toLocaleString("en-US")}`;
@@ -107,9 +115,12 @@ const RUNG_TONES = ["c-blue", "c-blue", "c-amber", "c-amber", "c-red"];
 export function rungChip(account: Account, rules: CollectionRule[]): RungChip {
   if (net(account) < 0) return { label: "In credit", tone: "c-grey", gate: false };
   if (account.on_hold) return { label: "On hold", tone: "c-grey", gate: false };
+  if (account.invoices.length > 0 && account.invoices.every(isPaidInvoice)) {
+    return { label: "Paid", tone: "c-green", gate: false };
+  }
   const labels = new Map(rules.map((rule) => [rule.stage, rule.label]));
   let best: { stage: number; due: boolean } | null = null;
-  for (const invoice of account.invoices) {
+  for (const invoice of account.invoices.filter(isOpenInvoice)) {
     const stage = ladderStep(invoice);
     if (!stage) continue;
     const due = invoice.next_stage != null;
@@ -121,8 +132,9 @@ export function rungChip(account: Account, rules: CollectionRule[]): RungChip {
 }
 
 /** The next touch for one invoice, from the server's next stage and its eligible date (Phase 5). */
-export function nextTouch(invoice: StepFields & { next_stage_eligible_on?: string | null; upcoming_stage?: number | null; awaiting_approval?: unknown }, rules: CollectionRule[]) {
+export function nextTouch(invoice: StepFields & { collection_status?: "open" | "paid"; paid_as_of?: string | null; balance?: string | number | null; next_stage_eligible_on?: string | null; upcoming_stage?: number | null; awaiting_approval?: unknown }, rules: CollectionRule[]) {
   const label = (stage: number | null | undefined) => (stage ? rules.find((rule) => rule.stage === stage)?.label || `Touch ${stage}` : "");
+  if (isPaidInvoice(invoice)) return invoice.paid_as_of ? `Paid · approved A/R report as of ${invoice.paid_as_of}` : "Paid";
   if (invoice.awaiting_approval) return "Waiting for Owner/Admin approval";
   if (invoice.next_stage) return `${label(invoice.next_stage)} · due now`;
   const upcoming = (invoice.completed_stage ?? 0) === 0 ? 1 : (invoice.completed_stage ?? 0) + 1;

@@ -445,6 +445,9 @@ check("call list shows flags, contact, score breakdown, and invoice next steps",
   const notDue = { ...worklistAccount, invoices: [{ ...worklistAccount.invoices[1], invoice_id: "inv-3", days_past_due: 0, next_stage: null }] };
   const notDueHtml = render(h(worklistPanels.WorklistTable, { worklist: worklist({ accounts: [notDue] }), onSelectClient: () => {}, onPage: () => {} }));
   assert.match(notDueHtml, /data-worklist-invoice="inv-3"[\s\S]*?Not due yet/);
+  const paidAccount = { ...worklistAccount, open_invoice_count: 0, invoices: [{ ...worklistAccount.invoices[0], invoice_id: "inv-paid", invoice_number: "AR-PAID", balance: "0.00", collection_status: "paid", paid_as_of: "2026-11-10", next_stage: null, upcoming_stage: null }] };
+  const paidHtml = render(h(worklistPanels.WorklistTable, { worklist: worklist({ accounts: [paidAccount] }), onSelectClient: () => {}, onPage: () => {} }));
+  assert.match(paidHtml, /0 open · 1 paid[\s\S]*?AR-PAID[\s\S]*?Paid[\s\S]*?approved A\/R report as of 2026-11-10/);
 });
 
 check("call list pagination reflects the server's page", () => {
