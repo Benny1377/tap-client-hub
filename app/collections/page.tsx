@@ -5,13 +5,13 @@ import { invoiceTargetFields, mutateThenRefresh, type ApiResult } from "@/lib/bi
 import { readyData } from "@/lib/billing-ui/ledger";
 import { approvalRequests, noticesAwaitingSend, stageLabelsFrom, todayIso, viewerIsPowerUser } from "@/lib/billing-ui/view-model";
 import { useLedger } from "@/components/billing/use-ledger";
-import { ClientPicker, ErrorBanner, OwnerAdminOnly, SectionView } from "@/components/billing/ui";
+import { ErrorBanner, OwnerAdminOnly, SectionView } from "@/components/billing/ui";
 import { ActiveHoldBanner, DecisionsPanel, HoldsPanel, PDF_OPTION_PREFIX, type InvoiceOption } from "@/components/billing/collections-panels";
-import { AutomationPreviewPanel, LadderSummary } from "@/components/billing/worklist-panels";
+import { LadderSummary } from "@/components/billing/worklist-panels";
 import { FiveTouchLadder, PipelineOverview } from "@/components/billing/pipeline-design";
 import { AccountsWhoIsWhere, ArInsights, useWholeBook } from "@/components/billing/ar-insights";
 import { CollectionsRulesEditor } from "@/components/billing/collections-rules-editor";
-import { DeliveryHistoryPanel, DeliverySetupPanel } from "@/components/billing/delivery-panels";
+import { DeliverySetupPanel } from "@/components/billing/delivery-panels";
 import { ImportPermissionsPanel, ImportsPanel } from "@/components/billing/import-panels";
 import { EmailLogPanel } from "@/components/billing/email-log-panel";
 import { noteCounts } from "@/lib/billing-ui/ar-insights";
@@ -35,8 +35,9 @@ export default function CollectionsPage() {
   const [tab, setTab] = useState<TabId>("insights");
   const [importsOpened, setImportsOpened] = useState(false);
   const [importPermissionsOpened, setImportPermissionsOpened] = useState(false);
-  const [clientId, setClientId] = useState<string | null>(null);
-  const [worklistOffset, setWorklistOffset] = useState(0);
+  // The page always shows every client; panels that need one client choose it themselves.
+  const clientId: string | null = null;
+  const worklistOffset = 0;
   const [deliveryRefreshKey, setDeliveryRefreshKey] = useState(0);
   // Two loaders: paging the call list reloads only the worklist, not holds and activity.
   const ledger = useLedger(clientId, ["holds", "events", "receivables", "rules"]);
@@ -76,7 +77,6 @@ export default function CollectionsPage() {
     .map((invoice) => ({ id: `${PDF_OPTION_PREFIX}${invoice.source_invoice_id}`, invoice_number: invoice.invoice_number, client_id: account.client_id, source: "pdf_import" as const, source_invoice_id: invoice.source_invoice_id, source_as_of: invoice.source_as_of })));
   const invoiceOptions: InvoiceOption[] = [...billingOptions, ...reportOnlyOptions];
   const invoiceNumbers = Object.fromEntries(invoiceOptions.map((option) => [option.id, option.invoice_number]));
-  const selectClient = (id: string | null) => { setClientId(id); setWorklistOffset(0); };
   const notesByClient = useMemo(() => noteCounts(events), [events]);
   const decisions = approvalRequests(events, holds, viewer, today).filter((item) => item.state !== "approved").length
     + noticesAwaitingSend(events, holds, viewer, today).length;
@@ -124,7 +124,6 @@ export default function CollectionsPage() {
             </button>
           ))}
         </div>
-        <ClientPicker clients={clients} value={clientId} onChange={selectClient} />
       </div>
 
       <ActiveHoldBanner holds={holds} clientId={clientId} clientNames={clientNames} invoiceNumbers={invoiceNumbers} today={today} />
@@ -152,21 +151,10 @@ export default function CollectionsPage() {
             {(rows) => <DecisionsPanel events={rows} {...eventProps} />}
           </SectionView>
         </section>
-        {power ? (
-          <section className="bc-card" aria-label="Delivery history" style={{ marginBottom: 20 }}>
-            <h3 className="bc-sect">Delivery history</h3>
-            <p className="bc-hint">Every test email attempt, newest first. Owner/Admin only; staff see each invoice&rsquo;s last email on the call list.</p>
-            <DeliveryHistoryPanel api={api} viewer={viewer} invoiceOptions={invoiceOptions} stageLabels={stageLabels} firmTimezone={firmTimezone} refreshKey={deliveryRefreshKey} />
-          </section>
-        ) : null}
-        <section className="bc-card" aria-label="Automation preview">
-          <h3 className="bc-sect">Automation preview</h3>
-          <AutomationPreviewPanel viewer={viewer} runPreview={(params) => api.preview(params)} stageLabels={stageLabels} />
-        </section>
       </TabPanel>
 
       <TabPanel id="emails" active={tab}>
-        {seesEmailLog ? <EmailLogPanel api={api} clientId={clientId} clientNames={clientNames} stageLabels={stageLabels} firmTimezone={firmTimezone} canSeeAll={power} refreshKey={deliveryRefreshKey} /> : null}
+        {seesEmailLog ? <EmailLogPanel api={api} clientNames={clientNames} stageLabels={stageLabels} firmTimezone={firmTimezone} canSeeAll={power} refreshKey={deliveryRefreshKey} /> : null}
       </TabPanel>
 
       <TabPanel id="imports" active={tab}>

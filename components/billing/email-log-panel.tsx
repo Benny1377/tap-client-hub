@@ -17,20 +17,33 @@ const reasonText = (code: string | null) => (code && code in DELIVERY_REASON_LAB
  * With a client picked it reads that client's summary (Owner/Admin and Collections staff). With none picked,
  * Owners and Admins get every client from delivery history; staff are asked to pick a client.
  */
-export function EmailLogPanel({ api, clientId, clientNames, stageLabels, firmTimezone, canSeeAll, refreshKey = 0 }: {
-  api: BillingApi; clientId: string | null; clientNames: Record<string, string>; stageLabels: Record<number, string>;
+export function EmailLogPanel({ api, clientNames, stageLabels, firmTimezone, canSeeAll, refreshKey = 0 }: {
+  api: BillingApi; clientNames: Record<string, string>; stageLabels: Record<number, string>;
   firmTimezone: string; canSeeAll: boolean; refreshKey?: number;
 }) {
-  if (clientId) return <ClientEmailLog key={`${clientId}:${refreshKey}`} api={api} clientId={clientId} clientName={clientNames[clientId] || "This client"} firmTimezone={firmTimezone} />;
-  if (!canSeeAll) {
-    return (
-      <div className="card" data-email-log>
-        <h3>Email log<span>pick a client to see their reminders</span></h3>
-        <div className="po-note brand" data-email-log-pick><span className="ni">&#9993;</span><div>Choose a client in the picker above to see which reminders went out to them, per invoice, and when.</div></div>
-      </div>
-    );
-  }
-  return <AllClientsEmailLog api={api} clientNames={clientNames} stageLabels={stageLabels} firmTimezone={firmTimezone} refreshKey={refreshKey} />;
+  const [clientId, setClientId] = useState("");
+  const choices = Object.entries(clientNames).sort((a, b) => a[1].localeCompare(b[1]));
+  const picker = (
+    <label className="bc-field" style={{ maxWidth: 360, marginBottom: 12 }}><span>Client</span>
+      <select className="bc-in" data-email-log-client-select value={clientId} onChange={(event) => setClientId(event.target.value)}>
+        <option value="">{canSeeAll ? "All clients" : "Choose a client…"}</option>
+        {choices.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
+      </select>
+    </label>
+  );
+  return (
+    <div data-email-log-tab>
+      {picker}
+      {clientId ? <ClientEmailLog key={`${clientId}:${refreshKey}`} api={api} clientId={clientId} clientName={clientNames[clientId] || "This client"} firmTimezone={firmTimezone} />
+        : canSeeAll ? <AllClientsEmailLog api={api} clientNames={clientNames} stageLabels={stageLabels} firmTimezone={firmTimezone} refreshKey={refreshKey} />
+        : (
+          <div className="card" data-email-log>
+            <h3>Email log<span>pick a client to see their reminders</span></h3>
+            <div className="po-note brand" data-email-log-pick><span className="ni">&#9993;</span><div>Choose a client above to see which reminders went out to them, per invoice, and when.</div></div>
+          </div>
+        )}
+    </div>
+  );
 }
 
 function ModeNote({ mode }: { mode: "disabled" | "test" }) {
@@ -183,7 +196,7 @@ function AllClientsEmailLog({ api, clientNames, stageLabels, firmTimezone, refre
           </table>
         </div>
       )}
-      <p className="fine" style={{ border: "none", marginTop: 10, paddingTop: 0 }}>{FOOTNOTE} Pick a client above for that client&apos;s formal notices too.</p>
+      <p className="fine" style={{ border: "none", marginTop: 10, paddingTop: 0 }}>{FOOTNOTE} Choose a client above for that client&apos;s formal notices too.</p>
     </div>
   );
 }

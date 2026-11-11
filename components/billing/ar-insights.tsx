@@ -4,7 +4,7 @@ import { Fragment, useEffect, useState } from "react";
 import type { BillingApi } from "@/lib/billing-ui/api";
 import type { CollectionRule } from "@/lib/billing-ui/types";
 import type { CollectionsReceivablesResponse } from "@/lib/collections-api";
-import { andList, arStats, asOfDate, biggerPicture, dayMonth, dollars, hasBillingInvoices, isPaidInvoice, lateTone, mergePages, n, net, nextTouch, noteCountOf, pct, reminderDays, rungChip, sharedContact, sortAccounts, tier, type Account, type SortKey } from "@/lib/billing-ui/ar-insights";
+import { andList, arStats, asOfDate, biggerPicture, dayMonth, displayContactValue, dollars, hasBillingInvoices, isPaidInvoice, lateTone, mergePages, n, net, nextTouch, noteCountOf, pct, reminderDays, rungChip, sharedContact, sortAccounts, tier, type Account, type SortKey } from "@/lib/billing-ui/ar-insights";
 import { CallNotes } from "./call-notes";
 
 const PAGE = 200;
@@ -32,14 +32,16 @@ export function useWholeBook(api: BillingApi, clientId: string | null, version: 
 }
 
 function Phone({ phone }: { phone: string | null }) {
-  return phone
-    ? <a className="lnk" style={{ whiteSpace: "nowrap", textDecoration: "underline" }} href={`tel:${phone.replace(/[^0-9+]/g, "")}`} onClick={(event) => event.stopPropagation()}>{phone}</a>
+  const displayPhone = displayContactValue(phone);
+  return displayPhone
+    ? <a className="lnk" style={{ whiteSpace: "nowrap", textDecoration: "underline" }} href={`tel:${displayPhone.replace(/[^0-9+]/g, "")}`} onClick={(event) => event.stopPropagation()}>{displayPhone}</a>
     : <span style={{ color: "var(--red)", fontSize: 11.5, fontWeight: 600 }}>&#9888; no phone</span>;
 }
 
 function ContactLine({ account }: { account: Account }) {
   if (!account.contact_name) return <span style={{ color: "var(--red)", fontWeight: 600 }}>&#9888; no contact on file</span>;
-  return <>{account.contact_name}{account.contact_email ? ` · ${account.contact_email}` : <> · <span style={{ color: "var(--red)" }}>no email</span></>}</>;
+  const email = displayContactValue(account.contact_email);
+  return <>{account.contact_name}{email ? ` · ${email}` : <> · <span style={{ color: "var(--red)" }}>no email</span></>}</>;
 }
 
 function Fact({ value, text }: { value: string | number; text: string }) {
