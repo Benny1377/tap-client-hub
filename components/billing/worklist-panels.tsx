@@ -8,6 +8,7 @@ import { DISPOSITION_LABELS, formatMoney, nextStepText, PREVIEW_REASON_LABELS, s
 import { ErrorBanner, OwnerAdminOnly } from "./ui";
 import { LastTouch, PreviewAttemptNote } from "./delivery-panels";
 import type { LastDelivery, PreviewDeliveryAttempt } from "@/lib/billing-ui/delivery";
+import { displayContactValue } from "@/lib/billing-ui/ar-insights";
 
 const amount = (value: string | number | null | undefined) => Number(value || 0);
 const percent = (part: number, whole: number) => (whole > 0 ? Math.round((part / whole) * 100) : 0);
@@ -312,8 +313,8 @@ export function WorklistTable({ worklist, onSelectClient, onPage, stageLabels = 
                   <button type="button" className="bc-name" onClick={() => onSelectClient(account.client_id)}>{account.client_name}</button>
                   <div className="bc-small">
                     {account.contact_name || "No primary contact"}
-                    {account.contact_phone ? ` · ${account.contact_phone}` : ""}
-                    {account.contact_email ? ` · ${account.contact_email}` : ""}
+                    {displayContactValue(account.contact_phone) ? ` · ${displayContactValue(account.contact_phone)}` : ""}
+                    {displayContactValue(account.contact_email) ? ` · ${displayContactValue(account.contact_email)}` : ""}
                   </div>
                   {amount(account.unallocated_credit) > 0 ? <div className="bc-small">{formatMoney(account.unallocated_credit)} unallocated credit</div> : null}
                   <Flags account={account} />
@@ -503,7 +504,7 @@ export function PreviewResults({ preview, onPage, stageLabels = STAGE_LABELS }: 
                 <tr key={`${action.row_key || action.invoice_id}-${action.stage}`} data-preview-action={action.invoice_id ?? action.source_invoice_id ?? undefined} data-row-key={action.row_key} data-disposition={action.disposition}>
                   <td>
                     {action.client_name}
-                    {action.contact_phone ? <div className="bc-small">{action.contact_phone}</div> : null}
+                    {displayContactValue(action.contact_phone) ? <div className="bc-small">{displayContactValue(action.contact_phone)}</div> : null}
                   </td>
                   <td>{action.invoice_number}<SourceNote invoice={action} /></td>
                   <td className="r">{formatMoney(action.balance)}</td>

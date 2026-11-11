@@ -25,6 +25,14 @@ check("the first hand-off day comes from the first Owner/Admin touch", () => {
   assert.deepEqual(ar.reminderDays(rules), [1, 5, 15]);
 });
 
+check("contact display removes only trailing CSV quotes without mutating source values", () => {
+  assert.equal(ar.displayContactValue('(713) 572-7000"'), "(713) 572-7000");
+  assert.equal(ar.displayContactValue('account@example.test"  '), "account@example.test");
+  assert.equal(ar.displayContactValue('(713) 555-0100'), "(713) 555-0100");
+  assert.equal(ar.displayContactValue('"quoted" text'), '"quoted" text');
+  assert.equal(ar.displayContactValue('"  '), null);
+});
+
 check("the ladder and team split adds back to the open balance", () => {
   const b = book([acct("a", [inv("100.00", 10), inv("300.00", 40)]), acct("b", [inv("50.00", -3)])]);
   const s = ar.arStats(b, rules);

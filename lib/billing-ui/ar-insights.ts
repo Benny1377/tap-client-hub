@@ -5,6 +5,12 @@ import type { CollectionsAccount, CollectionsReceivablesResponse } from "@/lib/c
 import type { CollectionRule } from "./types";
 
 export const n = (value: string | number | null | undefined) => Number(value || 0);
+/** Remove stray CSV quote characters at the end of contact values for presentation only. */
+export function displayContactValue(value: string | null | undefined): string | null {
+  if (!value) return null;
+  const cleaned = value.trim().replace(/"+\s*$/, "").trim();
+  return cleaned || null;
+}
 export const isPaidInvoice = (invoice: { collection_status?: "open" | "paid"; balance?: string | number | null }) => {
   if (invoice.collection_status) return invoice.collection_status === "paid";
   if (invoice.balance == null || invoice.balance === "") return false;
