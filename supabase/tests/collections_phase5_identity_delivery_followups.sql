@@ -18,6 +18,7 @@ declare
   v_linked_delivery_identity uuid := gen_random_uuid();
   v_accepted_attempt uuid := gen_random_uuid();
   v_linked_attempt uuid := gen_random_uuid();
+  v_billing_dispatch_attempt uuid := gen_random_uuid();
   v_billing_attempt uuid := gen_random_uuid();
   v_exact_row uuid := gen_random_uuid();
   v_ambiguous_row uuid := gen_random_uuid();
@@ -123,6 +124,39 @@ begin
     raise exception 'Accepted PDF-only reminder must be recorded against its source identity';
   end if;
 
+  -- Billing-only invoices do not have a source-identity row. They must still
+  -- reach the existing Billing claim path (and record their event by invoice).
+  if exists(select 1 from tap_hub_project.collection_source_invoice_identities
+    where canonical_collection_identity='billing:20000000-0000-4000-8000-000000000001') then
+    raise exception 'The Billing dispatch fixture unexpectedly has a source identity row';
+  end if;
+  insert into tap_hub_project.collection_delivery_attempts
+    (id,client_id,invoice_id,source,source_invoice_id,canonical_collection_identity,stage,status,idempotency_key,actor)
+  values (v_billing_dispatch_attempt,v_client,'20000000-0000-4000-8000-000000000001','billing',null,
+    'billing:20000000-0000-4000-8000-000000000001',1,'queued',
+    'phase5-billing-dispatch:'||v_billing_dispatch_attempt::text,v_actor);
+  v_reason:=tap_hub_project.claim_collection_test_delivery(v_billing_dispatch_attempt,v_actor);
+  if v_reason is not null then
+    raise exception 'Billing-only claim must not require a source identity row, got %',v_reason;
+  end if;
+  if (select status from tap_hub_project.collection_delivery_attempts where id=v_billing_dispatch_attempt)<>'sending' then
+    raise exception 'Billing-only attempt did not transition to sending';
+  end if;
+  v_context:=tap_hub_project.get_collection_test_message_context(v_billing_dispatch_attempt);
+  if coalesce((v_context->>'eligible')::boolean,false) is not true then
+    raise exception 'Billing message context did not pass the existing Billing path: %',v_context;
+  end if;
+  if tap_hub_project.accept_collection_delivery(v_billing_dispatch_attempt,'fake_phase5_billing_accept',v_actor) is not true then
+    raise exception 'Billing test delivery should be accepted by the local fake-provider harness';
+  end if;
+  if not exists(select 1 from tap_hub_project.collection_events
+    where detail->>'delivery_attempt_id'=v_billing_dispatch_attempt::text
+      and event_type='reminder_logged' and source='billing'
+      and invoice_id='20000000-0000-4000-8000-000000000001'
+      and canonical_collection_identity='billing:20000000-0000-4000-8000-000000000001') then
+    raise exception 'Accepted Billing reminder must be recorded against the Billing identity';
+  end if;
+
   insert into tap_hub_project.collection_delivery_attempts
     (id,client_id,invoice_id,source,source_invoice_id,canonical_collection_identity,stage,status,idempotency_key,actor)
   values (v_linked_attempt,v_client,'20000000-0000-4000-8000-000000000001','pdf_import',v_linked_delivery_identity,
@@ -140,8 +174,8 @@ begin
     where client_id=v_client and is_primary and category='client';
   insert into tap_hub_project.collection_delivery_attempts
     (id,client_id,invoice_id,source,source_invoice_id,canonical_collection_identity,stage,status,idempotency_key,actor)
-  values(v_billing_attempt,v_client,'20000000-0000-4000-8000-000000000001','billing',null,
-    'billing:20000000-0000-4000-8000-000000000001',1,'queued','phase5-invalid-contact:'||v_billing_attempt::text,v_actor);
+  values(v_billing_attempt,v_client,'20000000-0000-4000-8000-000000000002','billing',null,
+    'billing:20000000-0000-4000-8000-000000000002',1,'queued','phase5-invalid-contact:'||v_billing_attempt::text,v_actor);
   v_reason:=tap_hub_project.claim_collection_test_delivery(v_billing_attempt,v_actor);
   if v_reason<>'EMAIL_CONTACT_INVALID' then
     raise exception 'Malformed primary email must be rejected before the Billing claim, got %',v_reason;

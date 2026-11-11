@@ -2,7 +2,7 @@
 -- attempts here use 'billing:<invoice_id>'.
 -- Usage (local harness only, after reset.sh --local):
 --   psql postgresql://postgres:postgres@127.0.0.1:55322/postgres -X -A -t -F ' | ' -f tools/collections-local/validate-phase3-worker.sql
--- Expected: W1 t/sending 1, W2 t, W3 t/t/1/accepted, W4 completed_stage 3, W5 DELIVERY_DISABLED,
+-- Expected: W1 t/t/sending 1, W2 t, W3 t/t/1/accepted, W4 completed_stage 1, W5 DELIVERY_DISABLED,
 -- W6 SYNTHETIC_DATA_REQUIRED, W7 ACTIVE_HOLD, W9 EMAIL_CONTACT_MISSING, W10 APPROVAL_REQUIRED,
 -- W8 OUTSIDE_SEND_WINDOW, W11 STAGE_NOT_DUE (codes from migration 20261018110000), W12 0 grants and
 -- the pause error, W13 fingerprint: first t, same t, changed f, malformed rejected.
@@ -18,12 +18,17 @@
 -- Shared setup for each block: test mode on, automation on, always inside the send window.
 \set setup 'update tap_hub_project.collection_settings set automation_enabled = true, delivery_mode = ''test'', test_recipient = ''test@example.invalid'', weekdays_only = false, send_start = ''00:00'', send_end = ''23:59:59'' where id = ''default'';'
 
--- W1-W4: claim, accept, exactly one reminder_logged, replay is a no-op, stage context counts one stage.
+-- W1-W4: Billing claim works without a source-identity row, then accept exactly once;
+-- the stage context counts the accepted Friendly reminder.
 begin;
 :setup
 insert into tap_hub_project.collection_delivery_attempts (id, client_id, invoice_id, stage, status, idempotency_key, actor, canonical_collection_identity)
-values ('30000000-0000-4000-8000-000000000001', :'cli1', :'inv1', 3, 'queued', 'collections:test:w1', :'owner', 'billing:' || :'inv1');
-select 'W1 claim returns null (eligible)', tap_hub_project.claim_collection_test_delivery('30000000-0000-4000-8000-000000000001', :'owner') is null;
+values ('30000000-0000-4000-8000-000000000001', :'cli1', :'inv1', 1, 'queued', 'collections:test:w1', :'owner', 'billing:' || :'inv1');
+select 'W1 Billing invoice has no source identity row', not exists (
+  select 1 from tap_hub_project.collection_source_invoice_identities
+  where canonical_collection_identity = 'billing:' || :'inv1'
+);
+select 'W1 Billing claim returns null (eligible)', tap_hub_project.claim_collection_test_delivery('30000000-0000-4000-8000-000000000001', :'owner') is null;
 select 'W1 status after claim', status, attempt_count from tap_hub_project.collection_delivery_attempts where id = '30000000-0000-4000-8000-000000000001';
 select 'W2 message context has no email/name keys', not (ctx ? 'email' or ctx ? 'contact_email' or ctx ? 'client_name'), ctx->>'eligible'
   from (select tap_hub_project.get_collection_test_message_context('30000000-0000-4000-8000-000000000001') ctx) x;
@@ -90,11 +95,11 @@ values ('30000000-0000-4000-8000-00000000000a', :'cli1', :'inv1', 5, 'queued', '
 select 'W10 stage 5 without approval', tap_hub_project.claim_collection_test_delivery('30000000-0000-4000-8000-00000000000a', :'owner');
 rollback;
 
--- W11: wrong stage for the invoice (stage 1 when next is 3) -> refused.
+-- W11: stage 2 is out of order while Friendly (stage 1) is next -> refused.
 begin;
 :setup
 insert into tap_hub_project.collection_delivery_attempts (id, client_id, invoice_id, stage, status, idempotency_key, canonical_collection_identity)
-values ('30000000-0000-4000-8000-00000000000b', :'cli1', :'inv1', 1, 'queued', 'collections:test:w11', 'billing:' || :'inv1');
+values ('30000000-0000-4000-8000-00000000000b', :'cli1', :'inv1', 2, 'queued', 'collections:test:w11', 'billing:' || :'inv1');
 select 'W11 out-of-order stage', tap_hub_project.claim_collection_test_delivery('30000000-0000-4000-8000-00000000000b', :'owner');
 rollback;
 
@@ -114,7 +119,7 @@ rollback;
 begin;
 :setup
 insert into tap_hub_project.collection_delivery_attempts (id, client_id, invoice_id, stage, status, idempotency_key, actor, canonical_collection_identity)
-values ('30000000-0000-4000-8000-00000000000d', :'cli1', :'inv1', 3, 'queued', 'collections:test:w13', :'owner', 'billing:' || :'inv1');
+values ('30000000-0000-4000-8000-00000000000d', :'cli1', :'inv1', 1, 'queued', 'collections:test:w13', :'owner', 'billing:' || :'inv1');
 select tap_hub_project.claim_collection_test_delivery('30000000-0000-4000-8000-00000000000d', :'owner') is null as claimed \gset w13_
 select 'W13 first fingerprint stored', tap_hub_project.record_collection_test_payload_fingerprint('30000000-0000-4000-8000-00000000000d', repeat('a', 64), :'owner');
 select 'W13 same payload accepted', tap_hub_project.record_collection_test_payload_fingerprint('30000000-0000-4000-8000-00000000000d', repeat('a', 64), :'owner');

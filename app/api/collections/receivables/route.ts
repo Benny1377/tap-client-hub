@@ -67,6 +67,8 @@ export async function GET(request: NextRequest) {
       // Billing-selected rows keep what the PDF merge attached (linked source
       // invoice, batch, discrepancy, an earlier canonical identity); only fill gaps.
       invoice.source = "billing";
+      invoice.collection_status = Number(invoice.balance) <= 0 ? "paid" : "open";
+      invoice.paid_as_of = null;
       invoice.source_invoice_id ??= null;
       invoice.canonical_collection_identity ||= `billing:${invoice.invoice_id}`;
       invoice.row_key ||= `collection:${invoice.canonical_collection_identity}`;

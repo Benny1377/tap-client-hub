@@ -322,11 +322,12 @@ export function WorklistTable({ worklist, onSelectClient, onPage, stageLabels = 
                 <td className={`r${account.oldest_days_past_due >= 90 ? " old" : account.oldest_days_past_due > 0 ? " late" : ""}`}>{account.oldest_days_past_due}d</td>
                 <td className="r">
                   <details className="bc-details">
-                    <summary>{account.open_invoice_count} open</summary>
+                    <summary>{account.open_invoice_count} open{account.invoices.filter((invoice) => invoice.collection_status === "paid").length ? ` · ${account.invoices.filter((invoice) => invoice.collection_status === "paid").length} paid` : ""}</summary>
                     <table className="bc-table sm" style={{ marginTop: 6, textAlign: "left" }}>
                       <thead>
                         <tr>
                           <th>Invoice</th>
+                          <th>Status</th>
                           <th>Due</th>
                           <th className="r">Balance</th>
                           <th className="r">Days</th>
@@ -337,13 +338,14 @@ export function WorklistTable({ worklist, onSelectClient, onPage, stageLabels = 
                         {(account.invoices as WorklistInvoice[]).map((invoice) => (
                           <tr key={invoice.row_key || invoice.invoice_id} data-worklist-invoice={invoice.invoice_id ?? invoice.source_invoice_id ?? undefined} data-row-key={invoice.row_key} data-next-stage={invoice.next_stage ?? ""} data-awaiting={invoice.awaiting_approval ? invoice.awaiting_approval.stage : undefined}>
                             <td className="bc-nowrap">{invoice.invoice_number}<SourceNote invoice={invoice} /></td>
+                            <td><span className={`bc-pill ${invoice.collection_status === "paid" ? "green" : ""}`} title={invoice.paid_as_of ? `Zero balance in approved A/R report as of ${invoice.paid_as_of}` : undefined}>{invoice.collection_status === "paid" ? "Paid" : "Open"}</span></td>
                             <td className="bc-nowrap">{invoice.due_date}</td>
                             <td className="r">{formatMoney(invoice.balance)}</td>
                             <td className="r">{invoice.days_past_due}</td>
                             <td>
                               <span style={invoice.awaiting_approval ? { color: "var(--gate-ink)" } : undefined}>{nextStepText(invoice, rules, stageLabels, firmTimezone)}</span>
-                              {invoice.on_hold ? <div style={{ color: "var(--gate-ink)" }}>On hold</div> : null}
-                              {invoice.below_minimum ? <div className="bc-muted">Below minimum</div> : null}
+                              {invoice.collection_status !== "paid" && invoice.on_hold ? <div style={{ color: "var(--gate-ink)" }}>On hold</div> : null}
+                              {invoice.collection_status !== "paid" && invoice.below_minimum ? <div className="bc-muted">Below minimum</div> : null}
                               <LastTouch delivery={invoice.last_delivery} stageLabels={stageLabels} firmTimezone={firmTimezone} />
                             </td>
                           </tr>

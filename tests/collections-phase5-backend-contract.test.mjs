@@ -94,6 +94,20 @@ test("receivables exposes note and late-history summaries from the read model", 
   assert.match(migration, /get_collections_late_history/);
 });
 
+test("approved PDF zero balances are represented as paid without entering Billing", () => {
+  const readModel = source("lib/collections-import-worklist.ts");
+  const type = source("lib/collections-api.ts");
+  const route = source("app/api/collections/receivables/route.ts");
+  assert.match(readModel, /reportInvoicePaymentStatus/);
+  assert.match(readModel, /collection_status: paid \? "paid" as const : "open" as const/);
+  assert.match(readModel, /paid_as_of: paid \? asOf : null/);
+  assert.match(readModel, /upcoming_stage: isPaid \? null/);
+  assert.match(readModel, /next_stage: isPaid \? null/);
+  assert.match(readModel, /if \(amount <= 0 \|\| invoice\.collection_status === "paid"\) continue/);
+  assert.match(type, /collection_status: "open" \| "paid"/);
+  assert.match(route, /invoice\.paid_as_of = null/);
+});
+
 test("client delivery summary is paginated and excludes content, stage 4, and forbidden roles", () => {
   const route = source("app/api/collections/deliveries/summary/route.ts");
   assert.match(route, /requireCollectionsAccess/);
