@@ -299,32 +299,37 @@ async function presentationGet() {
   const access = await requireBillingAction("billing.view");
   if (access.response) return access.response;
   const { data, error } = await createAdminClient().from("billing_presentation_settings")
-    .select("firm_name,tagline,invoice_footer,updated_at").eq("singleton", true).maybeSingle();
+    .select("firm_name,tagline,invoice_footer,signer_name,firm_address,billing_email,firm_phone,updated_at").eq("singleton", true).maybeSingle();
   if (error) return apiError("Unable to load invoice presentation settings", "BILLING_READ_FAILED", 500);
   if (!data) return apiError("Invoice presentation settings are not initialized", "BILLING_READ_FAILED", 500);
-  return NextResponse.json({ firmName: data.firm_name, tagline: data.tagline, invoiceFooter: data.invoice_footer, invoiceNumberPrefix: "TAP", updatedAt: data.updated_at }, { headers: { "Cache-Control": "no-store" } });
+  return NextResponse.json({ firmName: data.firm_name, tagline: data.tagline, invoiceFooter: data.invoice_footer, signerName: data.signer_name, firmAddress: data.firm_address, billingEmail: data.billing_email, firmPhone: data.firm_phone, invoiceNumberPrefix: "TAP", updatedAt: data.updated_at }, { headers: { "Cache-Control": "no-store" } });
 }
 async function presentationPatch(request: NextRequest) {
   const access = await requireBillingPowerUser();
   if (access.response || !access.identity) return access.response;
   const body = await readObjectBody(request);
   if (!body) return apiError("Invalid JSON body", "INVALID_JSON", 400);
-  const allowed = new Set(["firmName", "tagline", "invoiceFooter", "reason"]);
+  const allowed = new Set(["firmName", "tagline", "invoiceFooter", "signerName", "firmAddress", "billingEmail", "firmPhone", "reason"]);
   if (Object.keys(body).some((key) => !allowed.has(key))) return apiError("Unsupported presentation setting", "INVALID_INPUT", 422);
   const firmName = typeof body.firmName === "string" ? body.firmName.trim() : "";
   const tagline = body.tagline === null ? null : typeof body.tagline === "string" ? body.tagline.trim() : undefined;
   const invoiceFooter = body.invoiceFooter === null ? null : typeof body.invoiceFooter === "string" ? body.invoiceFooter.trim() : undefined;
+  const signerName = body.signerName === null ? null : typeof body.signerName === "string" ? body.signerName.trim() : undefined;
+  const firmAddress = body.firmAddress === null ? null : typeof body.firmAddress === "string" ? body.firmAddress.trim() : undefined;
+  const billingEmail = body.billingEmail === null ? null : typeof body.billingEmail === "string" ? body.billingEmail.trim() : undefined;
+  const firmPhone = body.firmPhone === null ? null : typeof body.firmPhone === "string" ? body.firmPhone.trim() : undefined;
   const reason = typeof body.reason === "string" ? body.reason.trim() : "";
-  if (!firmName || firmName.length > 160 || tagline === undefined || (tagline !== null && tagline.length > 500) || invoiceFooter === undefined || (invoiceFooter !== null && invoiceFooter.length > 500) || !reason || reason.length > 1000) {
-    return apiError("firmName, optional tagline/footer, and reason must meet the documented length limits", "INVALID_INPUT", 422);
+  if (!firmName || firmName.length > 160 || tagline === undefined || (tagline !== null && tagline.length > 500) || invoiceFooter === undefined || (invoiceFooter !== null && invoiceFooter.length > 500) || signerName === undefined || (signerName !== null && signerName.length > 160) || firmAddress === undefined || (firmAddress !== null && firmAddress.length > 1000) || billingEmail === undefined || (billingEmail !== null && (billingEmail.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(billingEmail))) || firmPhone === undefined || (firmPhone !== null && firmPhone.length > 40) || !reason || reason.length > 1000) {
+    return apiError("Presentation fields and reason must meet the documented length limits", "INVALID_INPUT", 422);
   }
   const { data, error } = await createAdminClient().from("billing_presentation_settings").update({
     firm_name: firmName, tagline: tagline ?? null, invoice_footer: invoiceFooter ?? null,
+    signer_name: signerName ?? null, firm_address: firmAddress ?? null, billing_email: billingEmail ?? null, firm_phone: firmPhone ?? null,
     updated_by: access.identity.id, updated_at: new Date().toISOString(), reason,
-  }).eq("singleton", true).select("firm_name,tagline,invoice_footer,updated_at").maybeSingle();
+  }).eq("singleton", true).select("firm_name,tagline,invoice_footer,signer_name,firm_address,billing_email,firm_phone,updated_at").maybeSingle();
   if (error) return apiError("Unable to save invoice presentation settings", "BILLING_WRITE_FAILED", 500);
   if (!data) return apiError("Invoice presentation settings are not initialized", "BILLING_WRITE_FAILED", 500);
-  return NextResponse.json({ firmName: data.firm_name, tagline: data.tagline, invoiceFooter: data.invoice_footer, invoiceNumberPrefix: "TAP", updatedAt: data.updated_at }, { headers: { "Cache-Control": "no-store" } });
+  return NextResponse.json({ firmName: data.firm_name, tagline: data.tagline, invoiceFooter: data.invoice_footer, signerName: data.signer_name, firmAddress: data.firm_address, billingEmail: data.billing_email, firmPhone: data.firm_phone, invoiceNumberPrefix: "TAP", updatedAt: data.updated_at }, { headers: { "Cache-Control": "no-store" } });
 }
 async function clientSummaryGet(request: NextRequest) {
   const pricing = await requireBillingAction("pricing.view");
@@ -332,25 +337,27 @@ async function clientSummaryGet(request: NextRequest) {
   const candidates = await requireBillingAction("candidates.view");
   if (candidates.response) return candidates.response;
   const clientId = request.nextUrl.searchParams.get("clientId");
-  if (!clientId || !UUID.test(clientId)) return apiError("clientId must be a UUID", "INVALID_INPUT", 422);
+  if (!clientId) return firmClientSummaryGet(request);
+  if (!UUID.test(clientId)) return apiError("clientId must be a UUID", "INVALID_INPUT", 422);
   const db = createAdminClient(), today = firmDateISO();
-  const [{ data: client, error: clientError }, { data: serviceRows, error: serviceError }, { data: termSettings, error: termsError }, { data: termRows, error: termRowsError }, { data: bundleRows, error: bundleError }] = await Promise.all([
+  const [{ data: client, error: clientError }, { data: serviceRows, error: serviceError }, { data: termSettings, error: termsError }, { data: termRows, error: termRowsError }, { data: bundleRows, error: bundleError }, { data: contacts, error: contactsError }] = await Promise.all([
     db.from("clients").select("id,name").eq("id", clientId).maybeSingle(),
     db.from("client_services").select("id,active,frequency,financials_month,service:services(code,name)").eq("client_id", clientId).eq("active", true).order("id"),
     db.from("billing_terms_settings").select("default_net_days").eq("singleton", true).maybeSingle(),
     db.from("billing_terms_overrides").select("id,client_service_id,net_days,effective_from,effective_to").eq("client_id", clientId).lte("effective_from", today).or(`effective_to.is.null,effective_to.gte.${today}`).order("effective_from", { ascending: false }),
     db.from("billing_bundles").select("id,name,unit_amount,effective_from,effective_to,billing_bundle_components(client_service_id)").eq("client_id", clientId).eq("active", true).lte("effective_from", today).or(`effective_to.is.null,effective_to.gte.${today}`).order("effective_from", { ascending: false }),
+    db.from("contacts").select("name,email,phone,is_primary").eq("client_id", clientId).eq("category", "client").eq("is_primary", true).limit(2),
   ]);
   if (clientError) return apiError("Unable to load client summary", "BILLING_READ_FAILED", 500);
   if (!client) return apiError("Client not found", "NOT_FOUND", 404);
-  if (serviceError || termsError || termRowsError || bundleError) return apiError("Unable to load client summary", "BILLING_READ_FAILED", 500);
+  if (serviceError || termsError || termRowsError || bundleError || contactsError) return apiError("Unable to load client summary", "BILLING_READ_FAILED", 500);
   const pricedServices = await mapInBatches(serviceRows || [], 8, async (row: Row) => {
     const service = Array.isArray(row.service) ? row.service[0] : row.service;
     if (!service?.code || !service?.name) return null;
     const { data: resolved, error } = await db.rpc("resolve_billing_price", { p_client_service_id: row.id, p_client_id: clientId, p_service_code: service.code, p_unit: "service", p_on: today });
     if (error) return { error };
     const price = Array.isArray(resolved) ? resolved[0] : resolved;
-    return { service: { clientServiceId: row.id, serviceCode: service.code, serviceName: service.name, active: row.active, frequency: row.frequency, priceState: price?.unit_amount == null ? "unpriced" : "priced", unitAmount: price?.unit_amount == null ? null : moneyString(price.unit_amount), bundleName: null } };
+    return { service: { clientServiceId: row.id, serviceCode: service.code, serviceName: service.name, active: row.active, frequency: row.frequency, priceState: price?.unit_amount == null ? "unpriced" : "priced", priceSource: price?.price_source ?? null, unitAmount: price?.unit_amount == null ? null : moneyString(price.unit_amount), bundleName: null } };
   });
   if (pricedServices.some((result: Row) => result?.error)) return apiError("Unable to resolve client price", "PRICING_READ_FAILED", 500);
   const services: Row[] = pricedServices.flatMap((result: Row) => result?.service ? [result.service] : []);
@@ -393,6 +400,8 @@ async function clientSummaryGet(request: NextRequest) {
     const override = overrides.find((row: Row) => row.client_service_id === service.clientServiceId) || clientOverride;
     return { clientServiceId: service.clientServiceId, netDays: override?.net_days ?? termSettings?.default_net_days ?? 15, source: override?.client_service_id ? "client_service" : override ? "client" : "firm_default" };
   });
+  const priceStates = new Set(services.map((service) => service.priceState));
+  const pricedMode = services.length === 0 ? "no_active_services" : priceStates.size > 1 ? "mixed" : priceStates.has("priced") ? "priced" : "unpriced";
   const { data: receivables, error: receivablesError } = await db.rpc("get_billing_receivables", { p_client_id: clientId });
   if (receivablesError) return apiError("Unable to load client receivables", "BILLING_READ_FAILED", 500);
   const aging = (receivables?.client_aging || []).find((row: Row) => row.client_id === clientId);
@@ -405,10 +414,43 @@ async function clientSummaryGet(request: NextRequest) {
   if (candidatesError) return apiError("Unable to load next invoice date", "BILLING_READ_FAILED", 500);
   const dates = [...(existing || []).map((row: Row) => row.candidate_date), ...(projection.result?.items || []).map((row: Row) => row.candidateDate)].filter((date) => isDateOnly(date)).sort();
   return NextResponse.json({
-    clientId, clientName: client.name, services, terms: { defaultNetDays: termSettings?.default_net_days ?? 15, byClientService: termsByClientService },
+    clientId, clientName: client.name, contact: contacts?.length === 1 ? contacts[0] : null, services, pricedMode, terms: { defaultNetDays: termSettings?.default_net_days ?? 15, byClientService: termsByClientService },
     monthlyAmount: centsToMoney(monthlyCents), monthlyAmountComplete, unpricedServiceCount, nextInvoiceDate: dates[0] || null,
     openBalance: centsToMoney(openCents), pastDueAmount: centsToMoney(pastDueCents),
   }, { headers: { "Cache-Control": "no-store" } });
+}
+async function firmClientSummaryGet(request: NextRequest) {
+  const pricing = await requireBillingAction("pricing.view");
+  if (pricing.response) return pricing.response;
+  const candidates = await requireBillingAction("candidates.view");
+  if (candidates.response) return candidates.response;
+  const q = request.nextUrl.searchParams, limit = boundedLimit(q.get("limit"), 20);
+  if (!limit || limit > 50) return apiError("limit must be between 1 and 50", "INVALID_INPUT", 422);
+  let cursor: Row | null = null;
+  try {
+    cursor = cursorDecode<Row>(q.get("cursor"));
+    if (q.get("cursor") && (!cursor || typeof cursor.name !== "string" || cursor.name.length > 200 || typeof cursor.id !== "string" || !UUID.test(cursor.id))) throw new Error();
+  } catch { return apiError("Cursor is invalid for this list", "INVALID_CURSOR", 422); }
+  const db = createAdminClient();
+  let clientsQuery = db.from("clients").select("id,name").order("name", { ascending: true }).order("id", { ascending: true });
+  if (cursor) {
+    const name = `"${cursor.name.replaceAll("\\", "\\\\").replaceAll('"', '\\"')}"`;
+    clientsQuery = clientsQuery.or(`name.gt.${name},and(name.eq.${name},id.gt.${cursor.id})`);
+  }
+  const { data, error } = await clientsQuery.limit(limit + 1);
+  if (error) return apiError("Unable to load client summaries", "BILLING_READ_FAILED", 500);
+  const rows = data || [], hasMore = rows.length > limit, page = rows.slice(0, limit);
+  const summaries = await mapInBatches(page, 4, async (client: Row) => {
+    const url = new URL(request.url);
+    url.search = new URLSearchParams({ clientId: client.id }).toString();
+    const response = await clientSummaryGet(new NextRequest(url, { headers: request.headers }));
+    const body = await response.json();
+    return response.ok ? body : null;
+  });
+  if (summaries.some((summary) => !summary)) return apiError("Unable to load one or more client summaries", "BILLING_READ_FAILED", 500);
+  const last = page.at(-1);
+  const nextCursor = hasMore && last ? cursorEncode({ name: last.name, id: last.id }) : null;
+  return NextResponse.json({ items: summaries, nextCursor }, { headers: { "Cache-Control": "no-store" } });
 }
 async function firmScheduleGet(request: NextRequest) {
   const candidates = await requireBillingAction("candidates.view");
@@ -434,7 +476,44 @@ async function firmScheduleGet(request: NextRequest) {
   if (error || !data || !Array.isArray(data.items) || !data.summary) return apiError("Unable to load firm schedule", "BILLING_READ_FAILED", 500);
   const items = data.items as Row[];
   const nextCursor = data.hasMore && items.length ? cursorEncode({ candidateDate: items.at(-1)!.candidateDate, clientName: items.at(-1)!.clientName, clientServiceId: items.at(-1)!.clientServiceId, sourceIdentity: items.at(-1)!.sourceIdentity }) : null;
-  return NextResponse.json({ items, nextCursor, summary: data.summary }, { headers: { "Cache-Control": "no-store" } });
+  let runs: Row[] | undefined;
+  if (query.get("includeRunTotals") === "true") {
+    const byDate = new Map<string, { clients: Map<string, { clientId: string; clientName: string; cents: number; count: number }>; cents: number }>();
+    let pageCursor = cursor, pages = 0, distinctDates: string[] = [];
+    while (pages++ < 100) {
+      const { data: pageData, error: pageError } = await createAdminClient().rpc("project_billing_firm_schedule", {
+        p_from: from, p_to: to, p_limit: 100,
+        p_after_date: pageCursor?.candidateDate ?? null, p_after_client: pageCursor?.clientName ?? null,
+        p_after_service: pageCursor?.clientServiceId ?? null, p_after_identity: pageCursor?.sourceIdentity ?? null,
+      });
+      if (pageError || !pageData || !Array.isArray(pageData.items)) return apiError("Unable to calculate per-run totals", "BILLING_READ_FAILED", 500);
+      for (const row of pageData.items as Row[]) {
+        if (!distinctDates.includes(row.candidateDate)) distinctDates.push(row.candidateDate);
+        if (distinctDates.length > 3) break;
+        const run = byDate.get(row.candidateDate) || { clients: new Map(), cents: 0 };
+        const client = run.clients.get(row.clientId) || { clientId: row.clientId, clientName: row.clientName, cents: 0, count: 0 };
+        client.count++;
+        const cents = row.priceState === "priced" && row.unitAmount != null ? moneyToCents(row.unitAmount) : null;
+        if (cents !== null) { client.cents += cents; run.cents += cents; }
+        run.clients.set(row.clientId, client); byDate.set(row.candidateDate, run);
+      }
+      if (distinctDates.length > 3 || !pageData.hasMore || !pageData.items.length) break;
+      const last = (pageData.items as Row[]).at(-1)!;
+      pageCursor = { candidateDate: last.candidateDate, clientName: last.clientName, clientServiceId: last.clientServiceId, sourceIdentity: last.sourceIdentity };
+    }
+    if (pages > 100) return apiError("Schedule is too large to calculate run totals in one request", "BILLING_READ_FAILED", 503);
+    runs = [...byDate.entries()].slice(0, 3).map(([candidateDate, run]) => ({
+      candidateDate, total: centsToMoney(run.cents), clients: [...run.clients.values()].sort((a, b) => a.clientName.localeCompare(b.clientName) || a.clientId.localeCompare(b.clientId)).map((client) => ({ clientId: client.clientId, clientName: client.clientName, total: centsToMoney(client.cents), candidateCount: client.count })),
+    }));
+  }
+  return NextResponse.json({ items, nextCursor, summary: data.summary, ...(runs ? { runs } : {}) }, { headers: { "Cache-Control": "no-store" } });
+}
+async function invoiceSummaryGet() {
+  const access = await requireBillingAction("billing.view");
+  if (access.response) return access.response;
+  const { data, error } = await createAdminClient().rpc("get_billing_invoice_firm_summary");
+  if (error || !data) return apiError("Unable to load invoice totals", "BILLING_READ_FAILED", 500);
+  return NextResponse.json(data, { headers: { "Cache-Control": "no-store" } });
 }
 async function listResource(request: NextRequest, path: string[]) {
   const db=createAdminClient(), q=request.nextUrl.searchParams, limit=boundedLimit(q.get("limit"));
@@ -570,6 +649,7 @@ async function handler(request:NextRequest,ctx:Ctx,method:string) {
   if(path.length===2&&path[0]==="permissions"&&path[1]==="policy"&&method==="GET")return policyGet();
   if(path.length===1&&path[0]==="client-services"&&method==="GET")return clientServicesGet(request);
   if(path.length===2&&path[0]==="clients"&&path[1]==="summary"&&method==="GET")return clientSummaryGet(request);
+  if(path.length===2&&path[0]==="invoices"&&path[1]==="summary"&&method==="GET")return invoiceSummaryGet();
   if(path.length===2&&path[0]==="candidates"&&path[1]==="firm-schedule"&&method==="GET")return firmScheduleGet(request);
   if(path.length===2&&path[0]==="settings"&&path[1]==="presentation"&&method==="GET")return presentationGet();
   if(path.length===2&&path[0]==="settings"&&path[1]==="presentation"&&method==="PATCH")return presentationPatch(request);
@@ -619,6 +699,23 @@ async function handler(request:NextRequest,ctx:Ctx,method:string) {
     if(!isDateOnly(body?.from)||!isDateOnly(body?.to))return apiError("Valid from/to dates are required","GENERATION_WINDOW_INVALID",422);
     const days=(Date.parse(`${body.to}T00:00:00Z`)-Date.parse(`${body.from}T00:00:00Z`))/86400000;
     if(days<0||days>364)return apiError("Generation window must be within 365 days","GENERATION_WINDOW_INVALID",422);
+    if(body.scope === "firm") {
+      if (Object.keys(body).some((key) => !["scope", "from", "to", "limit", "cursor"].includes(key))) return apiError("Firm generation accepts only scope, dates, limit and cursor", "INVALID_INPUT", 422);
+      const limit = Number(body.limit ?? 25);
+      if (!Number.isInteger(limit) || limit < 1 || limit > 50) return apiError("Firm generation limit must be between 1 and 50", "INVALID_INPUT", 422);
+      let cursor: Row | null = null;
+      try { cursor = cursorDecode<Row>(typeof body.cursor === "string" ? body.cursor : null); if (body.cursor && (!cursor || typeof cursor.clientServiceId !== "string" || !UUID.test(cursor.clientServiceId))) throw new Error(); }
+      catch { return apiError("Firm generation cursor is invalid", "INVALID_CURSOR", 422); }
+      const db = createAdminClient();
+      let services = db.from("client_services").select("id").eq("active", true).order("id", { ascending: true });
+      if (cursor) services = services.gt("id", cursor.clientServiceId);
+      const { data, error } = await services.limit(limit + 1);
+      if (error) return apiError("Unable to load Operations service assignments", "BILLING_READ_FAILED", 500);
+      const rows = data || [], hasMore = rows.length > limit, page = rows.slice(0, limit);
+      const generated = await generateFromOperations(db, access.identity?.id || "", { from: body.from, to: body.to, clientServiceIds: page.map((row: Row) => row.id) });
+      if (generated.error) return generated.error;
+      return NextResponse.json({ ...generated.result, nextCursor: hasMore && page.length ? cursorEncode({ clientServiceId: page.at(-1)!.id }) : null });
+    }
     if(body.clientServiceIds!==undefined&&(!Array.isArray(body.clientServiceIds)||body.clientServiceIds.length===0||body.clientServiceIds.length>500||body.clientServiceIds.some((id:unknown)=>typeof id!=="string"||!UUID.test(id))))return apiError("clientServiceIds must contain 1 to 500 UUIDs","INVALID_INPUT",422);
     if(body.clientId!==undefined&&(typeof body.clientId!=="string"||!UUID.test(body.clientId)))return apiError("clientId must be a UUID","INVALID_INPUT",422);
     if(!body.clientServiceIds&&!body.clientId)return apiError("A clientServiceIds or clientId scope is required","INVALID_INPUT",422);

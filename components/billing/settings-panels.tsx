@@ -56,7 +56,7 @@ function FirmDetails({ api, canEdit, onSaved }: { api: BillingApi; canEdit: bool
     api.presentation().then((result) => { if (!current) return; if (result.ok) setValues(result.data); else setFailure(asFailure(result)); });
     return () => { current = false; };
   }, [api]);
-  const tooLong = (form: FormValues) => Object.fromEntries([["firmName", 160], ["tagline", 500], ["invoiceFooter", 500]].filter(([name, most]) => form[name as string].trim().length > (most as number)).map(([name, most]) => [name, `Keep this to ${most} characters`]));
+  const tooLong = (form: FormValues) => Object.fromEntries([["firmName", 160], ["tagline", 500], ["invoiceFooter", 500], ["signerName", 160], ["firmAddress", 1000], ["billingEmail", 254], ["firmPhone", 40]].filter(([name, most]) => String(form[name as string] ?? "").trim().length > (most as number)).map(([name, most]) => [name, `Keep this to ${most} characters`]));
   return (
     <div className="card" style={{ marginBottom: 14 }} data-form="presentation">
       <h3>Firm details<span>saved on each invoice when it is issued</span></h3>
@@ -67,12 +67,12 @@ function FirmDetails({ api, canEdit, onSaved }: { api: BillingApi; canEdit: bool
             <LedgerForm
               key={values.updatedAt || "unsaved"}
               resetOnSuccess={false}
-              fields={[{ name: "firmName", label: "Firm name" }, { name: "tagline", label: "Tagline", optional: true }, { name: "invoiceFooter", label: "Invoice footer", type: "textarea", optional: true }, { name: "reason", label: "Reason", type: "textarea" }]}
-              initialValues={{ firmName: values.firmName, tagline: values.tagline || "", invoiceFooter: values.invoiceFooter || "", reason: "" }}
+              fields={[{ name: "firmName", label: "Firm name" }, { name: "signerName", label: "Who signs", optional: true }, { name: "firmAddress", label: "Firm address", type: "textarea", optional: true }, { name: "billingEmail", label: "Billing email", optional: true }, { name: "firmPhone", label: "Phone", optional: true }, { name: "tagline", label: "Tagline", optional: true }, { name: "invoiceFooter", label: "Invoice footer", type: "textarea", optional: true }, { name: "reason", label: "Reason", type: "textarea" }]}
+              initialValues={{ firmName: values.firmName, signerName: values.signerName || "", firmAddress: values.firmAddress || "", billingEmail: values.billingEmail || "", firmPhone: values.firmPhone || "", tagline: values.tagline || "", invoiceFooter: values.invoiceFooter || "", reason: "" }}
               validate={(form: FormValues) => ({ ...required("firmName", "reason")(form), ...tooLong(form) })}
               onSubmit={async (form: FormValues) => {
                 // The server replaces every field, so all of them always go; an empty one clears it.
-                const result = await api.updatePresentation({ firmName: form.firmName.trim(), tagline: form.tagline.trim() || null, invoiceFooter: form.invoiceFooter.trim() || null, reason: form.reason.trim() });
+                const result = await api.updatePresentation({ firmName: form.firmName.trim(), signerName: form.signerName.trim() || null, firmAddress: form.firmAddress.trim() || null, billingEmail: form.billingEmail.trim() || null, firmPhone: form.firmPhone.trim() || null, tagline: form.tagline.trim() || null, invoiceFooter: form.invoiceFooter.trim() || null, reason: form.reason.trim() });
                 if (result.ok) { setSaved(true); setValues(result.data); onSaved(result.data); }
                 return result;
               }}
@@ -81,6 +81,10 @@ function FirmDetails({ api, canEdit, onSaved }: { api: BillingApi; canEdit: bool
           ) : (
             <>
               <div className="fld"><label>Firm name</label><input aria-label="Firm name" value={values.firmName} disabled readOnly /></div>
+              <div className="fld"><label>Who signs</label><input aria-label="Who signs" value={values.signerName || "None"} disabled readOnly /></div>
+              <div className="fld"><label>Firm address</label><input aria-label="Firm address" value={values.firmAddress || "None"} disabled readOnly /></div>
+              <div className="fld"><label>Billing email</label><input aria-label="Billing email" value={values.billingEmail || "None"} disabled readOnly /></div>
+              <div className="fld"><label>Phone</label><input aria-label="Phone" value={values.firmPhone || "None"} disabled readOnly /></div>
               <div className="fld"><label>Tagline</label><input aria-label="Tagline" value={values.tagline || "None"} disabled readOnly /></div>
               <div className="fld"><label>Invoice footer</label><input aria-label="Invoice footer" value={values.invoiceFooter || "None"} disabled readOnly /></div>
             </>

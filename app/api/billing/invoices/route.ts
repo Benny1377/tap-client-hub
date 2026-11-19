@@ -12,21 +12,25 @@ export async function GET(request: NextRequest) {
   if (access.response) return access.response;
   const clientId = request.nextUrl.searchParams.get("client_id");
   const db = createAdminClient();
-  let query = db.from("invoices").select("*, invoice_lines(*, billing_candidate_line_links(candidate_id,active))").order("issue_date", { ascending: false });
+  let query = db.from("invoices").select("*, invoice_lines(*, billing_candidate_line_links(candidate_id,active,billing_candidates(id,description,candidate_type,source_adapter)))").order("issue_date", { ascending: false });
   if (clientId) query = query.eq("client_id", clientId);
   const { data, error } = await query;
   if (error) return NextResponse.json({ error: "Unable to load invoices", code: "INVOICE_READ_FAILED" }, { status: 500 });
   const invoices = (data || []).map((invoice: Record<string, unknown>) => {
     const { invoice_lines: lines, ...fields } = invoice;
+    const mappedLines = Array.isArray(lines) ? lines.map((line: Record<string, unknown>) => {
+      const { billing_candidate_line_links: links, ...lineFields } = line;
+      const activeLinks = Array.isArray(links) ? links.filter((link: Record<string, unknown>) => link.active !== false) : [];
+      const candidateIds = activeLinks.map((link: Record<string, unknown>) => link.candidate_id);
+      const provenance = activeLinks.map((link: Record<string, unknown>) => link.billing_candidates).flat().filter(Boolean) as Record<string, unknown>[];
+      const source = [...new Set(provenance.map((candidate) => candidate.source_adapter).filter((value): value is string => typeof value === "string"))];
+      return { ...lineFields, candidateIds, work: provenance.map((candidate) => candidate.description).filter((value): value is string => typeof value === "string").join(", ") || line.description, source: source.join(", ") || "manual" };
+    }) : [];
     return {
       ...fields,
-      invoice_lines: Array.isArray(lines) ? lines.map((line: Record<string, unknown>) => {
-        const { billing_candidate_line_links: links, ...lineFields } = line;
-        const candidateIds = Array.isArray(links)
-          ? links.filter((link: Record<string, unknown>) => link.active !== false).map((link: Record<string, unknown>) => link.candidate_id)
-          : [];
-        return { ...lineFields, candidateIds };
-      }) : [],
+      work: [...new Set(mappedLines.map((line) => String(line.work)))].join(", "),
+      source: [...new Set(mappedLines.map((line) => String(line.source)))].join(", "),
+      invoice_lines: mappedLines,
     };
   });
   return NextResponse.json({ invoices }, { headers: { "Cache-Control": "no-store" } });

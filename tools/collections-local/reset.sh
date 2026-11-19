@@ -37,7 +37,8 @@ for migration in \
   20261106100000_billing_rpc_auth_and_candidate_audit_id.sql \
   20261106110000_billing_presentation_settings.sql \
   20261107140000_billing_firm_schedule_paging.sql \
-  20261107150120_billing_issue_presentation_snapshot.sql; do
+  20261107150120_billing_issue_presentation_snapshot.sql \
+  20261119143906_billing_phase3_firm_workbench_summary_and_presentation_details.sql; do
   psql "$db_url" -X -v ON_ERROR_STOP=1 -f "$project_root/supabase/migrations/$migration" >/dev/null
 done
 psql "$db_url" -X -v ON_ERROR_STOP=1 -f "$local_root/seed.sql" >/dev/null

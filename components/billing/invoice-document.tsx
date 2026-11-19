@@ -16,7 +16,13 @@ export function InvoiceDocument({ invoice, clientName, receivable, remittance, p
   return (
     <div className="doc" data-invoice-document>
       <div className="doc-top">
-        <div><div className="doc-brand">{firm?.firmName || pay?.payeeName || "Your firm"}</div>{firm?.tagline ? <div className="doc-tag">{firm.tagline}</div> : null}</div>
+        <div>
+          <div className="doc-brand">{firm?.firmName || pay?.payeeName || "Your firm"}</div>
+          {firm?.tagline ? <div className="doc-tag">{firm.tagline}</div> : null}
+          {firm?.firmAddress ? <div className="doc-sub">{firm.firmAddress}</div> : null}
+          {firm?.billingEmail ? <div className="doc-sub">{firm.billingEmail}</div> : null}
+          {firm?.firmPhone ? <div className="doc-sub">{firm.firmPhone}</div> : null}
+        </div>
         <div>
           <div className="doc-title">INVOICE</div>
           <div className="doc-no">{invoice.invoice_number ? `#${invoice.invoice_number}` : "Draft"}</div>
@@ -28,6 +34,7 @@ export function InvoiceDocument({ invoice, clientName, receivable, remittance, p
       </div>
       <div className="doc-parties">
         <div><div className="doc-lbl">Bill to</div><div className="doc-party"><b>{clientName}</b></div></div>
+        {firm?.signerName ? <div><div className="doc-lbl">Prepared by</div><div className="doc-party">{firm.signerName}</div></div> : null}
       </div>
       <div className="scroll">
         <table className="doc-t">

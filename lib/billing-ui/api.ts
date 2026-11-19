@@ -191,8 +191,8 @@ export function createBillingApi(fetchImpl: FetchLike) {
     remittance: () => request<{ remittance: { payeeName: string | null; address: string | null; instructions: string | null }; updatedAt: string | null }>(fetchImpl, "/api/billing/settings/remittance"),
     updateRemittance: (input: Record<string, unknown>) => patch<Record<string, unknown>>(fetchImpl, "/api/billing/settings/remittance", input),
     presentation: () => request<BillingPresentation>(fetchImpl, "/api/billing/settings/presentation"),
-    /** Full replacement: all four fields go every time. */
-    updatePresentation: (input: { firmName: string; tagline: string | null; invoiceFooter: string | null; reason: string }) => patch<BillingPresentation>(fetchImpl, "/api/billing/settings/presentation", input),
+    /** Full replacement: all seven presentation fields go every time. */
+    updatePresentation: (input: { firmName: string; tagline: string | null; invoiceFooter: string | null; signerName: string | null; firmAddress: string | null; billingEmail: string | null; firmPhone: string | null; reason: string }) => patch<BillingPresentation>(fetchImpl, "/api/billing/settings/presentation", input),
     completionMaps: (clientServiceId?: string) => request<{ items: Array<Record<string, unknown>> }>(fetchImpl, `/api/billing/completion-source-maps${clientServiceId ? `?clientServiceId=${encodeURIComponent(clientServiceId)}` : ""}`),
     createCompletionMap: (input: Record<string, unknown>) => post<Record<string, unknown>>(fetchImpl, "/api/billing/completion-source-maps", input),
     updateCompletionMap: (id: string, input: Record<string, unknown>) => patch<Record<string, unknown>>(fetchImpl, `/api/billing/completion-source-maps/${encodeURIComponent(id)}`, input),

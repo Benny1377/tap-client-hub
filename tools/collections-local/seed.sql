@@ -24,6 +24,27 @@ values
   ('40000000-0000-4000-8000-000000000002', '10000000-0000-4000-8000-000000000001', '30000000-0000-4000-8000-000000000002', true, 'monthly'),
   ('40000000-0000-4000-8000-000000000003', '10000000-0000-4000-8000-000000000002', '30000000-0000-4000-8000-000000000003', true, 'monthly');
 
+-- Give each synthetic Operations assignment an explicit Billing source map and
+-- a deterministic rate so local schedule and candidate flows exercise the
+-- same required configuration as a real client.
+insert into tap_hub_project.billing_rate_cards (id, name, active, effective_from, created_by, updated_by, reason)
+values ('50000000-0000-4000-8000-000000000001', 'Local synthetic test rates', true, '2026-01-01', '00000000-0000-4000-8000-000000000001', '00000000-0000-4000-8000-000000000001', 'Synthetic local fixture')
+on conflict (id) do nothing;
+
+insert into tap_hub_project.billing_rate_card_entries (id, rate_card_id, service_code, unit, unit_amount, effective_from, created_by, updated_by, reason)
+values
+  ('51000000-0000-4000-8000-000000000001', '50000000-0000-4000-8000-000000000001', 'LOCAL-REC', 'service', 150.00, '2026-01-01', '00000000-0000-4000-8000-000000000001', '00000000-0000-4000-8000-000000000001', 'Synthetic local fixture'),
+  ('51000000-0000-4000-8000-000000000002', '50000000-0000-4000-8000-000000000001', 'LOCAL-STAGE', 'service', 225.00, '2026-01-01', '00000000-0000-4000-8000-000000000001', '00000000-0000-4000-8000-000000000001', 'Synthetic local fixture'),
+  ('51000000-0000-4000-8000-000000000003', '50000000-0000-4000-8000-000000000001', 'LOCAL-COUNT', 'count', 25.00, '2026-01-01', '00000000-0000-4000-8000-000000000001', '00000000-0000-4000-8000-000000000001', 'Synthetic local fixture')
+on conflict (id) do nothing;
+
+insert into tap_hub_project.billing_completion_source_maps (id, client_service_id, adapter, predicate, identity_fields, candidate_date_rule, effective_from, enabled, created_by, updated_by, reason)
+values
+  ('52000000-0000-4000-8000-000000000001', '40000000-0000-4000-8000-000000000001', 'schedule', '{}'::jsonb, array['client_service_id','period'], 'period_end', '2026-01-01', true, '00000000-0000-4000-8000-000000000001', '00000000-0000-4000-8000-000000000001', 'Synthetic recurring schedule fixture'),
+  ('52000000-0000-4000-8000-000000000002', '40000000-0000-4000-8000-000000000002', 'work_period_done', '{"stage":"done"}'::jsonb, array['client_service_id','period'], 'period_end', '2026-01-01', true, '00000000-0000-4000-8000-000000000001', '00000000-0000-4000-8000-000000000001', 'Synthetic work completion fixture'),
+  ('52000000-0000-4000-8000-000000000003', '40000000-0000-4000-8000-000000000003', 'period_count_threshold', '{"threshold":2}'::jsonb, array['client_service_id','period'], 'period_end', '2026-01-01', true, '00000000-0000-4000-8000-000000000001', '00000000-0000-4000-8000-000000000001', 'Synthetic count threshold fixture')
+on conflict (id) do nothing;
+
 insert into tap_hub_project.work_periods (client_service_id, period, stage, done_at)
 values
   ('40000000-0000-4000-8000-000000000002', '2026-10', 'done', '2026-10-20T15:00:00Z'),
